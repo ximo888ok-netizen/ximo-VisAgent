@@ -2,11 +2,14 @@
  * IslandShell.tsx — 灵动岛根容器（预算 <400 行）
  *
  * 职责：
- * 1. 订阅主进程事件 island:step / island:approval-pending，驱动 store；
- * 2. 深浅主题跟随 nativeTheme（切换 <html> 的 dark 类 + island.css 变量）；
- * 3. 鼠标穿透管理：玻璃空白区回落到桌面，交互区（按钮/文字）可点；
- * 4. 左侧 20px 拖拽手柄（-webkit-app-region: drag）；
- * 5. 自适应宽度（400–900）与 64/280 高度切换（300ms ease-out）。
+ * 1. 订阅主进程事件 island:step / island:approval-pending / task-finished，驱动 store；
+ * 2. 深浅主题跟随 nativeTheme；
+ * 3. 鼠标穿透管理（玻璃空白区回落到桌面）；
+ * 4. 左侧 20px 拖拽手柄；
+ * 5. 收拢 64 / 展开（面板 220–480 / 审批 280）高度切换。
+ *
+ * 面板模式：task / log / settings / audit
+ * 审批优先级最高：有 approval 时独占展开区。
  */
 import {
   useCallback,
@@ -17,15 +20,16 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { useIslandStore } from "../../store/islandStore";
+import { useIslandStore, PANEL_HEIGHTS } from "../../store/islandStore";
 import { IslandStatus } from "./IslandStatus";
 import { IslandLog } from "./IslandLog";
 import { IslandActions } from "./IslandActions";
 import { IslandApproval } from "./IslandApproval";
+import { PanelContainer } from "./PanelContainer";
 
-/** 高度：收拢 64，审批展开 280（需求文档） */
+/** 高度：收拢 64，审批展开 280 */
 const HEIGHT_COLLAPSED = 64;
-const HEIGHT_EXPANDED = 280;
+const HEIGHT_APPROVAL = 280;
 /** 审批无操作自动回缩时长 */
 const APPROVAL_TIMEOUT_MS = 60_000;
 
@@ -35,8 +39,11 @@ export function IslandShell() {
   const status = useIslandStore((s) => s.status);
   const currentLog = useIslandStore((s) => s.currentLog);
   const view = useIslandStore((s) => s.view);
+  const panelMode = useIslandStore((s) => s.panelMode);
+  const approval = useIslandStore((s) => s.approval);
   const pushStep = useIslandStore((s) => s.pushStep);
   const openApproval = useIslandStore((s) => s.openApproval);
+  const setTaskFinished = useIslandStore((s) => s.setTaskFinished);
 
   /* ---------- 事件订阅（主进程 -> 渲染进程） ---------- */
   useEffect(() => {
@@ -46,11 +53,15 @@ export function IslandShell() {
     const un2 = window.islandAPI.onApprovalPending((req) => {
       openApproval(req, APPROVAL_TIMEOUT_MS);
     });
+    const un3 = window.islandAPI.onTaskFinished((payload) => {
+      setTaskFinished(payload);
+    });
     return () => {
       un1();
       un2();
+      un3();
     };
-  }, [openApproval, pushStep]);
+  }, [openApproval, pushStep, setTaskFinished]);
 
   /* ---------- 深浅主题 ---------- */
   useEffect(() => {
@@ -69,45 +80,62 @@ export function IslandShell() {
     };
   }, []);
 
-  /* ---------- 鼠标穿透（pointer hit-test） ----------
-   * 原理：窗口默认 setIgnoreMouseEvents(true, {forward:true})，
-   * 渲染层仍能收到 mousemove；光标下若是交互区则切换为可点，
-   * 否则保持穿透（可点背后的桌面图标）。
-   */
+  /* ---------- 鼠标穿透 ---------- */
   const isOverInteractive = useIslandHitTest();
 
-  /* ---------- 点击日志/中庭 -> 唤起主窗口 ---------- */
+  /* ---------- 点击中庭 -> 切换面板 ---------- */
   const handleClick = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
-      const el = (e.target as HTMLElement).closest?.(
-        '[data-action="focus-main"]',
-      );
-      if (el) void window.islandAPI.expand();
+      // 审批展开时，点击中庭不做任何事
+      if (approval) return;
+      // 点击操作区按钮不触发面板切换
+      const el = e.target as HTMLElement;
+      if (el.closest?.("[data-interactive]")) return;
+      if (el.closest?.('[data-action="focus-main"]')) {
+        void window.islandAPI.expand();
+        return;
+      }
+      // 切换收拢/展开
+      const store = useIslandStore.getState();
+      if (store.view === "collapsed") {
+        store.setPanelMode(store.panelMode);
+      } else {
+        useIslandStore.setState({ view: "collapsed" });
+      }
     },
-    [],
+    [approval],
   );
 
-  /* ---------- 自适应宽度（估算文本长度，400–900 内取整） ---------- */
+  /* ---------- 自适应宽度 ---------- */
   const width = useMemo(() => {
     const textLen = currentLog?.text.length ?? 0;
     const estimate = 460 + Math.min(textLen, 90) * 4;
     return Math.max(400, Math.min(900, Math.round(estimate / 10) * 10));
   }, [currentLog]);
 
-  const height = view === "expanded" ? HEIGHT_EXPANDED : HEIGHT_COLLAPSED;
+  /* ---------- 高度计算 ---------- */
+  const height = useMemo(() => {
+    if (view === "collapsed") return HEIGHT_COLLAPSED;
+    if (approval) return HEIGHT_APPROVAL;
+    // 面板模式
+    return PANEL_HEIGHTS[panelMode] ?? HEIGHT_COLLAPSED;
+  }, [view, approval, panelMode]);
 
-  /* ---------- 自适应窗口尺寸上报（主进程 setBounds） ---------- */
+  /* ---------- 自适应窗口尺寸上报 ---------- */
   useEffect(() => {
     window.islandAPI.resize(width, height);
   }, [width, height]);
 
+  const showApproval = view === "expanded" && approval !== null;
+  const showPanel = view === "expanded" && approval === null;
+
   return (
     <div
       onClick={handleClick}
-      className={`island-glass island-passthrough island-no-select relative overflow-hidden rounded-[22px] transition-[height,width] duration-300 ease-out ${
-        isOverInteractive ? "island-interactive-on" : ""
+      className={`island-glass island-passthrough island-no-select relative overflow-hidden rounded-[22px] transition-[height] duration-300 ${
+        approval ? "island-interactive-on" : isOverInteractive ? "island-interactive-on" : ""
       }`}
-      style={{ width, height }}
+      style={{ width, height, transitionTimingFunction: "var(--island-ease)" }}
     >
       {/* 顶部 64px 三区壳：左 84 / 中 弹性 / 右 120 */}
       <div className="flex h-16 items-stretch">
@@ -119,20 +147,26 @@ export function IslandShell() {
         />
         <IslandStatus width={84} />
         <span className="my-[15px] w-px shrink-0 bg-white/[0.07]" />
-        {/* 20(拖拽) + 84(状态) + 1(分隔) + 1(分隔) + 120(操作) */}
         <IslandLog width={Math.max(0, width - 226)} />
         <span className="my-[15px] w-px shrink-0 bg-white/[0.07]" />
         <IslandActions width={120} />
       </div>
 
-      {/* 审批展开内容区（留出 1px 分隔线高度，避免溢出裁切） */}
-      {view === "expanded" && (
-        <div className="border-t border-white/[0.08]">
-          <IslandApproval height={HEIGHT_EXPANDED - HEIGHT_COLLAPSED - 1} />
+      {/* 审批展开内容区 */}
+      {showApproval && (
+        <div className="border-t border-white/[0.08] island-expand-anim">
+          <IslandApproval height={HEIGHT_APPROVAL - HEIGHT_COLLAPSED - 1} />
         </div>
       )}
 
-      {/* 状态位：用于测试时展示 */}
+      {/* 面板展开内容区 */}
+      {showPanel && (
+        <div className="border-t border-white/[0.08]">
+          <PanelContainer height={height - HEIGHT_COLLAPSED} />
+        </div>
+      )}
+
+      {/* 状态位 */}
       <span className="sr-only" aria-live="polite">
         {status}
       </span>
@@ -161,7 +195,7 @@ function useIslandHitTest(): boolean {
         setOver(hit);
         if (lastSent.current !== hit) {
           lastSent.current = hit;
-          window.islandAPI.setPassthrough(!hit); // true = 穿透到桌面
+          window.islandAPI.setPassthrough(!hit);
         }
       });
     };

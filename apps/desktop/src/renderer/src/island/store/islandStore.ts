@@ -1,5 +1,16 @@
+/**
+ * islandStore.ts — 灵动岛主 store（编排层）
+ *
+ * 拆分说明：
+ * - 面板/任务/配置/审计状态从 slice 文件合并
+ * - 本文件只做合并导出 + 顶部条状态 + 审批状态
+ */
 import { create } from "zustand";
 import type { AgentStatus, ApprovalRequest } from "@shared/island-contracts";
+import type { PanelMode } from "@shared/island-contracts";
+import { createTaskSlice, type TaskSliceState } from "./taskSlice";
+import { createConfigSlice, type ConfigSliceState } from "./configSlice";
+import { createAuditSlice, type AuditSliceState } from "./auditSlice";
 
 export interface IslandLogEntry {
   id: number;
@@ -10,33 +21,58 @@ export interface IslandLogEntry {
 
 export type IslandView = "collapsed" | "expanded";
 
-interface IslandState {
+/** 面板高度映射 */
+export const PANEL_HEIGHTS: Record<PanelMode, number> = {
+  log: 360,
+  task: 220,
+  settings: 480,
+  audit: 480,
+} as const;
+
+interface IslandState extends TaskSliceState, ConfigSliceState, AuditSliceState {
+  // ---- 顶部条 ----
   status: AgentStatus;
   currentLog: IslandLogEntry | null;
   logs: IslandLogEntry[];
   view: IslandView;
-  approval: ApprovalRequest | null;
 
+  // ---- 面板模式 ----
+  panelMode: PanelMode;
+  /** 审批有最高优先级：有 approval 时强制展示，面板 tab 隐藏 */
+  approval: ApprovalRequest | null;
+  /** 记住审批弹出前的面板模式，审批结束后恢复 */
+  prevPanelMode: PanelMode;
+
+  // ---- actions ----
   setStatus(status: AgentStatus): void;
   pushStep(entry: IslandLogEntry): void;
-  /** 收到 approval:pending：展开并启动 timeoutMs 自动回缩 */
+  setPanelMode(mode: PanelMode): void;
   openApproval(request: ApprovalRequest, timeoutMs: number): void;
-  /** 用户已操作（发送结论）或超时：收起面板 */
   resolveApproval(): void;
   reset(): void;
 }
 
 let entryId = 1;
-/** 审批超时定时器（模块级句柄，避免闭包过期） */
 let approvalTimer: number | undefined;
 
 export const useIslandStore = create<IslandState>((set, get) => ({
+  // ---- 顶部条 ----
   status: "idle",
   currentLog: null,
   logs: [],
   view: "collapsed",
-  approval: null,
 
+  // ---- 面板 ----
+  panelMode: "task",
+  approval: null,
+  prevPanelMode: "task",
+
+  // ---- slices ----
+  ...createTaskSlice(set, get),
+  ...createConfigSlice(set, get),
+  ...createAuditSlice(set, get),
+
+  // ---- actions ----
   setStatus(status) {
     set({ status });
   },
@@ -45,22 +81,25 @@ export const useIslandStore = create<IslandState>((set, get) => ({
     set((s) => ({
       status: entry.status,
       currentLog: entry,
-      // 仅保留最近 60 条，防止极端情况内存增长
       logs: [...s.logs, entry].slice(-60),
     }));
   },
 
+  setPanelMode(mode) {
+    set({ panelMode: mode, view: "expanded" });
+  },
+
   openApproval(request, timeoutMs) {
-    if (approvalTimer !== undefined) {
-      window.clearTimeout(approvalTimer);
-    }
-    // 超时未操作 -> 自动回缩（仅收 UI，不改 Agent 状态机）
+    if (approvalTimer !== undefined) window.clearTimeout(approvalTimer);
     approvalTimer = window.setTimeout(() => {
       approvalTimer = undefined;
       get().resolveApproval();
     }, timeoutMs);
-
-    set({ approval: request, view: "expanded" });
+    set((s) => ({
+      approval: request,
+      prevPanelMode: s.panelMode,
+      view: "expanded",
+    }));
   },
 
   resolveApproval() {
@@ -68,7 +107,7 @@ export const useIslandStore = create<IslandState>((set, get) => ({
       window.clearTimeout(approvalTimer);
       approvalTimer = undefined;
     }
-    set({ approval: null, view: "collapsed" });
+    set({ approval: null });
   },
 
   reset() {
@@ -81,12 +120,13 @@ export const useIslandStore = create<IslandState>((set, get) => ({
       currentLog: null,
       logs: [],
       view: "collapsed",
+      panelMode: "task",
       approval: null,
     });
   },
 }));
 
-/** UI 状态 -> 左侧状态文字（短词，中性无 AI 味） */
+/** UI 状态 -> 左侧状态文字 */
 export const STATUS_LABEL: Record<AgentStatus, string> = {
   idle: "就绪",
   thinking: "运行中",

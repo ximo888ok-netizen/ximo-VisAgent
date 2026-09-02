@@ -35,14 +35,15 @@ export function IslandActions({ width = 120 }: { width?: number }) {
         title="紧急停止"
         disabled={disabled}
         onClick={handleStop}
-        className="grid h-8 w-8 place-items-center rounded-full transition
-                   enabled:hover:scale-105 enabled:active:scale-95
+        className="grid h-8 w-8 place-items-center rounded-full transition-all
+                   duration-200 enabled:hover:scale-110 enabled:active:scale-90
                    disabled:cursor-not-allowed disabled:opacity-40"
         style={{
           background: disabled ? "#7c7f86" : "#e5484d",
           boxShadow: disabled
             ? "none"
             : "0 2px 8px rgba(229,72,77,0.4), inset 0 1px 0 rgba(255,255,255,0.18)",
+          transitionTimingFunction: "var(--island-ease-bounce)",
         }}
       >
         {/* 🛑 白描边八边形 */}
@@ -63,8 +64,9 @@ export function IslandActions({ width = 120 }: { width?: number }) {
         aria-label="展开主窗口"
         title="展开主窗口"
         onClick={handleExpand}
-        className="grid h-8 w-8 place-items-center rounded-[10px] transition
-                   hover:bg-white/10 active:scale-95"
+        className="grid h-8 w-8 place-items-center rounded-[10px] transition-all
+                   duration-200 hover:bg-white/10 active:scale-90"
+        style={{ transitionTimingFunction: "var(--island-ease)" }}
       >
         {/* ⤢ 双对角角标 */}
         <svg width="20" height="20" viewBox="0 0 34 34" fill="none">

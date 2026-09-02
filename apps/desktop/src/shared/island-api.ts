@@ -8,32 +8,61 @@ import type {
   ApprovalResult,
   EmergencyStopRequest,
 } from "./island-contracts";
+import type {
+  PanelMode,
+  StartTaskRequest,
+  TaskStartedResult,
+  TaskFinishedPayload,
+  AppConfigPayload,
+  UpdateConfigRequest,
+  QueryTasksRequest,
+  TaskRowPayload,
+  QueryAuditRequest,
+  AuditRowPayload,
+  ExportCsvResult,
+} from "./island-contracts";
+
+/** 统一 IPC 返回 */
+export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export interface IslandApi {
-  /** 订阅 Agent 单步日志；返回取消订阅函数 */
+  // ---- 订阅（main -> renderer）----
   onAgentStep(cb: (event: AgentStepEvent) => void): () => void;
-  /** 订阅审批请求（触发 64 -> 280 展开） */
   onApprovalPending(cb: (request: ApprovalRequest) => void): () => void;
-  /** 订阅系统深浅主题变化 */
   onThemeChanged(cb: (isDark: boolean) => void): () => void;
+  onTaskFinished(cb: (payload: TaskFinishedPayload) => void): () => void;
 
-  /** 唤出 / 聚焦全功能主窗口 */
+  // ---- 原有操作 ----
   expand(): Promise<boolean>;
-  /** 紧急停止信号（真正中断由主进程 Safety 执行） */
   emergencyStop(
     req?: EmergencyStopRequest,
   ): Promise<{ ok: boolean; error?: string }>;
-  /** 上报用户审批结论 */
   sendApprovalResult(
     result: ApprovalResult,
   ): Promise<{ ok: boolean; error?: string }>;
-
-  /** 读取当前是否深色主题 */
   getTheme(): Promise<boolean>;
-  /** 切换鼠标穿透（true=玻璃空白区可点桌面） */
   setPassthrough(enabled: boolean): void;
-  /** 上报窗口内容尺寸，主进程据此自适应 setBounds */
   resize(width: number, height: number): void;
-  /** 审批参数编辑需要键盘时置可聚焦（true=允许输入） */
   setKeyboardInput(active: boolean): void;
+
+  // ---- 任务管理 ----
+  startTask(
+    req: StartTaskRequest,
+  ): Promise<IpcResult<TaskStartedResult>>;
+  cancelTask(taskId: string): Promise<{ ok: boolean; error?: string }>;
+
+  // ---- 配置管理 ----
+  getConfig(): Promise<IpcResult<AppConfigPayload>>;
+  updateConfig(
+    req: UpdateConfigRequest,
+  ): Promise<{ ok: boolean; error?: string }>;
+
+  // ---- 审计查询 ----
+  queryTasks(
+    req?: QueryTasksRequest,
+  ): Promise<IpcResult<TaskRowPayload[]>>;
+  queryAudit(
+    req?: QueryAuditRequest,
+  ): Promise<IpcResult<AuditRowPayload[]>>;
+  exportCsv(): Promise<IpcResult<ExportCsvResult>>;
 }

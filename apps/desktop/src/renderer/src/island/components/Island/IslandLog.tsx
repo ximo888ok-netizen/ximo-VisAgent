@@ -59,7 +59,7 @@ export function IslandLog({ width }: { width: number }) {
       }`}
       data-interactive
       data-action="focus-main"
-      title="点击唤起主窗口"
+      title="点击展开面板"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
