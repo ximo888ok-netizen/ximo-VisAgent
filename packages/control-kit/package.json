@@ -1,0 +1,34 @@
+{
+  "name": "@desktop-agi/control-kit",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --exclude '__tests__/device.integration.*'",
+    "test:device": "node --test __tests__/device.integration.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@desktop-agi/agent-core": "workspace:*",
+    "@desktop-agi/perception": "workspace:*",
+    "@desktop-agi/shared-types": "workspace:*",
+    "exceljs": "^4.4.0",
+    "koffi": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.8.3",
+    "vitest": "^3.0.5"
+  }
+}

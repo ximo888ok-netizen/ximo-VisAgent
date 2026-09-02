@@ -1,0 +1,14 @@
+node_modules/
+dist/
+out/
+*.log
+.turbo/
+coverage/
+*.tsbuildinfo
+.DS_Store
+native/uia-sidecar-cs/bin/node_modules/
+out/
+dist/
+release/
+*.exe
+.turbo/

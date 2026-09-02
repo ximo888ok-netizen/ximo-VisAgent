@@ -1,0 +1,36 @@
+productName: Desktop AGI
+appId: io.ximo.desktop-agi
+copyright: Copyright © 2026 Desktop AGI
+directories:
+  buildResources: build
+  output: release
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/.git/*"
+extraResources:
+  - from: ../../native/uia-sidecar-cs/bin/uia-sidecar.exe
+    to: uia-sidecar.exe
+asarUnpack:
+  - "**/*.node"
+  - node_modules/better-sqlite3/**
+  - node_modules/koffi/**
+  - node_modules/tesseract.js-core/**
+  - node_modules/playwright-core/**
+  - node_modules/playwright/**
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Desktop AGI
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/

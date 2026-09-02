@@ -1,0 +1,103 @@
+/* ============================================================================
+ * island.css — 灵动岛专属样式（不依赖任何 UI 框架）
+ * 用法：在 renderer 入口 import "./styles/island.css"
+ * Tailwind 负责布局工具类；动画/玻璃材质/状态色收敛在本文件。
+ * ========================================================================== */
+
+:root {
+  /* 玻璃材质（需求文档：rgba(30,30,30,0.7) + blur 30px） */
+  --island-bg: rgba(30, 30, 30, 0.7);
+  --island-blur: 30px;
+  --island-border: rgba(255, 255, 255, 0.22);
+  /* 状态语义色 */
+  --c-idle: #e8eaf0;
+  --c-thinking: #3fe0a0;
+  --c-waiting: #fbbf24;
+  --c-error: #f87171;
+}
+
+/* 深色玻璃本体（浅色主题仅描边做微调，由 .theme-light 覆盖） */
+.island-glass {
+  background: var(--island-bg);
+  -webkit-backdrop-filter: blur(var(--island-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--island-blur)) saturate(1.4);
+  border: 1px solid var(--island-border);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+/* 浅色系统主题：描边收敛为浅灰（参考设计预览第二屏） */
+@media (prefers-color-scheme: light) {
+  .island-glass {
+    border-color: rgba(120, 126, 138, 0.5);
+  }
+}
+html.light .island-glass {
+  border-color: rgba(120, 126, 138, 0.5);
+}
+
+/* 可交互命中区：只有带 data-interactive 的元素才接收鼠标事件 */
+[data-interactive] {
+  pointer-events: auto;
+}
+.island-passthrough {
+  pointer-events: none;
+}
+
+/* --- 状态灯动画 ---------------------------------------------------------- */
+
+@keyframes island-breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+@keyframes island-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes island-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+@keyframes island-beat {
+  0%, 100% { transform: scale(1); }
+  45%      { transform: scale(1.12); }
+  55%      { transform: scale(0.96); }
+}
+
+.island-ring {
+  transform-origin: 50% 50%;
+}
+.island-ring--idle       { color: var(--c-idle);     animation: island-breathe 2.6s ease-in-out infinite; }
+.island-ring--thinking   { animation: island-spin    1.1s linear infinite; }
+.island-ring--waiting    { color: var(--c-waiting);  animation: island-pulse  1.2s ease-in-out infinite; }
+.island-ring--error      { color: var(--c-error);    animation: island-beat   1.6s ease-in-out infinite; }
+
+/* --- 跑马灯日志 ---------------------------------------------------------- */
+
+.island-marquee {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.island-marquee__track {
+  display: inline-block;
+  white-space: nowrap;
+  animation: island-marquee var(--marquee-duration, 14s) linear infinite;
+  will-change: transform;
+}
+
+.island-marquee--paused .island-marquee__track {
+  animation-play-state: paused;
+}
+
+@keyframes island-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* 渲染滚动被主进程窗口高度限制，底部 1px 不裁切边缘 */
+.island-no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}

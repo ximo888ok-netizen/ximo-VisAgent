@@ -1,0 +1,30 @@
+{
+  "name": "desktop-agi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop AGI - AI 操控 Windows 桌面完成办公任务的智能体",
+  "packageManager": "pnpm@11.5.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:desktop": "pnpm --filter @desktop-agi/desktop dev",
+    "preview": "pnpm --filter @desktop-agi/desktop start",
+    "build": "turbo run build",
+    "build:packages": "turbo run build --filter=\"./packages/*\"",
+    "build:desktop": "pnpm --filter @desktop-agi/desktop build",
+    "test": "turbo run test --filter=\"./packages/*\"",
+    "test:device": "pnpm --filter @desktop-agi/control-kit test:device",
+    "typecheck": "turbo run typecheck",
+    "build:sidecar": "node native/uia-sidecar-cs/build.js",
+    "rebuild:electron": "node scripts/rebuild-electron.js",
+    "package:win": "pnpm --filter @desktop-agi/desktop build && pnpm --filter @desktop-agi/desktop exec electron-builder --win nsis",
+    "e2e:list": "node scripts/e2e-list.mjs",
+    "postinstall": "node native/uia-sidecar-cs/build.js"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.4",
+    "typescript": "^5.8.3"
+  }
+}
