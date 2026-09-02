@@ -1,0 +1,35 @@
+[36mvite v6.4.3 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m鉁?[39m 575 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36mindex.js  [39m[1m[33m1,936.37 kB[39m[22m
+[32m鉁?built in 7.43s[39m
+[32m
+build the electron main process successfully[39m
+[90m
+-----
+[39m
+[36mvite v6.4.3 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m鉁?[39m 5 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36misland.js  [39m[1m[2m9.86 kB[22m[1m[22m
+[32m鉁?built in 52ms[39m
+[32m
+build the electron preload files successfully[39m
+[90m
+-----
+[39m
+[32mdev server running for the electron renderer process at:
+[39m
+  [32m鉃?[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32m鉃?[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[32m
+start electron app...
+[39m
+
+(node:24280) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `electron --trace-deprecation ...` to show where the warning was created)
+[main] UIA sidecar started
+[main] OCR cache ready: C:\Users\Administrator\AppData\Roaming\@desktop-agi\desktop\tesseract-cache
+[island] renderer loaded: http://localhost:5173/island.html

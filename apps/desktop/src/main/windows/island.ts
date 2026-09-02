@@ -69,7 +69,9 @@ export function createIslandWindow(): BrowserWindow {
 
   // 默认忽略鼠标事件（穿透到桌面图标）；渲染层命中交互区后动态放开
   islandWindow.setIgnoreMouseEvents(true, { forward: true });
-  islandWindow.setAlwaysOnTop(true);
+  // Windows 上 alwaysOnTop(true) 默认 normal 级别，会被其他置顶窗口覆盖。
+  // 使用 screen-saver 级别确保始终在最顶层。
+  islandWindow.setAlwaysOnTop(true, "screen-saver");
 
   // focusable:false 的透明窗口在 Windows 上不会自动显示，需显式 showInactive
   islandWindow.showInactive();
@@ -149,8 +151,35 @@ export function focusMainWindow(getMainWindow: () => BrowserWindow | null): bool
 }
 
 /* ------------------------------------------------------------------ */
-/* 鼠标穿透 / 输入焦点                                                  */
+/* 显示 / 隐藏 / 鼠标穿透 / 输入焦点                                   */
 /* ------------------------------------------------------------------ */
+
+/** 显示灵动岛（不抢焦点） */
+export function showIsland(): void {
+  const win = getIslandWindow();
+  if (!win) return;
+  win.showInactive();
+}
+
+/** 隐藏灵动岛 */
+export function hideIsland(): void {
+  const win = getIslandWindow();
+  if (!win) return;
+  win.hide();
+}
+
+/** 切换灵动岛可见性，返回切换后状态 */
+export function toggleIsland(): boolean {
+  const win = getIslandWindow();
+  if (!win) return false;
+  if (win.isVisible()) {
+    win.hide();
+    return false;
+  } else {
+    win.showInactive();
+    return true;
+  }
+}
 
 export function setPassthrough(enabled: boolean): void {
   getIslandWindow()?.setIgnoreMouseEvents(enabled, { forward: true });

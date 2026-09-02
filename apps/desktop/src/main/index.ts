@@ -6,7 +6,7 @@ import { ZODB } from './audit-store';
 import { appConfigStore } from './config-store';
 import { Orchestrator } from './orchestrator';
 import { initOcrCache, ocrShutdown } from './ocr';
-import { createIslandWindow, getIslandWindow } from './windows/island';
+import { createIslandWindow, getIslandWindow, toggleIsland } from './windows/island';
 import { registerIslandHandlers } from './ipc/island.handlers';
 import { coerceArgs } from './island-bridge';
 
@@ -112,7 +112,15 @@ function createTray() {
   tray = new Tray(icon);
   tray.setToolTip('Desktop AGI');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '退出', click: () => app.quit() },
+    {
+      label: '显示灵动岛',
+      click: () => toggleIsland(),
+    },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => app.quit(),
+    },
   ]));
 }
 
