@@ -60,7 +60,7 @@ export function createIslandWindow(): BrowserWindow {
     hasShadow: false, // 阴影由 CSS box-shadow 提供，避免透明窗口黑边
     backgroundColor: "#00000000",
     webPreferences: {
-      preload: path.join(__dirname, "../preload/island-preload.js"),
+      preload: path.join(__dirname, "../preload/island.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -70,6 +70,9 @@ export function createIslandWindow(): BrowserWindow {
   // 默认忽略鼠标事件（穿透到桌面图标）；渲染层命中交互区后动态放开
   islandWindow.setIgnoreMouseEvents(true, { forward: true });
   islandWindow.setAlwaysOnTop(true);
+
+  // focusable:false 的透明窗口在 Windows 上不会自动显示，需显式 showInactive
+  islandWindow.showInactive();
 
   islandWindow.on("closed", () => {
     islandWindow = null;

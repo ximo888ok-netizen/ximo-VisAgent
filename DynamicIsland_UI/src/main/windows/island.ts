@@ -60,7 +60,7 @@ export function createIslandWindow(): BrowserWindow {
     hasShadow: false, // 阴影由 CSS box-shadow 提供，避免透明窗口黑边
     backgroundColor: "#00000000",
     webPreferences: {
-      preload: path.join(__dirname, "../../preload/island-preload.js"),
+      preload: path.join(__dirname, "../preload/island.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
