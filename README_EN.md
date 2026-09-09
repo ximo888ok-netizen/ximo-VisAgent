@@ -360,4 +360,4 @@ All coordinates use the **physical pixel coordinate system**:
 
 ## License
 
-Private project. Copyright © 2026 ximo-VisAgent
+This project is open-sourced under the [MIT License](./LICENSE). Copyright © 2026 ximo-VisAgent

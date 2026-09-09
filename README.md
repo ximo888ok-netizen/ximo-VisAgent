@@ -360,4 +360,4 @@ UIA 树查询 (ui_locate / ui_click)
 
 ## 许可证
 
-私有项目，Copyright © 2026 ximo-VisAgent
+本项目基于 [MIT 许可证](./LICENSE)开源，Copyright © 2026 ximo-VisAgent
