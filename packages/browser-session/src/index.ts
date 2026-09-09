@@ -1,1 +1,0 @@
-export { BrowserSession, type BrowserSessionOptions } from './session';

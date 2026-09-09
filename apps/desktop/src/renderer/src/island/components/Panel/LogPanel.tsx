@@ -28,14 +28,14 @@ export function LogPanel() {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <div className="mx-auto mb-3 h-12 w-12 rounded-full bg-white/5 grid place-items-center">
+          <div className="mx-auto mb-3 h-12 w-12 rounded-full ig-bg-panel grid place-items-center">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M5 5h14v10H5z" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5" strokeLinejoin="round" />
-              <path d="M5 15l-2 4 3-2h12l3 2-2-4" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5" strokeLinejoin="round" />
+              <path d="M5 5h14v10H5z" stroke="var(--ig-t-faint)" strokeWidth="1.5" strokeLinejoin="round" />
+              <path d="M5 15l-2 4 3-2h12l3 2-2-4" stroke="var(--ig-t-faint)" strokeWidth="1.5" strokeLinejoin="round" />
             </svg>
           </div>
-          <p className="text-[12px] text-white/30">尚无执行记录</p>
-          <p className="mt-1 text-[11px] text-white/20">在「任务」面板输入任务以开始</p>
+          <p className="text-[12px] t-faint">尚无执行记录</p>
+          <p className="mt-1 text-[11px] t-faint">在「任务」面板输入任务以开始</p>
         </div>
       </div>
     );
@@ -45,9 +45,9 @@ export function LogPanel() {
     <div className="px-4 py-3">
       {/* 任务目标 */}
       {currentTaskGoal && (
-        <div className="mb-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
-          <div className="text-[10px] text-white/30">任务目标</div>
-          <div className="mt-0.5 text-[12px] text-white/70">{currentTaskGoal}</div>
+        <div className="mb-3 rounded-lg border ig-border-line ig-bg-panel px-3 py-2">
+          <div className="text-[10px] t-faint">任务目标</div>
+          <div className="mt-0.5 text-[12px] t-body">{currentTaskGoal}</div>
         </div>
       )}
 
@@ -65,13 +65,13 @@ export function LogPanel() {
             />
             {/* 内容 */}
             <div className="flex-1 pb-1">
-              <div className="text-[10px] text-white/25">
+              <div className="text-[10px] t-faint">
                 {new Date(log.ts).toLocaleTimeString("zh-CN", { hour12: false })}
                 <span className="ml-2" style={{ color: statusColor(log.status) }}>
                   {statusText(log.status)}
                 </span>
               </div>
-              <div className="mt-0.5 text-[12px] leading-snug text-white/75">
+              <div className="mt-0.5 text-[12px] leading-snug t-strong">
                 {log.text}
               </div>
             </div>
@@ -92,9 +92,9 @@ export function LogPanel() {
             <span style={{ color: taskFinished.status === "COMPLETED" ? "#3fe0a0" : "#f87171" }}>
               {taskFinished.status === "COMPLETED" ? "任务完成" : taskFinished.status}
             </span>
-            <span className="text-white/30">{taskFinished.steps} 步 · {taskFinished.totalTokens} tokens</span>
+            <span className="t-faint">{taskFinished.steps} 步 · {taskFinished.totalTokens} tokens</span>
           </div>
-          <div className="mt-1 text-[11.5px] leading-snug text-white/60" style={{ maxHeight: 48, overflow: "hidden" }}>
+          <div className="mt-1 text-[11.5px] leading-snug t-body" style={{ maxHeight: 48, overflow: "hidden" }}>
             {taskFinished.finalAnswer}
           </div>
         </div>
@@ -105,12 +105,13 @@ export function LogPanel() {
 
 function statusColor(s: string): string {
   switch (s) {
-    case "idle": return "rgba(255,255,255,0.3)";
+    case "idle": return "var(--ig-t-muted)";
     case "thinking": return "#3fe0a0";
+    case "paused": return "#60a5fa";
     case "waiting_approval": return "#fbbf24";
     case "error": return "#f87171";
     case "stopped": return "#f87171";
-    default: return "rgba(255,255,255,0.3)";
+    default: return "var(--ig-t-muted)";
   }
 }
 
@@ -118,6 +119,7 @@ function statusText(s: string): string {
   switch (s) {
     case "idle": return "就绪";
     case "thinking": return "运行";
+    case "paused": return "暂停";
     case "waiting_approval": return "审批";
     case "error": return "异常";
     case "stopped": return "停止";

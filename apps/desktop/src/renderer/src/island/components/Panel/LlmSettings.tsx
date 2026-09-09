@@ -1,105 +1,81 @@
 /**
- * LlmSettings.tsx — LLM 配置子组件（文本/视觉分离）
+ * LlmSettings.tsx — LLM 配置子组件（单一多模态主大脑）
  *
- * 供应商下拉 + API Key + 模型选择 + 启用开关
+ * 供应商下拉 + API Key + 模型选择 + 连通性测试
+ * 配置同时写入 textLLM 和 visionLLM，后端 agent loop 自动使用同一模型。
  */
 import { useState, useEffect } from "react";
 import type { z } from "zod";
 import { useIslandStore } from "../../store/islandStore";
 import type { AppConfigPayload, LLMConfigSchema } from "@shared/island-contracts";
 
-// 供应商预设（与后端 provider-presets 保持同步）
+// 供应商预设（2026-09 最新多模态模型）
 const PROVIDERS = [
-  { id: "deepseek", label: "DeepSeek", models: ["deepseek-chat", "deepseek-reasoner"] },
-  { id: "qwen", label: "阿里云 Qwen", models: ["qwen-plus", "qwen-turbo", "qwen-vl-plus", "qwen-vl-max"] },
-  { id: "openai", label: "OpenAI", models: ["gpt-4o", "gpt-4o-mini"] },
-  { id: "glm", label: "智谱 GLM", models: ["glm-4-plus", "glm-4-flash", "glm-4v-plus"] },
-  { id: "custom", label: "自定义", models: [] },
+  { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", models: ["deepseek-v4-flash-vision-exp"] },
+  { id: "qwen", label: "阿里云 Qwen", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: ["qwen3.8-flash", "qwen3.7-flash", "qwen3.7-plus", "qwen3.8-plus", "ZHIPU/GLM-5.3-Flash"] },
+  { id: "glm", label: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-5.3-flash", "glm-5v-turbo"] },
+  { id: "kimi", label: "Kimi 月之暗面", baseUrl: "https://api.moonshot.cn/v1", models: ["kimi-k3", "kimi-k2.6", "kimi-k2.5"] },
+  { id: "custom", label: "自定义", baseUrl: "", models: [] },
 ] as const;
+
+type LLM = z.infer<typeof LLMConfigSchema>;
 
 export function LlmSettings({ config }: { config: AppConfigPayload }) {
   const saveConfig = useIslandStore((s) => s.saveConfig);
-  const [textLLM, setTextLLM] = useState(config.agent.textLLM);
-  const [visionLLM, setVisionLLM] = useState(config.agent.visionLLM);
-  const [savedText, setSavedText] = useState(false);
-  const [savedVision, setSavedVision] = useState(false);
+  const pushToast = useIslandStore((s) => s.pushToast);
+  // 使用 textLLM 作为主配置源（与 visionLLM 同步）
+  const [llm, setLlm] = useState<LLM>(config.agent.textLLM);
+  const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
 
-  // 配置刷新时同步
-  useEffect(() => { setTextLLM(config.agent.textLLM); }, [config.agent.textLLM]);
-  useEffect(() => { setVisionLLM(config.agent.visionLLM); }, [config.agent.visionLLM]);
+  useEffect(() => { setLlm(config.agent.textLLM); }, [config.agent.textLLM]);
 
-  const handleSaveText = async () => {
-    await saveConfig({
-      agent: { textLLM: textLLM },
+  const handleSave = async (): Promise<boolean> => {
+    // 同时写入 textLLM 和 visionLLM，使后端使用同一多模态模型
+    const res = await saveConfig({
+      agent: {
+        textLLM: llm,
+        visionLLM: { ...llm, enabled: true },
+      },
     });
-    setSavedText(true);
-    setTimeout(() => setSavedText(false), 2000);
+    if (res.ok) {
+      pushToast("success", "模型配置已保存");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      return true;
+    }
+    pushToast("error", `保存失败: ${res.error ?? '未知错误'}`);
+    return false;
   };
 
-  const handleSaveVision = async () => {
-    await saveConfig({
-      agent: { visionLLM },
-    });
-    setSavedVision(true);
-    setTimeout(() => setSavedVision(false), 2000);
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    // P2-16 修复：保存失败时中止测试；已保存 Key（掩码显示）也可直接测试真实连通性
+    const saved = await handleSave();
+    if (!saved) {
+      setTestResult("✕ 配置保存失败，无法发起测试");
+      setTesting(false);
+      return;
+    }
+    const res = await window.islandAPI.testLlmConnectivity("textLLM");
+    if (res.ok) {
+      setTestResult(res.data.ok ? `✓ ${res.data.latencyMs}ms · ${res.data.reply ?? ""}` : `✕ ${res.data.error}`);
+    } else {
+      setTestResult(`✕ ${res.error}`);
+    }
+    setTesting(false);
   };
 
-  return (
-    <div className="space-y-5">
-      {/* 文本模型 */}
-      <LlmSection
-        title="文本 / 规划模型"
-        desc="负责任务分解、推理决策、文本输出"
-        llm={textLLM}
-        onChange={setTextLLM}
-        onSave={handleSaveText}
-        saved={savedText}
-      />
-
-      {/* 视觉模型 */}
-      <LlmSection
-        title="视觉模型"
-        desc="负责截图理解、界面元素识别"
-        llm={visionLLM}
-        onChange={setVisionLLM}
-        onSave={handleSaveVision}
-        saved={savedVision}
-        hasToggle
-      />
-    </div>
-  );
-}
-
-interface LlmSectionProps {
-  title: string;
-  desc: string;
-  llm: z.infer<typeof LLMConfigSchema>;
-  onChange: (v: z.infer<typeof LLMConfigSchema>) => void;
-  onSave: () => void;
-  saved: boolean;
-  hasToggle?: boolean;
-}
-
-function LlmSection({ title, desc, llm, onChange, onSave, saved, hasToggle }: LlmSectionProps) {
   const provider = PROVIDERS.find((p) => p.id === llm.provider);
   const models = provider?.models ?? [];
 
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-      {/* 标题行 */}
-      <div className="mb-3 flex items-start justify-between">
-        <div>
-          <h4 className="text-[12.5px] font-semibold text-white/80">{title}</h4>
-          <p className="mt-0.5 text-[10.5px] text-white/30">{desc}</p>
-        </div>
-        {hasToggle && (
-          <button
-            data-interactive
-            className={`island-toggle ${llm.enabled ? "island-toggle--on" : ""}`}
-            onClick={() => onChange({ ...llm, enabled: !llm.enabled })}
-            title={llm.enabled ? "已启用" : "已禁用"}
-          />
-        )}
+    <div className="rounded-xl border ig-border-line ig-bg-panel p-3">
+      <div className="mb-3">
+        <h4 className="text-[12.5px] font-semibold t-strong">主大脑（多模态模型）</h4>
+        <p className="mt-0.5 text-[10.5px] t-faint">负责任务规划、推理决策、截图理解、界面识别</p>
       </div>
 
       {/* 供应商 */}
@@ -114,7 +90,7 @@ function LlmSection({ title, desc, llm, onChange, onSave, saved, hasToggle }: Ll
             onChange({
               ...llm,
               provider: e.target.value,
-              baseUrl: p?.id === "custom" ? llm.baseUrl : (p as { baseUrl?: string } | undefined)?.baseUrl ?? "",
+              baseUrl: e.target.value === "custom" ? llm.baseUrl : (p?.baseUrl ?? ""),
               model: firstModel || llm.model,
             });
           }}
@@ -132,7 +108,7 @@ function LlmSection({ title, desc, llm, onChange, onSave, saved, hasToggle }: Ll
         <input
           className="island-input"
           value={llm.baseUrl}
-          onChange={(e) => onChange({ ...llm, baseUrl: e.target.value })}
+          onChange={(e) => setLlm({ ...llm, baseUrl: e.target.value })}
           readOnly={llm.provider !== "custom"}
           style={llm.provider !== "custom" ? { opacity: 0.6 } : undefined}
           data-interactive
@@ -146,7 +122,7 @@ function LlmSection({ title, desc, llm, onChange, onSave, saved, hasToggle }: Ll
           className="island-input"
           type="password"
           value={llm.apiKey}
-          onChange={(e) => onChange({ ...llm, apiKey: e.target.value })}
+          onChange={(e) => setLlm({ ...llm, apiKey: e.target.value })}
           placeholder="sk-…"
           data-interactive
         />
@@ -159,13 +135,13 @@ function LlmSection({ title, desc, llm, onChange, onSave, saved, hasToggle }: Ll
           <select
             className="island-select w-full"
             value={llm.model}
-            onChange={(e) => onChange({ ...llm, model: e.target.value })}
+            onChange={(e) => setLlm({ ...llm, model: e.target.value })}
             data-interactive
           >
             {models.map((m) => (
               <option key={m} value={m}>{m}</option>
             ))}
-            {!models.includes(llm.model as never) && (
+            {!(models as readonly string[]).includes(llm.model) && (
               <option value={llm.model}>{llm.model}</option>
             )}
           </select>
@@ -173,23 +149,42 @@ function LlmSection({ title, desc, llm, onChange, onSave, saved, hasToggle }: Ll
           <input
             className="island-input"
             value={llm.model}
-            onChange={(e) => onChange({ ...llm, model: e.target.value })}
+            onChange={(e) => setLlm({ ...llm, model: e.target.value })}
             placeholder="model-name"
             data-interactive
           />
         )}
       </div>
 
-      {/* 保存 */}
-      <button
-        className="island-btn island-btn--primary w-full text-[11px]"
-        onClick={onSave}
-        disabled={saved}
-        data-interactive
-      >
-        {saved ? "✓ 已保存" : "保存配置"}
-      </button>
+      {/* 保存 + 连通性测试 */}
+      <div className="flex gap-2">
+        <button
+          className="island-btn island-btn--primary flex-1 text-[11px]"
+          onClick={() => void handleSave()}
+          disabled={saved}
+          data-interactive
+        >
+          {saved ? "✓ 已保存" : "保存配置"}
+        </button>
+        <button
+          className="island-btn island-btn--ghost text-[11px]"
+          disabled={testing || !llm.apiKey}
+          title={llm.apiKey.includes("****") ? "使用已保存的 Key 发起 1 次真实调用" : "保存后发起 1 次真实调用"}
+          onClick={() => void handleTest()}
+          data-interactive
+        >
+          {testing ? "测试中…" : "测试连通"}
+        </button>
+      </div>
+      {testResult && (
+        <div className={`mt-2 rounded-lg px-2.5 py-1.5 text-[10.5px] ${testResult.startsWith("✓") ? "bg-emerald-500/[0.07] text-emerald-300" : "bg-red-500/[0.07] text-red-300"}`}>
+          {testResult}
+        </div>
+      )}
     </div>
   );
-}
 
+  function onChange(v: LLM) {
+    setLlm(v);
+  }
+}

@@ -1,6 +1,6 @@
 {
-  "name": "@desktop-agi/shared-types",
-  "version": "0.1.0",
+  "name": "@ximo-visagent/shared-types",
+  "version": "1.0.0",
   "private": true,
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -14,7 +14,8 @@
   },
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --max-warnings=0"
   },
   "devDependencies": {
     "tsup": "^8.3.5",

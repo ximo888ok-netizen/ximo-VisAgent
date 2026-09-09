@@ -11,12 +11,16 @@
  */
 import {
   BrowserWindow,
+  nativeImage,
   screen,
   nativeTheme,
   type Rectangle,
 } from "electron";
 import * as path from "node:path";
+import * as fs from "node:fs";
 import { ISLAND_CHANNELS } from "../../shared/island-contracts";
+import { excludeWindowFromCapture, supportsCaptureExclusion } from "../win-effects";
+import islandIconPath from "../../../resources/icon.png?asset";
 import type {
   AgentStepEvent,
   ApprovalRequest,
@@ -28,8 +32,73 @@ export const ISLAND_COLLAPSED_HEIGHT = 64;
 export const ISLAND_EXPANDED_HEIGHT = 280;
 /** 屏幕顶部留白（需求：距边缘 10px） */
 const TOP_MARGIN = 10;
+/** 布局持久化文件（位置独立于 config，避免与 safeStorage 解密路径耦合） */
+const LAYOUT_FILE = () =>
+  path.join((process.env.APPDATA ?? process.cwd()), "ximo-VisAgent", "island-layout.json");
 
 let islandWindow: BrowserWindow | null = null;
+let saveLayoutTimer: NodeJS.Timeout | null = null;
+/** P1-11：用户主动隐藏标记（区别于全屏自动隐身，watcher 不再强行弹回） */
+let userHidden = false;
+
+/** 读取持久化布局（失败返回 null，调用方走默认居中） */
+function loadLayout(): { x: number; y: number; width: number; height: number } | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(LAYOUT_FILE(), "utf8")) as { x?: unknown; y?: unknown; width?: unknown; height?: unknown };
+    if (typeof raw.x === "number" && typeof raw.y === "number") {
+      return {
+        x: raw.x,
+        y: raw.y,
+        width: typeof raw.width === "number" ? raw.width : ISLAND_MIN_WIDTH,
+        height: typeof raw.height === "number" ? raw.height : ISLAND_COLLAPSED_HEIGHT,
+      };
+    }
+  } catch { /* 无文件或损坏 */ }
+  return null;
+}
+
+/** 防抖持久化窗口位置 */
+function saveLayoutDebounced(): void {
+  if (saveLayoutTimer) clearTimeout(saveLayoutTimer);
+  saveLayoutTimer = setTimeout(() => {
+    const win = getIslandWindow();
+    if (!win) return;
+    try {
+      const b = win.getBounds();
+      fs.mkdirSync(path.dirname(LAYOUT_FILE()), { recursive: true });
+      fs.writeFileSync(LAYOUT_FILE(), JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height }), "utf8");
+    } catch { /* 写盘失败忽略 */ }
+  }, 500);
+}
+
+/** 把窗口位置 clamp 进某个显示器工作区（防拖出屏幕） */
+function clampIntoWorkArea(x: number, y: number, w: number, h: number): Rectangle {
+  const display = screen.getDisplayMatching({ x, y, width: w, height: h });
+  const area = display.workArea;
+  return {
+    x: Math.max(area.x, Math.min(x, area.x + area.width - w)),
+    y: Math.max(area.y, Math.min(y, area.y + area.height - h)),
+    width: w,
+    height: h,
+  };
+}
+
+/** 岛的初始边界（A1：恢复上次位置+尺寸并 clamp；无记录则顶部居中）。
+ *  Y 恒为顶部吸附位（TOP_MARGIN）——历史持久化的 y 会被纠正，岛永远在屏幕顶部。
+ *  splash 与岛共用此计算，保证启动动画与真岛同位置同尺寸交接（见 windows/splash.ts）。 */
+export function getIslandInitialBounds(): Rectangle {
+  const primary = screen.getPrimaryDisplay().workArea;
+  const saved = loadLayout();
+  const width = saved?.width ?? ISLAND_MIN_WIDTH;
+  const height = saved?.height ?? ISLAND_COLLAPSED_HEIGHT;
+  if (saved) return clampIntoWorkArea(saved.x, primary.y + TOP_MARGIN, width, height);
+  return {
+    x: Math.round(primary.x + (primary.width - width) / 2),
+    y: Math.round(primary.y + TOP_MARGIN),
+    width,
+    height,
+  };
+}
 
 /* ------------------------------------------------------------------ */
 /* 窗口创建                                                             */
@@ -40,45 +109,52 @@ export function createIslandWindow(): BrowserWindow {
     return islandWindow;
   }
 
-  const primary = screen.getPrimaryDisplay().workArea;
-  const width = ISLAND_MIN_WIDTH;
-  const height = ISLAND_COLLAPSED_HEIGHT;
-
   islandWindow = new BrowserWindow({
-    width,
-    height,
-    x: Math.round(primary.x + (primary.width - width) / 2),
-    y: Math.round(primary.y + TOP_MARGIN),
+    // A1：恢复上次位置+尺寸（clamp 进工作区）；无记录则默认顶部居中
+    ...getIslandInitialBounds(),
+    icon: nativeImage.createFromPath(islandIconPath), // Alt-Tab/任务组显示项目 logo
     transparent: true,
     frame: false,
     alwaysOnTop: true,
     skipTaskbar: true,
-    focusable: false,
-    resizable: false,
+    focusable: true,
+    resizable: true,
     maximizable: false,
     fullscreenable: false,
-    hasShadow: false, // 阴影由 CSS box-shadow 提供，避免透明窗口黑边
+    hasShadow: false,
     backgroundColor: "#00000000",
+    minWidth: ISLAND_MIN_WIDTH,
+    minHeight: ISLAND_COLLAPSED_HEIGHT,
     webPreferences: {
       preload: path.join(__dirname, "../preload/island.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
-  // 默认忽略鼠标事件（穿透到桌面图标）；渲染层命中交互区后动态放开
-  islandWindow.setIgnoreMouseEvents(true, { forward: true });
-  // Windows 上 alwaysOnTop(true) 默认 normal 级别，会被其他置顶窗口覆盖。
-  // 使用 screen-saver 级别确保始终在最顶层。
-  islandWindow.setAlwaysOnTop(true, "screen-saver");
+  islandWindow.webContents.on("will-navigate", (e) => e.preventDefault());
+  islandWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
-  // focusable:false 的透明窗口在 Windows 上不会自动显示，需显式 showInactive
+  islandWindow.setAlwaysOnTop(true, "screen-saver");
   islandWindow.showInactive();
+
+  // 采集排除：岛不进 Agent 截图——自己的提示框会遮挡目标区域，模型还会浪费步数处理自己的 UI
+  // （不影响用户肉眼所见；副作用是用户截图/镜像里也看不到岛）
+  if (!excludeWindowFromCapture(islandWindow.getNativeWindowHandle()) && supportsCaptureExclusion()) {
+    console.warn('[island] 采集排除未生效，岛会出现在 Agent 截图中');
+  }
 
   islandWindow.on("closed", () => {
     islandWindow = null;
   });
+  // 顶部吸附：拖拽只保留水平自由度，松手后 Y 弹回 TOP_MARGIN
+  // （用户垂直拖动是肌肉记忆，强制锁死会打架；moved 纠正最顺滑）
+  islandWindow.on("moved", () => {
+    snapToTop();
+    saveLayoutDebounced();
+  });
+  islandWindow.on("resize", () => saveLayoutDebounced());
 
   // 主题变化 -> 推送渲染层切换 dark 类
   const onTheme = (): void => {
@@ -107,6 +183,18 @@ export function getIslandWindow(): BrowserWindow | null {
 /* 布局                                                               */
 /* ------------------------------------------------------------------ */
 
+/** 顶部吸附：把 Y 纠正回所在显示器工作区顶部 + TOP_MARGIN（水平位置不动）。
+ *  moved 事件与 resize 通道都走这里——岛是「顶部吸附条」，只有水平自由度。 */
+function snapToTop(): void {
+  const win = getIslandWindow();
+  if (!win) return;
+  const b = win.getBounds();
+  const area = screen.getDisplayMatching(b).workArea;
+  const targetY = Math.round(area.y + TOP_MARGIN);
+  if (b.y === targetY) return;
+  win.setBounds({ x: b.x, y: targetY, width: b.width, height: b.height }, false);
+}
+
 /** 将窗口锚定到屏幕顶部居中；display 缺省时取窗口所在显示器 */
 export function reAnchor(): void {
   const win = getIslandWindow();
@@ -121,23 +209,19 @@ export function reAnchor(): void {
   win.setBounds({ x, y, width: w, height: h }, false);
 }
 
-/** 由渲染层内容尺寸驱动窗口缩放（锚定顶部中央不变） */
+/**
+ * 由渲染层内容尺寸驱动窗口缩放。
+ * A1：保持水平锚定（用户拖到哪就在哪），Y 恒锁定顶部吸附位。
+ */
 export function resizeIsland(width: number, height: number): void {
   const win = getIslandWindow();
   if (!win) return;
   const clampW = Math.max(ISLAND_MIN_WIDTH, Math.min(ISLAND_MAX_WIDTH, Math.round(width)));
   const clampH = Math.round(height);
-
-  const area = screen.getDisplayMatching(win.getBounds()).workArea;
-  const cx = win.getBounds().x + win.getBounds().width / 2;
-  const x = Math.round(cx - clampW / 2);
-  const y = Math.round(area.y + TOP_MARGIN);
-  win.setBounds({
-    x: Math.max(area.x, Math.min(x, area.x + area.width - clampW)),
-    y,
-    width: clampW,
-    height: clampH,
-  });
+  const b = win.getBounds();
+  const area = screen.getDisplayMatching(b).workArea;
+  const clamped = clampIntoWorkArea(b.x, Math.round(area.y + TOP_MARGIN), clampW, clampH);
+  win.setBounds(clamped, false);
 }
 
 /** 唤出/聚焦全功能主窗口（由调用方通过 deps 提供真实实现） */
@@ -154,17 +238,19 @@ export function focusMainWindow(getMainWindow: () => BrowserWindow | null): bool
 /* 显示 / 隐藏 / 鼠标穿透 / 输入焦点                                   */
 /* ------------------------------------------------------------------ */
 
-/** 显示灵动岛（不抢焦点） */
+/** 显示灵动岛（不抢焦点；清除用户主动隐藏标记） */
 export function showIsland(): void {
   const win = getIslandWindow();
   if (!win) return;
+  userHidden = false;
   win.showInactive();
 }
 
-/** 隐藏灵动岛 */
+/** 隐藏灵动岛（用户主动隐藏，全屏 watcher 不再自动复现） */
 export function hideIsland(): void {
   const win = getIslandWindow();
   if (!win) return;
+  userHidden = true;
   win.hide();
 }
 
@@ -173,9 +259,11 @@ export function toggleIsland(): boolean {
   const win = getIslandWindow();
   if (!win) return false;
   if (win.isVisible()) {
+    userHidden = true;
     win.hide();
     return false;
   } else {
+    userHidden = false;
     win.showInactive();
     return true;
   }
@@ -204,6 +292,11 @@ export function publishApprovalPending(request: ApprovalRequest): boolean {
   return broadcast(ISLAND_CHANNELS.approvalPending, request);
 }
 
+/** 通用岛窗口广播（镜像帧/步骤详情/用量等） */
+export function broadcastToIsland(channel: string, payload: unknown): boolean {
+  return broadcast(channel, payload);
+}
+
 function broadcast(channel: string, payload: unknown): boolean {
   const win = getIslandWindow();
   if (!win || win.webContents.isDestroyed()) return false;
@@ -226,7 +319,9 @@ export function isForegroundFullscreen(): boolean {
   if (process.platform !== "win32") return false;
   try {
     // 可选依赖：pnpm add node-window-manager
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
+    // 可选原生依赖：未安装时必须保持应用可用，因此不能顶部 import
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, no-restricted-syntax
     const wm = require("node-window-manager");
     const active = wm.windowManager.getActiveWindow();
     if (!active) return false;
@@ -251,8 +346,8 @@ function startFullscreenWatcher(win: BrowserWindow): void {
     const fullscreen = isForegroundFullscreen();
     if (fullscreen && win.isVisible()) {
       win.hide();
-    } else if (!fullscreen && !win.isVisible() && !win.isMinimized()) {
-      win.showInactive(); // 退出全屏自动复现，但不抢焦点
+    } else if (!fullscreen && !win.isVisible() && !userHidden && !win.isMinimized()) {
+      win.showInactive(); // 退出全屏自动复现，但不抢焦点；用户主动隐藏时不弹回
     }
   }, 1000);
   win.on("closed", () => clearInterval(interval));

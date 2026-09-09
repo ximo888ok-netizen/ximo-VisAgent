@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- 与 island.html 同源的收紧版 CSP（splash 不联网、不加载外部资源） -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+    />
+    <title>ximo-VisAgent</title>
+    <style>
+      /* 变量值逐一取自 island.css 的双主题定义（静态页不引框架：启动动画的意义就是首帧即显） */
+      :root {
+        --bg: #1a1a1a;
+        --border: rgba(255, 255, 255, 0.08);
+        --t-strong: #f2f4f8;
+        --t-muted: rgba(238, 241, 246, 0.42);
+        --t-faint: rgba(238, 241, 246, 0.25);
+        --track: rgba(255, 255, 255, 0.08);
+        --accent: #3fe0a0; /* --c-thinking */
+        --ease: cubic-bezier(0.32, 0.72, 0, 1);
+      }
+      html.light {
+        --bg: #ffffff;
+        --border: rgba(24, 28, 40, 0.16);
+        --t-strong: #171a21;
+        --t-muted: rgba(26, 29, 36, 0.46);
+        --t-faint: rgba(26, 29, 36, 0.28);
+        --track: rgba(15, 23, 42, 0.1);
+        --accent: #0e9f6e; /* 浅色主题的 thinking 绿 */
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+      }
+      body {
+        font-family: "SF Pro Text", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* 岛的收起态外壳：64px 高、圆角 22、纯色 + 低透明度描边（IslandShell 同款） */
+      .bar {
+        position: relative;
+        box-sizing: border-box;
+        width: 100%;
+        height: 64px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        display: flex;
+        align-items: stretch;
+        overflow: hidden;
+        opacity: 0;
+        transform: translateY(-6px);
+        animation: bar-in 420ms var(--ease) forwards;
+      }
+      @keyframes bar-in {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .bar.out {
+        animation: bar-out 300ms var(--ease) forwards;
+      }
+      @keyframes bar-out {
+        to {
+          opacity: 0;
+        }
+      }
+
+      /* 左缘拖拽点：与 IslandShell 的手柄 SVG 一比一复刻（可发现性：这看起来就是岛） */
+      .grip {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        flex-shrink: 0;
+        opacity: 0.4;
+      }
+
+      /* 状态区：呼吸灯 + 标签（IslandStatus 位置语义） */
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        flex-shrink: 0;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        animation: breathe 1.6s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+      .status-label {
+        color: var(--t-strong);
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .divider {
+        width: 1px;
+        margin: 15px 0;
+        background: var(--track);
+        flex-shrink: 0;
+      }
+
+      /* 中庭：阶段文本（IslandLog 位置语义，启动阶段在此滚动） */
+      .stage-area {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        padding: 0 12px;
+      }
+      .stage {
+        color: var(--t-muted);
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: opacity 180ms ease;
+        min-height: 14px;
+      }
+
+      /* 右区：品牌字标（IslandActions 位置语义） */
+      .brand {
+        display: flex;
+        align-items: center;
+        padding: 0 16px 0 12px;
+        flex-shrink: 0;
+        color: var(--t-faint);
+        font-size: 11px;
+        letter-spacing: 0.5px;
+      }
+
+      /* 底缘进度线：全宽 2px，真实启动节点驱动宽度 */
+      .progress {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 7px;
+        height: 2px;
+        border-radius: 1px;
+        background: var(--track);
+        overflow: hidden;
+      }
+      .fill {
+        height: 100%;
+        width: 10%;
+        background: var(--accent);
+        border-radius: 1px;
+        transition: width 500ms var(--ease);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .bar,
+        .bar.out {
+          animation-duration: 1ms;
+        }
+        .dot {
+          animation: none;
+          opacity: 0.7;
+        }
+        .fill {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bar" id="bar">
+      <span class="grip">
+        <svg width="8" height="16" viewBox="0 0 8 16" fill="none">
+          <circle cx="2" cy="3" r="1.2" fill="var(--t-faint)" />
+          <circle cx="6" cy="3" r="1.2" fill="var(--t-faint)" />
+          <circle cx="2" cy="8" r="1.2" fill="var(--t-faint)" />
+          <circle cx="6" cy="8" r="1.2" fill="var(--t-faint)" />
+          <circle cx="2" cy="13" r="1.2" fill="var(--t-faint)" />
+          <circle cx="6" cy="13" r="1.2" fill="var(--t-faint)" />
+        </svg>
+      </span>
+      <div class="status">
+        <span class="dot"></span>
+        <span class="status-label">启动中</span>
+      </div>
+      <span class="divider"></span>
+      <div class="stage-area">
+        <div class="stage" id="stage">正在初始化…</div>
+      </div>
+      <span class="divider"></span>
+      <span class="brand">ximo-VisAgent</span>
+      <div class="progress"><div class="fill" id="fill"></div></div>
+    </div>
+    <script>
+      // 主题：主进程经 URL 参数传入（静态页无 preload，不为一次性窗口扩 IPC 契约）
+      var theme = new URLSearchParams(location.search).get("theme");
+      document.documentElement.classList.toggle("light", theme === "light");
+
+      // 由主进程经 executeJavaScript 驱动（见 splash.ts 头注释）
+      window.__splashStage = function (text, ratio) {
+        var stage = document.getElementById("stage");
+        stage.style.opacity = "0";
+        setTimeout(function () {
+          stage.textContent = text;
+          stage.style.opacity = "1";
+        }, 180);
+        var pct = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
+        document.getElementById("fill").style.width = pct + "%";
+      };
+      window.__splashOut = function () {
+        document.getElementById("bar").classList.add("out");
+      };
+    </script>
+  </body>
+</html>

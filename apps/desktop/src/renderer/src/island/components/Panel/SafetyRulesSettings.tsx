@@ -46,6 +46,7 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
     await saveConfig({ safetyRules: rules });
     setDirty(false);
     setSaved(true);
+    useIslandStore.getState().pushToast("success", "安全规则已保存并即时生效");
     setTimeout(() => setSaved(false), 2000);
   };
 
@@ -53,9 +54,9 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
     <div>
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h4 className="text-[12.5px] font-semibold text-white/80">安全规则</h4>
-          <p className="mt-0.5 text-[10.5px] text-white/30">
-            拦截高危操作（L3 禁止）或提升审批级别（L2）
+          <h4 className="text-[12.5px] font-semibold t-strong">安全规则</h4>
+          <p className="mt-0.5 text-[10.5px] t-faint">
+            标记高危操作（L3）或提升审批级别（L2）；L3 是否自动放行取决于「完全自主」档位
           </p>
         </div>
         <button
@@ -71,19 +72,19 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
       {/* 规则列表 */}
       <div className="space-y-2">
         {rules.length === 0 && (
-          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] py-6 text-center text-[11px] text-white/25">
+          <div className="rounded-lg border ig-border-line ig-bg-panel py-6 text-center text-[11px] t-faint">
             暂无安全规则
           </div>
         )}
         {rules.map((rule, i) => (
           <div
             key={rule.id}
-            className="island-fade-up rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5"
+            className="island-fade-up rounded-lg border ig-border-line ig-bg-panel p-2.5"
             style={{ animationDelay: `${i * 40}ms` }}
           >
             {/* 行 1：ID + 开关 + 删除 */}
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-[10.5px] font-mono text-white/40 truncate" style={{ maxWidth: 120 }}>
+              <span className="text-[10.5px] font-mono t-muted truncate" style={{ maxWidth: 120 }}>
                 {rule.id}
               </span>
               <div className="flex items-center gap-2">
@@ -142,7 +143,7 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
                 <option value={0}>L0 只读</option>
                 <option value={1}>L1 常规</option>
                 <option value={2}>L2 审批</option>
-                <option value={3}>L3 禁止</option>
+                <option value={3}>L3 高危</option>
               </select>
             </div>
           </div>

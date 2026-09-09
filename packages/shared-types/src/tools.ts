@@ -27,6 +27,6 @@ export interface ToolSchema {
   name: string;
   description: string;
   level: OperationLevel; // 策略：L0/L1 自动，L2 审批，L3 默认禁止
-  source: 'computer' | 'browser' | 'files' | 'office';
+  source: 'computer' | 'browser' | 'files' | 'office' | 'meta' | 'communication';
   parameters: Record<string, unknown>;
 }

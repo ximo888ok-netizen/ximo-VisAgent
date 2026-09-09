@@ -45,11 +45,13 @@ test('UIA elementRect 能定位窗口节点', async () => {
   assert.ok(typeof rect.w === 'number' && rect.w > 0, '窗口应有尺寸');
 });
 
-test('SendInput 鼠标绝对移动不报错（移动到主屏中心）', () => {
-  const { getSystemDpi, mouseMoveTo } = control;
+test('SendInput 鼠标移动不报错（移动到主屏中心）', async () => {
+  const { getSystemDpi, mouseClick } = control;
   const dpi = getSystemDpi();
   assert.ok(dpi >= 96, `系统 DPI 应正常: ${dpi}`);
-  mouseMoveTo(960, 540); // 主屏中心（1024x768 及以上屏幕）
+  // mouseClick 内部会先沿人类轨迹移动到目标位置，再执行点击
+  // 这里用 right 键避免误触左键操作
+  await mouseClick(960, 540, 'right', 1);
 });
 
 test('AgentToolExecutor 对象可实例化', () => {

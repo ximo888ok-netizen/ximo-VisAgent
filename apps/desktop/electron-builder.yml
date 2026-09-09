@@ -1,10 +1,17 @@
-productName: Desktop AGI
-appId: io.ximo.desktop-agi
-copyright: Copyright © 2026 Desktop AGI
+productName: ximo-VisAgent
+appId: io.ximo.visagent
+copyright: Copyright © 2026 ximo-VisAgent
 directories:
   buildResources: build
   output: release
+# 只保留中英文 locale（全量 55 种语言 ~48MB，UI 与系统托盘均无其他语言入口）
+electronLanguages:
+  - zh-CN
+  - en-US
+# afterPack：清 better-sqlite3 编译中间产物 / koffi 非 win32 二进制（见 scripts/trim-after-pack.cjs）
+afterPack: ./scripts/trim-after-pack.cjs
 files:
+  - resources/**/*
   - out/**/*
   - package.json
   - "!**/*.map"
@@ -16,11 +23,9 @@ asarUnpack:
   - "**/*.node"
   - node_modules/better-sqlite3/**
   - node_modules/koffi/**
-  - node_modules/tesseract.js-core/**
-  - node_modules/playwright-core/**
-  - node_modules/playwright/**
 npmRebuild: false
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch:
@@ -31,6 +36,6 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Desktop AGI
+  shortcutName: ximo-VisAgent
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/

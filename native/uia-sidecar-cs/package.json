@@ -1,5 +1,5 @@
 {
-  "name": "@desktop-agi/uia-sidecar-cs",
+  "name": "@ximo-visagent/uia-sidecar-cs",
   "version": "0.1.0",
   "private": true,
   "scripts": {

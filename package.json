@@ -1,30 +1,42 @@
 {
-  "name": "desktop-agi",
-  "version": "0.1.0",
+  "name": "ximo-visagent",
+  "version": "1.0.0",
   "private": true,
-  "description": "Desktop AGI - AI 操控 Windows 桌面完成办公任务的智能体",
+  "description": "ximo-VisAgent - AI 操控 Windows 桌面完成办公任务的智能体",
   "packageManager": "pnpm@11.5.0",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "dev": "turbo run dev",
-    "dev:desktop": "pnpm --filter @desktop-agi/desktop dev",
-    "preview": "pnpm --filter @desktop-agi/desktop start",
+    "dev:desktop": "pnpm --filter @ximo-visagent/desktop dev",
+    "preview": "pnpm --filter @ximo-visagent/desktop start",
     "build": "turbo run build",
     "build:packages": "turbo run build --filter=\"./packages/*\"",
-    "build:desktop": "pnpm --filter @desktop-agi/desktop build",
-    "test": "turbo run test --filter=\"./packages/*\"",
-    "test:device": "pnpm --filter @desktop-agi/control-kit test:device",
+    "build:desktop": "pnpm --filter @ximo-visagent/desktop build",
+    "test": "turbo run test",
+    "test:device": "pnpm --filter @ximo-visagent/control-kit test:device",
     "typecheck": "turbo run typecheck",
     "build:sidecar": "node native/uia-sidecar-cs/build.js",
     "rebuild:electron": "node scripts/rebuild-electron.js",
-    "package:win": "pnpm --filter @desktop-agi/desktop build && pnpm --filter @desktop-agi/desktop exec electron-builder --win nsis",
+    "package:win": "pnpm --filter @ximo-visagent/desktop build && pnpm --filter @ximo-visagent/desktop exec electron-builder --win nsis",
+    "e2e": "node e2e/run-e2e.mjs",
     "e2e:list": "node scripts/e2e-list.mjs",
-    "postinstall": "node native/uia-sidecar-cs/build.js"
+    "selftest": "pnpm build:desktop && pnpm --filter @ximo-visagent/desktop exec electron out/main/index.js --selftest",
+    "lint": "turbo run lint",
+    "postinstall": "node native/uia-sidecar-cs/build.js",
+    "verify": "pnpm lint && pnpm budget && pnpm typecheck && pnpm test && pnpm build",
+    "budget": "node scripts/check-budget.mjs",
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "budget:update": "node scripts/gen-budget.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
     "turbo": "^2.4.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.69.0"
   }
 }

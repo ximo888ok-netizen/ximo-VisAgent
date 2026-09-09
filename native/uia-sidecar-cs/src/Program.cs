@@ -5,9 +5,59 @@ using System.Windows.Automation;
 using System.Collections.Generic;
 using System.Text;
 using System.Globalization;
+using System.Runtime.InteropServices;
 
 namespace UiaSidecar
 {
+    public static class DpiAwareness
+    {
+        // Per-Monitor V2：UIA BoundingRectangle 返回真实物理像素，
+        // 与 Electron 侧 desktopCapturer / GetSystemMetrics 物理像素坐标系 1:1 对齐（P1-10 修复）
+        private static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new IntPtr(-4);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDPIAware();
+
+        public static void Enable()
+        {
+            try
+            {
+                if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
+                {
+                    SetProcessDPIAware(); // Win10 1703 以下回退
+                }
+            }
+            catch { /* 已设置或无权限时忽略 */ }
+        }
+    }
+
+    public static class ScreenReaderAnnounce
+    {
+        // SPI_SETSCREENREADER：向系统宣告"有屏幕阅读器在运行"（写 Profile + 广播 WM_SETTINGCHANGE）。
+        // Chromium（Chrome/Edge/Electron 应用）默认关闭 renderer accessibility，只在检测到
+        // 屏幕阅读器时按需开启；检测信号正是这个系统标志。开启后这些应用会在 UIA 树中
+        // 暴露完整控件（Name/AutomationId/BoundingRectangle），ui_locate/ui_click 即可像素级命中。
+        // 对普通使用无影响（仅辅助技术行为受影响）；UiPath 等 RPA 同样依赖此机制。
+        private const uint SPI_SETSCREENREADER = 0x0047;
+        private const uint SPIF_UPDATEINIFILE = 0x0001;
+        private const uint SPIF_SENDCHANGE = 0x0002;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
+
+        public static void Enable()
+        {
+            try
+            {
+                SystemParametersInfo(SPI_SETSCREENREADER, 1, IntPtr.Zero, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+            }
+            catch { /* 宣告失败不影响 UIA 主功能 */ }
+        }
+    }
+
     public static class Json
     {
         public static string Escape(string s)
@@ -173,6 +223,15 @@ namespace UiaSidecar
     {
         public static void Main(string[] args)
         {
+            // BUG-07 修复：强制 UTF-8 编码，避免中文 UIA 数据通过 stdout 乱码
+            try
+            {
+                Console.OutputEncoding = Encoding.UTF8;
+                Console.InputEncoding = Encoding.UTF8;
+            }
+            catch { /* 某些环境下可能不支持 */ }
+            DpiAwareness.Enable();
+            ScreenReaderAnnounce.Enable();
             string line;
             while ((line = Console.In.ReadLine()) != null)
             {

@@ -1,0 +1,54 @@
+# 门禁：lint + 存量预算 + 类型 + 单测 + 构建
+# 说明：仓库当前无远端，本文件作为推送到 GitHub 后的即用品；
+#       在此之前，等价校验是本地 `pnpm verify`。
+# 端到端 E2E（pnpm e2e）刻意不进 CI：它会真实操作一台 Windows 桌面的鼠标键盘，
+# 需要有人在环审批，只能在带桌面会话的验收机上跑。
+name: verify
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖
+        # postinstall 会编译 UIA sidecar（需要 .NET SDK）
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建内核包
+        run: pnpm build:packages
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: 存量债务预算
+        run: pnpm budget
+
+      - name: 类型检查
+        run: pnpm typecheck
+
+      - name: 单元测试（含主进程经验层）
+        run: pnpm test
+
+      - name: 构建应用
+        run: pnpm build:desktop
+
+      - name: 存储契约自检（真实 SQLite，跑在 Electron 里）
+        run: pnpm --filter @ximo-visagent/desktop exec electron out/main/index.js --selftest

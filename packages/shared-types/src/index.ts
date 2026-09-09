@@ -5,3 +5,5 @@ export * from './tools';
 export * from './agent';
 export * from './audit';
 export * from './config';
+export * from './capability';
+export * from './mission';

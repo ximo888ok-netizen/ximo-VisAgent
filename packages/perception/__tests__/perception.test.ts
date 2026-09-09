@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MindiffChangeDetector, hammingDistance, pHash64 } from '../src/screen';
 import { indexTree } from '../src/locator';
 import { monitorForPoint, logicalToPx, pxToLogical } from '../src/dpi';
-import type { UiTreeResult } from '@desktop-agi/shared-types';
+import type { UiTreeResult } from '@ximo-visagent/shared-types';
 
 function makeImage(blocks: { x: number; y: number; w: number; h: number; v: number }[]): Uint8Array {
   const size = 256;
@@ -22,16 +22,16 @@ describe('变化检测', () => {
   it('首帧必发，相同帧不发', () => {
     const d = new MindiffChangeDetector(8, 0);
     const img = makeImage([{ x: 0, y: 0, w: 128, h: 128, v: 255 }]);
-    expect(d.isChanged(img)).toBe(true); // 首帧
-    expect(d.isChanged(img)).toBe(false); // 相同
+    expect(d.isChanged(img, 256, 256)).toBe(true); // 首帧
+    expect(d.isChanged(img, 256, 256)).toBe(false); // 相同
   });
 
   it('明显变化触发', () => {
     const d = new MindiffChangeDetector(8, 0);
     const a = makeImage([{ x: 0, y: 0, w: 128, h: 128, v: 255 }]);
     const b = makeImage([{ x: 128, y: 0, w: 128, h: 128, v: 255 }]); // 白块位置右移
-    d.isChanged(a);
-    expect(d.isChanged(b)).toBe(true);
+    d.isChanged(a, 256, 256);
+    expect(d.isChanged(b, 256, 256)).toBe(true);
   });
 
   it('汉明距离正确', () => {
@@ -39,10 +39,11 @@ describe('变化检测', () => {
     expect(hammingDistance('1010', '1001')).toBe(2);
   });
 
-  it('pHash 生成固定长度', () => {
-    const buf = new Uint8Array(256 * 256 * 4).fill(128);
-    const h = pHash64(buf);
-    expect(h.length).toBe(64 * 64);
+  it('pHash 生成 64bit 固定长度', () => {
+    const size = 256;
+    const buf = new Uint8Array(size * size * 4).fill(128);
+    const h = pHash64(buf, size, size);
+    expect(h.length).toBe(64); // 8x8 = 64bit
   });
 });
 

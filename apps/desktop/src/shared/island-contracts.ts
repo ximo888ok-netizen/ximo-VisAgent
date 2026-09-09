@@ -13,36 +13,11 @@
  */
 import { z } from "zod";
 
-// 重新导出拆分模块，保持调用方 import 不变
+// 重新导出拆分模块，保持调用方 import 不变。
+// 用 export * 而非手抄名单：island-panel-schemas 已是 ./schemas/* 的聚合门面，
+// 手抄名单会让新增的 schema/类型静默丢失（正是本次要消灭的双份维护）。
 export { ISLAND_CHANNELS } from "./island-channels";
-export {
-  PANEL_MODES,
-  type PanelMode,
-  StartTaskSchema,
-  type StartTaskRequest,
-  TaskStartedSchema,
-  type TaskStartedResult,
-  CancelTaskSchema,
-  TaskFinishedSchema,
-  type TaskFinishedPayload,
-  LLMConfigSchema,
-  SafetyRuleSchema,
-  AgentConfigSchema,
-  AppConfigSchema,
-  type AppConfigPayload,
-  UpdateConfigSchema,
-  type UpdateConfigRequest,
-  QueryTasksSchema,
-  type QueryTasksRequest,
-  TaskRowSchema,
-  type TaskRowPayload,
-  QueryAuditSchema,
-  type QueryAuditRequest,
-  AuditRowSchema,
-  type AuditRowPayload,
-  ExportCsvResultSchema,
-  type ExportCsvResult,
-} from "./island-panel-schemas";
+export * from "./island-panel-schemas";
 
 /* ---------------------------------------------------------------------------
  * Agent 运行状态
@@ -50,6 +25,7 @@ export {
 export const AGENT_STATUS = [
   "idle",
   "thinking",
+  "paused",
   "waiting_approval",
   "error",
   "stopped",
@@ -96,6 +72,9 @@ export const ApprovalRequestSchema = z.object({
   screenshot: z.string().startsWith("data:image").max(900_000),
   detail: z.array(ApprovalDetailRowSchema).max(8).default([]),
   params: ApprovalParamsSchema.default({}),
+  // F4.1: 风险级别与过期时间
+  riskLevel: z.number().int().min(0).max(3).default(2),
+  expiresAt: z.number().int().positive().optional(),
 });
 
 export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;

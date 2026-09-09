@@ -4,6 +4,26 @@
 
 **权衡：** 这些指南偏向谨慎而非速度。对于琐碎任务，请自行判断。
 
+## 0. 工程契约与门禁（先读这条）
+
+本文件是**行为准则**（怎么思考、怎么动手）。仓库另有 **[`docs/engineering.md`](docs/engineering.md)** —— 它是**工程契约**（必须满足什么、由谁强制），覆盖分层与依赖方向、IPC 四步、数据库迁移纪律、安全默认值与宪法门、三层测试策略、存量债务清单。
+
+冲突时：战略原则以本文件为准，具体门禁以 `docs/engineering.md` 为准。
+
+可执行强制的检查不要靠自觉：
+
+| 命令 | 内容 |
+|---|---|
+| `pnpm verify` | lint + 存量预算 + typecheck + test + build（一条命令代表全部） |
+| `pnpm lint` | ESLint（行数上限、跨层导入、死代码、Hook 顺序、裸 disable） |
+| `pnpm budget` | 存量豁免只减不增（`scripts/budget.json`） |
+| `pnpm test` | 包内核 + 主进程纯逻辑单测（含宪法门状态机） |
+| `pnpm selftest` | 在 Electron 里对**真实 SQLite** 验证经验层/元层契约 |
+| `pnpm e2e [id]` | 真实桌面端到端任务（含人在环审批，勿放入 CI） |
+| `pnpm hooks:install` | 可选启用 `.githooks/pre-commit`（会改本机 git 配置，故需显式执行） |
+
+---
+
 ## 1. 编码前先思考
 
 **不要假设。不要隐藏困惑。明确权衡。**

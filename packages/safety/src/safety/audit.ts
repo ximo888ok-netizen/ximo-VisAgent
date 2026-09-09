@@ -1,5 +1,5 @@
 // 审计事件结构化（纯逻辑，独立于存储）
-import type { AuditEvent } from '@desktop-agi/shared-types';
+import type { AuditEvent } from '@ximo-visagent/shared-types';
 
 let _seq = 0;
 

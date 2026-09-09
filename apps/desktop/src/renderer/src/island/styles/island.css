@@ -2,29 +2,43 @@
  * island.css — 灵动岛专属样式
  *
  * 结构：
- *   1. 玻璃材质 + 主题
- *   2. 状态灯动画
- *   3. 跑马灯日志
- *   4. 面板容器 + Tab 切换
- *   5. 表单控件
- *   6. 列表 + 时间线
- *   7. 微交互（按钮 / 输入 / 滚动条）
+ *   1. 主题变量（深色默认 + html.light 浅色覆盖）+ 语义工具类
+ *   2. 玻璃材质
+ *   3. 状态灯动画
+ *   4. 跑马灯日志
+ *   5. 面板容器 + Tab 切换
+ *   6. 表单控件
+ *   7. 列表 + 时间线
+ *   8. 微交互（按钮 / 输入 / 开关 / toast / 呼吸光 / 视图滑动）
  *
- * Tailwind 负责布局工具类；动画/玻璃材质/状态色收敛在本文件。
+ * Tailwind 负责布局工具类；动画/玻璃材质/状态色/主题收敛在本文件。
+ * 组件文字色统一用 .t-strong/.t-body/.t-muted/.t-faint（跟随主题）。
  * ========================================================================== */
 
-/* ---- 1. 玻璃材质 ---------------------------------------------------------- */
+/* ---- 1. 主题变量 ---------------------------------------------------------- */
 
 :root {
-  --island-bg: rgba(30, 30, 30, 0.72);
-  --island-blur: 30px;
-  --island-border: rgba(255, 255, 255, 0.22);
-  --island-border-strong: rgba(255, 255, 255, 0.35);
-  --island-panel-bg: rgba(20, 20, 20, 0.55);
+  /* 纯色暗黑主题（默认） */
+  --island-bg: #1a1a1a;
+  --island-border: rgba(255, 255, 255, 0.08);
+  --island-border-strong: rgba(255, 255, 255, 0.18);
+  --island-panel-bg: rgba(255, 255, 255, 0.03);
   --island-panel-bg-hover: rgba(255, 255, 255, 0.06);
   --island-input-bg: rgba(255, 255, 255, 0.05);
   --island-input-border: rgba(255, 255, 255, 0.12);
   --island-input-focus: #2e7cf6;
+
+  /* 四档文字色 */
+  --ig-t-strong: #f2f4f8;
+  --ig-t-body: rgba(238, 241, 246, 0.72);
+  --ig-t-muted: rgba(238, 241, 246, 0.42);
+  --ig-t-faint: rgba(238, 241, 246, 0.25);
+
+  --ig-panel: rgba(255, 255, 255, 0.03);
+  --ig-panel-hover: rgba(255, 255, 255, 0.07);
+  --ig-line: rgba(255, 255, 255, 0.07);
+
+  --ig-toast-bg: rgba(28, 30, 36, 0.92);
 
   --c-idle: #e8eaf0;
   --c-thinking: #3fe0a0;
@@ -35,30 +49,61 @@
   --island-ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.island-glass {
+/* 纯色浅白主题（html.light） */
+html.light {
+  --island-bg: #ffffff;
+  --island-border: rgba(24, 28, 40, 0.08);
+  --island-border-strong: rgba(24, 28, 40, 0.16);
+  --island-panel-bg: rgba(15, 23, 42, 0.03);
+  --island-panel-bg-hover: rgba(15, 23, 42, 0.06);
+  --island-input-bg: rgba(15, 23, 42, 0.04);
+  --island-input-border: rgba(15, 23, 42, 0.12);
+  --island-input-focus: #2563eb;
+
+  --ig-t-strong: #171a21;
+  --ig-t-body: rgba(26, 29, 36, 0.74);
+  --ig-t-muted: rgba(26, 29, 36, 0.46);
+  --ig-t-faint: rgba(26, 29, 36, 0.28);
+
+  --ig-panel: rgba(15, 23, 42, 0.035);
+  --ig-panel-hover: rgba(15, 23, 42, 0.07);
+  --ig-line: rgba(15, 23, 42, 0.08);
+
+  --ig-toast-bg: rgba(255, 255, 255, 0.95);
+
+  --c-idle: #5b6270;
+  --c-thinking: #0e9f6e;
+  --c-waiting: #b45309;
+  --c-error: #dc2626;
+}
+
+/* 语义工具类（组件颜色统一入口，两主题自动切换） */
+.t-strong { color: var(--ig-t-strong); }
+.t-body   { color: var(--ig-t-body); }
+.t-muted  { color: var(--ig-t-muted); }
+.t-faint  { color: var(--ig-t-faint); }
+.ig-bg-panel        { background: var(--ig-panel); }
+.ig-bg-panel-hover  { background: var(--ig-panel-hover); }
+.ig-border-line     { border-color: var(--ig-line); }
+
+/* hover 变体（Tailwind v4 不为自定义类生成 hover:，需手动定义） */
+.hover\:ig-bg-panel:hover        { background: var(--ig-panel); }
+.hover\:ig-bg-panel-hover:hover  { background: var(--ig-panel-hover); }
+.hover\:t-body:hover              { color: var(--ig-t-body); }
+.hover\:t-strong:hover            { color: var(--ig-t-strong); }
+
+/* ---- 2. 纯色背景 ---- */
+
+.island-shell-bg {
   background: var(--island-bg);
-  -webkit-backdrop-filter: blur(var(--island-blur)) saturate(1.4);
-  backdrop-filter: blur(var(--island-blur)) saturate(1.4);
-  border: 1px solid var(--island-border);
-  box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.45),
-    0 0 0 0.5px rgba(255, 255, 255, 0.04) inset,
-    0 1px 0 rgba(255, 255, 255, 0.06) inset;
 }
 
-@media (prefers-color-scheme: light) {
-  .island-glass {
-    border-color: rgba(120, 126, 138, 0.5);
-  }
-}
-html.light .island-glass {
-  border-color: rgba(120, 126, 138, 0.5);
+/* 透明度控制：用户可通过 --island-opacity 调整 */
+.island-shell-bg {
+  opacity: var(--island-opacity, 1);
 }
 
-[data-interactive] { pointer-events: auto; }
-.island-passthrough { pointer-events: none; }
-
-/* ---- 2. 状态灯动画 ------------------------------------------------------- */
+/* ---- 3. 状态灯动画 ------------------------------------------------------- */
 
 @keyframes island-breathe {
   0%, 100% { opacity: 1; }
@@ -81,7 +126,7 @@ html.light .island-glass {
 .island-ring--waiting    { color: var(--c-waiting);  animation: island-pulse  1.2s ease-in-out infinite; }
 .island-ring--error      { color: var(--c-error);    animation: island-beat   1.6s ease-in-out infinite; }
 
-/* ---- 3. 跑马灯日志 ------------------------------------------------------- */
+/* ---- 4. 跑马灯日志 ------------------------------------------------------- */
 
 .island-marquee { overflow: hidden; white-space: nowrap; }
 .island-marquee__track {
@@ -97,7 +142,7 @@ html.light .island-glass {
 }
 .island-no-select { user-select: none; -webkit-user-select: none; }
 
-/* ---- 4. 面板容器 + Tab 切换 ----------------------------------------------- */
+/* ---- 5. 面板容器 + Tab 切换 ----------------------------------------------- */
 
 /** 面板内容区入场动画 */
 @keyframes island-panel-enter {
@@ -108,6 +153,15 @@ html.light .island-glass {
   animation: island-panel-enter 280ms var(--island-ease) both;
 }
 
+/** 二级视图 push 滑入（D） */
+@keyframes island-view-push {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.island-view-push {
+  animation: island-view-push 220ms var(--island-ease) both;
+}
+
 /** Tab 条 */
 .island-tabs {
   display: flex;
@@ -115,7 +169,7 @@ html.light .island-glass {
   gap: 2px;
   padding: 0 12px;
   height: 32px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--ig-line);
 }
 
 .island-tab {
@@ -123,15 +177,15 @@ html.light .island-glass {
   padding: 4px 12px;
   font-size: 11.5px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--ig-t-muted);
   cursor: pointer;
   border-radius: 6px;
   transition: color 200ms var(--island-ease), background 200ms var(--island-ease);
 }
-.island-tab:hover { color: rgba(255, 255, 255, 0.7); background: var(--island-panel-bg-hover); }
+.island-tab:hover { color: var(--ig-t-body); background: var(--ig-panel-hover); }
 .island-tab--active {
-  color: #eef1f6;
-  background: var(--island-panel-bg-hover);
+  color: var(--ig-t-strong);
+  background: var(--ig-panel-hover);
 }
 .island-tab--active::after {
   content: "";
@@ -150,24 +204,69 @@ html.light .island-glass {
   to   { width: 60%; opacity: 1; }
 }
 
+/** 竖向导航栏项 */
+.island-nav-item {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--ig-t-muted);
+  cursor: pointer;
+  transition: color 200ms var(--island-ease), background 200ms var(--island-ease);
+}
+.island-nav-item:hover { color: var(--ig-t-body); background: var(--ig-panel-hover); }
+.island-nav-item--active {
+  color: var(--ig-t-strong);
+  background: var(--ig-panel-hover);
+  position: relative;
+}
+.island-nav-item--active::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  border-radius: 0 2px 2px 0;
+  background: var(--island-input-focus);
+}
+
+/** 带文字标签的导航项：图标上、文字下，纵向排列（不用悬停猜图标） */
+.island-nav-item--labeled {
+  width: 56px;
+  height: 46px;
+  flex-direction: column;
+  gap: 2px;
+}
+.island-nav-label {
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
 /** 面板滚动区 */
 .island-panel-scroll {
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-color: var(--ig-t-faint) transparent;
 }
-.island-panel-scroll::-webkit-scrollbar { width: 5px; }
+.island-panel-scroll::-webkit-scrollbar { width: 4px; }
 .island-panel-scroll::-webkit-scrollbar-track { background: transparent; }
 .island-panel-scroll::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  background: var(--ig-t-faint);
 }
 .island-panel-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--ig-t-muted);
 }
 
-/* ---- 5. 表单控件 --------------------------------------------------------- */
+/* ---- 6. 表单控件 --------------------------------------------------------- */
 
 .island-input {
   width: 100%;
@@ -176,7 +275,7 @@ html.light .island-glass {
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 12px;
-  color: #eef1f6;
+  color: var(--ig-t-strong);
   outline: none;
   transition: border-color 200ms var(--island-ease), box-shadow 200ms var(--island-ease);
 }
@@ -184,7 +283,7 @@ html.light .island-glass {
   border-color: var(--island-input-focus);
   box-shadow: 0 0 0 3px rgba(46, 124, 246, 0.15);
 }
-.island-input::placeholder { color: rgba(255, 255, 255, 0.3); }
+.island-input::placeholder { color: var(--ig-t-faint); }
 
 .island-select {
   appearance: none;
@@ -193,27 +292,28 @@ html.light .island-glass {
   border-radius: 8px;
   padding: 6px 28px 6px 10px;
   font-size: 12px;
-  color: #eef1f6;
+  color: var(--ig-t-strong);
   cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='none' stroke='%23ffffff80' stroke-width='1.5' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='none' stroke='%23888888' stroke-width='1.5' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 8px center;
   transition: border-color 200ms var(--island-ease);
 }
 .island-select:focus { border-color: var(--island-input-focus); }
-.island-select option { background: #1a1a1a; color: #eef1f6; }
+.island-select option { background: #2a2d34; color: #eef1f6; }
+html.light .island-select option { background: #fff; color: #1a1d24; }
 
 .island-label {
   font-size: 10.5px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ig-t-muted);
   letter-spacing: 0.02em;
   text-transform: uppercase;
   margin-bottom: 4px;
   display: block;
 }
 
-/* ---- 6. 列表 + 时间线 ---------------------------------------------------- */
+/* ---- 7. 列表 + 时间线 ---------------------------------------------------- */
 
 .island-list-item {
   padding: 8px 12px;
@@ -221,7 +321,7 @@ html.light .island-glass {
   cursor: pointer;
   transition: background 160ms var(--island-ease);
 }
-.island-list-item:hover { background: var(--island-panel-bg-hover); }
+.island-list-item:hover { background: var(--ig-panel-hover); }
 .island-list-item--active {
   background: rgba(46, 124, 246, 0.12);
   border-left: 2px solid var(--island-input-focus);
@@ -236,13 +336,13 @@ html.light .island-glass {
   top: 0;
   bottom: 0;
   width: 1px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ig-line);
 }
 .island-timeline-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ig-t-faint);
   flex-shrink: 0;
   margin-top: 4px;
   position: relative;
@@ -254,7 +354,7 @@ html.light .island-glass {
 }
 .island-timeline-dot--error { background: var(--c-error); }
 
-/* ---- 7. 微交互（按钮 / 开关 / 过渡） -------------------------------------- */
+/* ---- 8. 微交互（按钮 / 开关 / toast / 呼吸光 / 过渡） ---------------------- */
 
 /** 通用按钮 */
 .island-btn {
@@ -288,11 +388,12 @@ html.light .island-glass {
   border: 1px solid rgba(229, 72, 77, 0.6);
   color: #ffa6a6;
 }
+html.light .island-btn--danger { color: #b91c1c; }
 .island-btn--ghost {
   border: 1px solid var(--island-input-border);
-  color: #d6dae2;
+  color: var(--ig-t-body);
 }
-.island-btn--ghost:hover:not(:disabled) { background: var(--island-panel-bg-hover); }
+.island-btn--ghost:hover:not(:disabled) { background: var(--ig-panel-hover); }
 
 /** 开关 */
 .island-toggle {
@@ -300,7 +401,7 @@ html.light .island-glass {
   width: 36px;
   height: 20px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--ig-t-faint);
   cursor: pointer;
   transition: background 200ms var(--island-ease);
   flex-shrink: 0;
@@ -359,3 +460,50 @@ html.light .island-glass {
   50%      { box-shadow: 0 0 0 4px rgba(46, 124, 246, 0.18); }
 }
 .island-glow:focus { animation: island-glow 2.4s ease-in-out infinite; }
+
+/** 审批呼吸边框（B3：审批 active 期间金色呼吸） */
+@keyframes island-approval-glow {
+  0%, 100% { box-shadow: 0 10px 28px rgba(0,0,0,0.45), 0 0 0 1.5px rgba(251, 191, 36, 0.55); }
+  50%      { box-shadow: 0 10px 28px rgba(0,0,0,0.45), 0 0 18px 2.5px rgba(251, 191, 36, 0.35); }
+}
+.island-approval-glow {
+  animation: island-approval-glow 2s ease-in-out infinite;
+}
+
+/** Toast（B1） */
+.island-toast {
+  background: var(--ig-toast-bg);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--island-border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  animation: island-toast-in 220ms var(--island-ease-bounce) both;
+}
+html.light .island-toast { box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14); }
+.island-toast-text { color: var(--ig-t-body); }
+@keyframes island-toast-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/** 镜像面板：Agent 点击涟漪（涟漪从点击点扩散消失） */
+@keyframes island-ripple {
+  0%   { transform: scale(0.25); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/** 回放进度条 appearance */
+input[type="range"].island-range,
+.island-panel-scroll input[type="range"] {
+  -webkit-appearance: none;
+  height: 4px;
+  border-radius: 2px;
+}
+
+/** 键盘焦点环（A4 配套：编辑输入可达性） */
+.island-input:focus-visible,
+.island-btn:focus-visible,
+.island-tab:focus-visible {
+  outline: 2px solid var(--island-input-focus);
+  outline-offset: 1px;
+}

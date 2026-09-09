@@ -15,13 +15,13 @@ export function AuditEventList() {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <div className="mx-auto mb-2 h-10 w-10 rounded-full bg-white/5 grid place-items-center">
+          <div className="mx-auto mb-2 h-10 w-10 rounded-full ig-bg-panel grid place-items-center">
             <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-              <path d="M2.5 3.5h8.5v9h-8.5z" stroke="rgba(255,255,255,0.2)" strokeWidth="1.3" strokeLinejoin="round" />
-              <path d="M4.5 6.5h4.5M4.5 8.5h3" stroke="rgba(255,255,255,0.2)" strokeWidth="1.1" strokeLinecap="round" />
+              <path d="M2.5 3.5h8.5v9h-8.5z" stroke="var(--ig-t-faint)" strokeWidth="1.3" strokeLinejoin="round" />
+              <path d="M4.5 6.5h4.5M4.5 8.5h3" stroke="var(--ig-t-faint)" strokeWidth="1.1" strokeLinecap="round" />
             </svg>
           </div>
-          <p className="text-[11px] text-white/25">选择左侧任务以查看审计</p>
+          <p className="text-[11px] t-faint">选择左侧任务以查看审计</p>
         </div>
       </div>
     );
@@ -31,7 +31,7 @@ export function AuditEventList() {
     return (
       <div className="p-4 space-y-2">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="island-skeleton h-8 rounded-lg bg-white/5" style={{ animationDelay: `${i * 100}ms` }} />
+          <div key={i} className="island-skeleton h-8 rounded-lg ig-bg-panel" style={{ animationDelay: `${i * 100}ms` }} />
         ))}
       </div>
     );
@@ -40,7 +40,7 @@ export function AuditEventList() {
   if (events.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
-        <span className="text-[11px] text-white/25">无审计事件</span>
+        <span className="text-[11px] t-faint">无审计事件</span>
       </div>
     );
   }
@@ -73,7 +73,7 @@ function AuditEventRow({ event, delay }: { event: AuditRowPayload; delay: number
       {/* 内容 */}
       <div className="flex-1 pb-1.5">
         <div className="flex items-baseline gap-2">
-          <span className="text-[10px] text-white/25 font-mono">
+          <span className="text-[10px] t-faint font-mono">
             #{event.seq}
           </span>
           <span
@@ -82,11 +82,11 @@ function AuditEventRow({ event, delay }: { event: AuditRowPayload; delay: number
           >
             {event.kind}
           </span>
-          <span className="text-[9.5px] text-white/20 ml-auto">
+          <span className="text-[9.5px] t-faint ml-auto">
             {new Date(event.timestamp).toLocaleTimeString("zh-CN", { hour12: false })}
           </span>
         </div>
-        <div className="mt-0.5 text-[11.5px] leading-snug text-white/60">
+        <div className="mt-0.5 text-[11.5px] leading-snug t-body">
           {event.detail}
         </div>
       </div>
@@ -95,14 +95,19 @@ function AuditEventRow({ event, delay }: { event: AuditRowPayload; delay: number
 }
 
 function kindToColor(kind: string): string {
+  // M04 修复：kind 集合对齐主进程实际落库值（orchestrator onAgentEvent 中 type 字段）
   switch (kind) {
-    case "PLAN": return "#60a5fa";
-    case "ACTION": return "#3fe0a0";
-    case "OBSERVATION": return "#a78bfa";
-    case "APPROVAL": return "#fbbf24";
-    case "BLOCKED": return "#f87171";
-    case "ERROR": return "#f87171";
-    case "COMPLETE": return "#3fe0a0";
-    default: return "rgba(255,255,255,0.2)";
+    case "step": return "#3fe0a0";
+    case "status": return "#60a5fa";
+    case "llm_usage": return "#a78bfa";
+    case "approval_pending": return "#fbbf24";
+    case "approval_decided": return "#fbbf24";
+    case "approval_result": return "#fbbf24";
+    case "approval_mode_changed": return "#60a5fa";
+    case "error": return "#f87171";
+    case "evidence": return "#6b7280";
+    case "task_result": return "#3fe0a0";
+    case "perception": return "#6b7280";
+    default: return "var(--ig-t-faint)";
   }
 }

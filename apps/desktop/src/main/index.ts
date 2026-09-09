@@ -1,134 +1,153 @@
-// 主进程入口：应用仅由「灵动岛」+ 托盘组成（原主窗口已完全移除）
+/**
+ * index.ts — 主进程入口（编排层）
+ *
+ * 职责：仅做依赖创建 + 启动序列调用。
+ * IPC 注册逻辑 → ipc-registry.ts
+ * 启动序列 → bootstrap.ts
+ *
+ * 子模块：
+ * - bootstrap.ts     启动序列（splash → 工具恢复 → UIA → 岛 → Aura → 托盘 → 热键 → IPC → 微信 → E2E）
+ * - ipc-registry.ts  全量 IPC handler 注册 + 依赖注入
+ */
 import path from 'node:path';
-import { app, Tray, Menu, globalShortcut } from 'electron';
-import { getUiaClient } from '@desktop-agi/control-kit';
+import fs from 'node:fs';
+import os from 'node:os';
+import { app, globalShortcut } from 'electron';
+import { getUiaClient } from '@ximo-visagent/control-kit';
 import { ZODB } from './audit-store';
+import { ExperienceStore } from './experience-store';
 import { appConfigStore } from './config-store';
 import { Orchestrator } from './orchestrator';
-import { initOcrCache, ocrShutdown } from './ocr';
-import { createIslandWindow, getIslandWindow, toggleIsland } from './windows/island';
-import { registerIslandHandlers } from './ipc/island.handlers';
-import { coerceArgs } from './island-bridge';
+import { MemoryStore } from './memory-store';
+import { ConversationStore } from './conversation-store';
+import { Scheduler } from './scheduler';
+import { getIslandWindow } from './windows/island';
+import { applyMissionSchema } from './mission-db/migrations';
+import { seedCapabilities } from './mission-db/seed-capabilities';
+import { createMissionRepo } from './mission-db/mission-repo';
+import { EmployeeStore } from './stores/employee-store';
+import { WeChatBot } from './wechat-bot';
+import { installProcessGuards } from './process-guards';
+import { bootstrap } from './bootstrap';
 
-let tray: Tray | null = null;
+installProcessGuards();
 
+// BUG-18 修复：setName 必须在 getPath('userData') 之前
+app.setName('ximo-VisAgent');
+
+// 启动旗标
+const isE2E = process.argv.includes('--e2e');
+const isSelfTest = process.argv.includes('--selftest');
+const isCoordCheck = process.argv.includes('--coordcheck');
+
+// 自检隔离数据目录必须在任何 getPath('userData') 之前生效
+const selfTestDir = isSelfTest ? fs.mkdtempSync(path.join(os.tmpdir(), 'ximo-visagent-selftest-')) : null;
+if (selfTestDir) app.setPath('userData', selfTestDir);
+
+// ---- 依赖创建 ----
 const uiaClient = getUiaClient();
-const auditDb = new ZODB(path.join(app.getPath('userData'), 'audit.db'));
-const configStore = appConfigStore(path.join(app.getPath('userData'), 'config.json'));
-const orchestrator = new Orchestrator(configStore, auditDb);
-
-const isDev = process.env.NODE_ENV === 'development';
-
-app.setName('Desktop AGI');
-
-app.whenReady().then(async () => {
-  try {
-    await uiaClient.start();
-    console.log('[main] UIA sidecar started');
-  } catch (err) {
-    console.error('[main] UIA sidecar start failed', err);
-  }
-
-  // OCR 语言模型后台预热到 userData（首次联网下载，不阻塞窗口启动）
-  try {
-    const cacheDir = path.join(app.getPath('userData'), 'tesseract-cache');
-    void initOcrCache({ cacheDir })
-      .then((dir) => console.log('[main] OCR cache ready:', dir))
-      .catch((err) => console.error('[main] OCR cache warmup failed (将在首次识别时重试)', err));
-  } catch (err) {
-    console.warn('[main] OCR warmup skipped', err);
-  }
-
-  createIsland();
-  createTray();
-  registerHotkeys();
+const userData = () => app.getPath('userData');
+const auditDb = new ZODB(path.join(userData(), 'audit.db'));
+const experienceStore = new ExperienceStore(auditDb.exposeDb());
+experienceStore.seedInitialPromptVersion();
+applyMissionSchema(auditDb.exposeDb());
+seedCapabilities(auditDb.exposeDb());
+const missionRepo = createMissionRepo(auditDb.exposeDb());
+const employeeStore = new EmployeeStore(auditDb.exposeDb());
+const configStore = appConfigStore(path.join(userData(), 'config.json'));
+const memoryStore = new MemoryStore(path.join(userData(), 'memory.json'));
+const conversationStore = new ConversationStore();
+const orchestrator = new Orchestrator(configStore, auditDb, {
+  memory: memoryStore,
+  conversation: conversationStore,
+  experience: experienceStore,
+  employee: employeeStore,
 });
 
+const wechatCfg = configStore.get().wechatBot ?? { enabled: false, allowedWxids: [], commandPrefix: 'AI:', notifyOnFinish: true, notifyOnApproval: false };
+const wechatBot = new WeChatBot({
+  allowedWxids: wechatCfg.allowedWxids,
+  commandPrefix: wechatCfg.commandPrefix,
+  dataDir: userData(),
+});
+orchestrator.setWeChatBot(wechatBot);
+
+const scheduler = new Scheduler(path.join(userData(), 'scheduler.json'), {
+  runJob: async (job) => {
+    try {
+      if (job.sopId) {
+        await orchestrator.runSop(job.sopId, job.goal);
+      } else {
+        await orchestrator.startTask(job.goal);
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : '启动失败' };
+    }
+  },
+});
+
+// ---- 启动序列 ----
+app.whenReady().then(async () => {
+  // 坐标链路诊断模式
+  if (isCoordCheck) {
+    const { runCoordCheck } = await import('./coordcheck');
+    try {
+      const checks = await runCoordCheck();
+      for (const c of checks) {
+        console.log(JSON.stringify({ coordcheck: c.ok ? 'pass' : 'fail', name: c.name, detail: c.detail }));
+      }
+      const failed = checks.filter((c) => !c.ok).length;
+      console.log(JSON.stringify({ coordcheck: 'done', total: checks.length, failed }));
+      app.exit(failed > 0 ? 1 : 0);
+    } catch (err) {
+      console.error(JSON.stringify({ coordcheck: 'error', message: (err as Error).message }));
+      app.exit(2);
+    }
+    return;
+  }
+
+  // 自检模式
+  if (isSelfTest) {
+    const { runSelfTest } = await import('./selftest');
+    const checks = await runSelfTest();
+    for (const c of checks) {
+      console.log(JSON.stringify({ selftest: c.ok ? 'pass' : 'fail', name: c.name, detail: c.detail }));
+    }
+    const failed = checks.filter((c) => !c.ok).length;
+    console.log(JSON.stringify({ selftest: 'done', total: checks.length, failed }));
+    if (selfTestDir) {
+      try {
+        fs.rmSync(selfTestDir, { recursive: true, force: true });
+      } catch (err) {
+        console.warn('[selftest] 临时目录清理失败（不影响结果）', selfTestDir, err instanceof Error ? err.message : err);
+      }
+    }
+    app.exit(failed > 0 ? 1 : 0);
+    return;
+  }
+
+  // 正常启动
+  await bootstrap({
+    orchestrator, auditDb, experienceStore, configStore,
+    memoryStore, conversationStore, scheduler, employeeStore, missionRepo,
+    wechatBot, wechatCfg, uiaClient, isE2E, isSelfTest,
+  });
+});
+
+// ---- 生命周期 ----
 app.on('window-all-closed', () => {
-  // 灵动岛常驻：仅当岛窗口也被关闭（如托盘退出）时才真正退出
   const island = getIslandWindow();
   if (island && !island.isDestroyed()) return;
+  try { scheduler.stop(); } catch { /* noop */ }
   try { uiaClient.stop(); } catch { /* noop */ }
+  try { wechatBot.stop(); } catch { /* noop */ }
   try { auditDb.close(); } catch { /* noop */ }
-  void ocrShutdown().catch(() => undefined);
   globalShortcut.unregisterAll();
   app.quit();
 });
 
-/** 灵动岛悬浮窗：透明置顶 + 独立 preload/renderer 入口 */
-function createIsland() {
-  const island = createIslandWindow();
-  const devUrl = process.env.ELECTRON_RENDERER_URL || `http://localhost:${process.env.PORT || 5173}`;
-  const prodFile = path.join(__dirname, '..', 'renderer', 'island.html');
-  island.webContents.on('did-finish-load', () => console.log('[island] renderer loaded:', island.webContents.getURL()));
-  island.webContents.on('render-process-gone', (_e, d) => console.error('[island] renderer crashed:', d.reason));
-  if (isDev) {
-    void island.loadURL(`${devUrl.replace(/\/$/, '')}/island.html`);
-  } else {
-    void island.loadFile(prodFile);
-  }
-
-  registerIslandHandlers({
-    // 主窗口已移除：展开为无操作（island:expand 返回 false）
-    getMainWindow: () => null,
-    safety: {
-      // Safety 层：真正中断 SendInput / 清空队列（与全局热键一致）
-      emergencyStop: (reason) => {
-        orchestrator.emergencyStopAll();
-      },
-    },
-    onApprovalResult: (result) => {
-      // 审批结论 → 审批中心（approvalKey 即审批 id）
-      switch (result.decision) {
-        case 'approved':
-          orchestrator.approve(result.approvalKey);
-          break;
-        case 'rejected':
-          orchestrator.reject(result.approvalKey, result.note ?? '用户拒绝');
-          break;
-        case 'revised':
-          orchestrator.editAndApprove(result.approvalKey, coerceArgs(result.params ?? {}));
-          break;
-      }
-    },
-  });
-}
-
-function createTray() {
-  const { nativeImage } = require('electron') as typeof import('electron');
-  // 无图标文件时用程序化生成的 16x16 图标
-  let icon = nativeImage.createEmpty();
-  try {
-    const p = path.join(__dirname, '..', 'resources', 'tray.png');
-    if (require('node:fs').existsSync(p)) {
-      icon = nativeImage.createFromPath(p);
-    }
-  } catch { /* noop */ }
-  if (icon.isEmpty()) {
-    icon = nativeImage.createFromDataURL(
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAIElEQVR4nGL8z4APMDBgAqSmGgwgOQYQTWDQmoZAAAAAVHRSTlMAQIDBAYGBgoKCgwAAAA5JREFUeF7twYEAAAAAgKD9n1aaCgAAAAAAAAD8GwAAf9cCmQAAAABJRU5ErkJggg==',
-    );
-  }
-  tray = new Tray(icon);
-  tray.setToolTip('Desktop AGI');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: '显示灵动岛',
-      click: () => toggleIsland(),
-    },
-    { type: 'separator' },
-    {
-      label: '退出',
-      click: () => app.quit(),
-    },
-  ]));
-}
-
-function registerHotkeys() {
-  const combo = configStore.get().agent.emergencyHotkey || 'Ctrl+Alt+Q';
-  const ok = globalShortcut.register(combo, () => {
-    console.warn('[emergency] 全局急停触发');
-    orchestrator.emergencyStopAll();
-  });
-  if (!ok) console.warn('[main] 急停热键注册失败:', combo);
-}
+app.on('before-quit', () => {
+  try { scheduler.stop(); } catch { /* noop */ }
+  try { wechatBot.stop(); } catch { /* noop */ }
+});

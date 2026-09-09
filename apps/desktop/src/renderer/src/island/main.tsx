@@ -8,7 +8,7 @@ import "./styles/tailwind.css";
 import "./styles/island.css";
 
 createRoot(document.getElementById("root")!).render(
-  <div className="dark:bg-transparent" style={{ position: "absolute", inset: 0 }}>
+  <div style={{ position: "absolute", inset: 0 }}>
     <IslandShell />
   </div>,
 );

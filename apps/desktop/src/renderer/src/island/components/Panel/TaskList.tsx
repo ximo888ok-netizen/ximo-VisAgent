@@ -2,16 +2,29 @@
  * TaskList.tsx — 任务历史列表（审计面板左栏）
  */
 import { useIslandStore } from "../../store/islandStore";
+import { statusLabel } from "../common/labels";
 
 export function TaskList() {
   const tasks = useIslandStore((s) => s.tasks);
   const selectedTaskId = useIslandStore((s) => s.selectedTaskId);
   const selectTask = useIslandStore((s) => s.selectTask);
+  const auditLoading = useIslandStore((s) => s.auditLoading);
+
+  // C：首次加载骨架
+  if (auditLoading && tasks.length === 0) {
+    return (
+      <div className="space-y-1.5 p-2">
+        <div className="island-skeleton h-12 rounded-lg ig-bg-panel" />
+        <div className="island-skeleton h-12 rounded-lg ig-bg-panel" />
+        <div className="island-skeleton h-12 rounded-lg ig-bg-panel" />
+      </div>
+    );
+  }
 
   if (tasks.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-4">
-        <span className="text-[11px] text-white/25">无任务记录</span>
+        <span className="text-[11px] t-faint">无任务记录</span>
       </div>
     );
   }
@@ -37,19 +50,22 @@ export function TaskList() {
                   background: task.status === "COMPLETED" ? "#3fe0a0" : task.status === "FAILED" ? "#f87171" : "#fbbf24",
                 }}
               />
-              <span className="text-[11px] text-white/60 truncate" style={{ maxWidth: 160 }}>
+              <span className="text-[11px] t-body truncate" style={{ maxWidth: 160 }}>
                 {task.goal}
               </span>
             </div>
             <div className="mt-1 ml-4 flex items-center justify-between">
-              <span className="text-[9.5px] text-white/25">
+              <span className="text-[9.5px] t-faint">
                 {new Date(task.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
               </span>
-              <span className="text-[9.5px]" style={{
-                color: isDone ? (task.status === "COMPLETED" ? "#3fe0a0" : "#f87171") : "#fbbf24",
-              }}>
-                {isDone ? task.status : "运行中"}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[9.5px]" style={{
+                  color: isDone ? (task.status === "COMPLETED" ? "#3fe0a0" : "#f87171") : "#fbbf24",
+                }}>
+                  {/* M03 修复：QUEUED/WAITING_APPROVAL/PAUSED 不再一律显示"运行中" */}
+                  {statusLabel(task.status)}
+                </span>
+              </div>
             </div>
           </div>
         );

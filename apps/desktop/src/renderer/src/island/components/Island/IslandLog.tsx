@@ -18,7 +18,7 @@ import { useIslandStore } from "../../store/islandStore";
 
 const FALLBACK_TEXT = "Agent 已就绪，等待新任务…";
 
-export function IslandLog({ width }: { width: number }) {
+export function IslandLog({ width }: { width?: number }) {
   const currentLog = useIslandStore((s) => s.currentLog);
   const text = currentLog?.text ?? FALLBACK_TEXT;
 
@@ -53,7 +53,7 @@ export function IslandLog({ width }: { width: number }) {
   return (
     <div
       ref={viewportRef}
-      style={{ width }}
+      style={width ? { width } : { flex: 1, minWidth: 0 }}
       className={`island-marquee island-no-select flex h-full items-center ${
         paused ? "island-marquee--paused" : ""
       }`}
@@ -66,13 +66,13 @@ export function IslandLog({ width }: { width: number }) {
       {overflows ? (
         // 无缝滚动：内容复制两遍，利用 -50% 位移循环
         <div ref={trackRef} className="island-marquee__track" style={style}>
-          <span className="pr-8 text-[12.5px] text-[#e2e6ee]">{text}</span>
-          <span aria-hidden className="pr-8 text-[12.5px] text-[#e2e6ee]">
+          <span className="pr-8 text-[12.5px] text-[var(--ig-t-strong)]">{text}</span>
+          <span aria-hidden className="pr-8 text-[12.5px] text-[var(--ig-t-strong)]">
             {text}
           </span>
         </div>
       ) : (
-        <span ref={trackRef} className="truncate text-[12.5px] text-[#e2e6ee]">
+        <span ref={trackRef} className="truncate text-[12.5px] text-[var(--ig-t-strong)]">
           {text}
         </span>
       )}

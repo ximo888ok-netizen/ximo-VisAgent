@@ -1,5 +1,5 @@
 // DPI / 坐标换算（全链路统一物理像素；逻辑像素仅 UI 显示层）
-import type { MonitorInfo, Point, Rect } from '@desktop-agi/shared-types';
+import type { MonitorInfo, Point, Rect } from '@ximo-visagent/shared-types';
 
 /** 物理像素 → 逻辑像素 */
 export function pxToLogical(p: Point, scale: number): Point {

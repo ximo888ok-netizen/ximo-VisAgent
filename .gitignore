@@ -1,14 +1,49 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
 out/
-*.log
-.turbo/
-coverage/
+release/
+bin/
 *.tsbuildinfo
+
+# Native sidecar binary
+native/uia-sidecar-cs/bin/*.exe
+
+# Turbo cache
+.turbo/
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+dev-log*.txt
+
+# OS files
 .DS_Store
-native/uia-sidecar-cs/bin/node_modules/
-out/
-dist/
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets / sensitive
+.env
+.env.*
+*.pem
+*.key
+config.json
+*.memory-card.json
+
+# SQLite databases
+*.db
+*.db-journal
+
+# Electron
 release/
 *.exe
-.turbo/
+

@@ -4,7 +4,8 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 
-const ELECTRON_VERSION = '44.0.0';
+// M14 修复：APPDATA 未定义时回退；ELECTRON_VERSION 可从 package.json 读取
+const ELECTRON_VERSION = process.env.ELECTRON_VERSION || '44.0.0';
 const TARGETS = ['better-sqlite3'];
 
 // 从 node_modules/.pnpm 查找模块真实路径（取版本最高）
@@ -56,7 +57,8 @@ for (const pkg of TARGETS) {
   const gypArgs = gypJs
     ? [gypJs, 'rebuild', `--target=${ELECTRON_VERSION}`, '--arch=x64', '--dist-url=https://electronjs.org/headers', '--runtime=electron']
     : ['node-gyp', 'rebuild', `--target=${ELECTRON_VERSION}`, '--arch=x64', '--dist-url=https://electronjs.org/headers', '--runtime=electron'];
-  const r = spawnSync(cmd, gypArgs, { cwd: mod, encoding: 'utf8', shell: true, stdio: 'inherit' });
+  // M14 修复：shell: false 避免路径中空格被拆分；cmd + gypArgs 已是数组形式
+  const r = spawnSync(cmd, gypArgs, { cwd: mod, encoding: 'utf8', shell: false, stdio: 'inherit' });
   if (r.status !== 0) {
     console.error(`[rebuild] ${pkg} 编译失败`);
     failed++;

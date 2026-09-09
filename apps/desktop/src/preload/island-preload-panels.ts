@@ -1,75 +1,45 @@
 /**
- * island-preload-panels.ts — 面板相关 IPC 绑定（任务/配置/审计）
+ * island-preload-panels.ts — 面板 IPC 绑定聚合入口
  *
- * 从 island-preload.ts 拆分，避免单文件超限。
+ * 各域实现见 ./panels/*；本文件只做展开合并。
  * 只负责 ipcRenderer.invoke / send 的封装，不做任何权限判断。
  */
-import type { IpcResult } from "../shared/island-api";
-import type {
-  StartTaskRequest,
-  TaskStartedResult,
-  AppConfigPayload,
-  UpdateConfigRequest,
-  QueryTasksRequest,
-  TaskRowPayload,
-  QueryAuditRequest,
-  AuditRowPayload,
-  ExportCsvResult,
-} from "../shared/island-contracts";
-import { ISLAND_CHANNELS } from "../shared/island-contracts";
+import { registerV3PanelApi, type V3PanelApiMethods } from "./island-preload-v3";
+import type { PanelIpc, SafeInvoke } from "./panels/deps";
+import { registerTaskApi, type TaskPanelApi } from "./panels/task";
+import { registerConfigApi, type ConfigPanelApi } from "./panels/config";
+import { registerAuditApi, type AuditPanelApi } from "./panels/audit";
+import { registerSopApi, type SopPanelApi } from "./panels/sop";
+import { registerMemoryStatsApi, type MemoryStatsPanelApi } from "./panels/memory-stats";
+import { registerSchedulerApi, type SchedulerPanelApi } from "./panels/scheduler";
+import { registerEmployeeApi, type EmployeePanelApi } from "./panels/employee";
+import { registerMissionApi, type MissionPanelApi } from "./panels/mission";
 
-type SafeInvoke = <T>(
-  channel: string,
-  arg?: unknown,
-) => Promise<IpcResult<T>>;
-
-export type PanelApiMethods = {
-  startTask: (req: StartTaskRequest) => Promise<IpcResult<TaskStartedResult>>;
-  cancelTask: (taskId: string) => Promise<{ ok: boolean; error?: string }>;
-  getConfig: () => Promise<IpcResult<AppConfigPayload>>;
-  updateConfig: (req: UpdateConfigRequest) => Promise<{ ok: boolean; error?: string }>;
-  queryTasks: (req?: QueryTasksRequest) => Promise<IpcResult<TaskRowPayload[]>>;
-  queryAudit: (req?: QueryAuditRequest) => Promise<IpcResult<AuditRowPayload[]>>;
-  exportCsv: () => Promise<IpcResult<ExportCsvResult>>;
-};
+/** 面板 IPC = 基础各域通道 + v3 经验/演化层通道；全部切片自 IslandApi，无手抄签名（I2） */
+export type PanelApiMethods =
+  TaskPanelApi &
+    ConfigPanelApi &
+    AuditPanelApi &
+  SopPanelApi &
+    MemoryStatsPanelApi &
+    SchedulerPanelApi &
+    V3PanelApiMethods &
+    EmployeePanelApi &
+    MissionPanelApi;
 
 export function registerPanelApi(
   safeInvoke: SafeInvoke,
-  ipc: { invoke: (channel: string, ...args: unknown[]) => Promise<unknown> },
+  ipc: PanelIpc,
 ): PanelApiMethods {
   return {
-    async startTask(req) {
-      return safeInvoke<TaskStartedResult>(ISLAND_CHANNELS.startTask, req);
-    },
-
-    async cancelTask(taskId) {
-      return (await ipc.invoke(
-        ISLAND_CHANNELS.cancelTask,
-        { taskId },
-      )) as { ok: boolean; error?: string };
-    },
-
-    async getConfig() {
-      return safeInvoke<AppConfigPayload>(ISLAND_CHANNELS.getConfig);
-    },
-
-    async updateConfig(req) {
-      return (await ipc.invoke(
-        ISLAND_CHANNELS.updateConfig,
-        req,
-      )) as { ok: boolean; error?: string };
-    },
-
-    async queryTasks(req) {
-      return safeInvoke<TaskRowPayload[]>(ISLAND_CHANNELS.queryTasks, req ?? {});
-    },
-
-    async queryAudit(req) {
-      return safeInvoke<AuditRowPayload[]>(ISLAND_CHANNELS.queryAudit, req ?? {});
-    },
-
-    async exportCsv() {
-      return safeInvoke<ExportCsvResult>(ISLAND_CHANNELS.exportCsv);
-    },
+    ...registerTaskApi(safeInvoke, ipc),
+    ...registerConfigApi(safeInvoke, ipc),
+    ...registerAuditApi(safeInvoke),
+    ...registerSopApi(safeInvoke, ipc),
+    ...registerMemoryStatsApi(safeInvoke, ipc),
+    ...registerSchedulerApi(safeInvoke, ipc),
+    ...registerV3PanelApi(safeInvoke),
+    ...registerEmployeeApi(safeInvoke, ipc),
+    ...registerMissionApi(safeInvoke),
   };
 }

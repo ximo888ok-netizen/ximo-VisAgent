@@ -1,104 +1,129 @@
 /**
- * PanelContainer.tsx — 面板容器（Tab 切换 + 面板内容路由）
+ * PanelContainer.tsx — 面板容器（竖向侧边栏导航 + 内容路由 + 二级视图栈）
  *
- * 职责：根据 panelMode 渲染对应面板，管理 Tab 条交互。
- * 审批态时不渲染 Tab（审批卡独占展开区）。
+ * 职责：根据 panelMode 渲染对应面板；viewStack 非空时渲染二级 push 视图。
+ * 审批态时不渲染导航（审批卡独占展开区）。
  */
 import { useIslandStore } from "../../store/islandStore";
+import { TabIcon } from "./TabIcons";
 import { LogPanel } from "../Panel/LogPanel";
-import { TaskPanel } from "../Panel/TaskPanel";
+import { TaskPanel } from "../Panel/Task/TaskPanel";
 import { SettingsPanel } from "../Panel/SettingsPanel";
 import { AuditPanel } from "../Panel/AuditPanel";
+import { EvolutionPanel } from "../Panel/EvolutionPanel";
+import { HistoryPanel } from "../Panel/HistoryPanel";
+import { SopPanel } from "../Panel/SopPanel";
+import { StatsPanel } from "../Panel/StatsPanel";
+import { SchedulePanel } from "../Panel/SchedulePanel";
+import { EmployeePanel } from "../Panel/Employee/EmployeePanel";
+import { MissionPanel } from "../Panel/Mission/MissionPanel";
+import { StepDetailSheet } from "../Panel/Task/StepDetailSheet";
+import { TaskDetailSheet } from "../Panel/History/TaskDetailSheet";
+import { ReplayPlayer } from "../Panel/History/ReplayPlayer";
+import { SopRunSheet } from "../Panel/Sop/SopRunSheet";
 import type { PanelMode } from "@shared/island-contracts";
 
-const TABS: { mode: PanelMode; label: string; icon: string }[] = [
-  { mode: "task", label: "任务", icon: "task" },
-  { mode: "log", label: "日志", icon: "log" },
-  { mode: "settings", label: "设置", icon: "settings" },
-  { mode: "audit", label: "审计", icon: "audit" },
+/** 导航分组：工作区 / 库 / 系统（面板增多后分组呈现） */
+const TAB_GROUPS: { mode: PanelMode; label: string; icon: string }[][] = [
+  [
+    { mode: "task", label: "任务", icon: "task" },
+  ],
+  [
+    { mode: "history", label: "历史", icon: "history" },
+    { mode: "sop", label: "SOP", icon: "sop" },
+    { mode: "schedule", label: "定时", icon: "schedule" },
+    { mode: "stats", label: "统计", icon: "stats" },
+  ],
+  [
+    { mode: "evolution", label: "演化", icon: "evolution" },
+    { mode: "employee", label: "员工", icon: "employee" },
+    { mode: "mission", label: "任务库", icon: "mission" },
+    { mode: "log", label: "日志", icon: "log" },
+    { mode: "settings", label: "设置", icon: "settings" },
+    { mode: "audit", label: "审计", icon: "audit" },
+  ],
 ];
 
-export function PanelContainer({ height }: { height: number }) {
+/** 竖向导航栏宽度（含文字标签后加宽） */
+const NAV_WIDTH = 64;
+
+export function PanelContainer() {
   const panelMode = useIslandStore((s) => s.panelMode);
   const setPanelMode = useIslandStore((s) => s.setPanelMode);
+  const viewStack = useIslandStore((s) => s.viewStack);
+  const popView = useIslandStore((s) => s.popView);
 
-  const tabHeight = 32;
-  const contentHeight = height - tabHeight - 1;
+  const topView = viewStack[viewStack.length - 1];
 
   return (
-    <div className="island-expand-anim" style={{ height }}>
-      {/* Tab 条 */}
-      <div className="island-tabs" style={{ height: tabHeight }}>
-        {TABS.map((tab) => {
-          const active = panelMode === tab.mode;
-          return (
-            <button
-              key={tab.mode}
-              data-interactive
-              className={`island-tab ${active ? "island-tab--active" : ""}`}
-              onClick={() => setPanelMode(tab.mode)}
-            >
-              <TabIcon name={tab.icon} />
-              <span className="ml-1.5">{tab.label}</span>
-            </button>
-          );
-        })}
+    <div className="island-expand-anim h-full flex flex-row">
+      {/* 竖向导航栏 */}
+      <div
+        className="island-nav-bar flex flex-col items-center gap-1 border-r ig-border-line py-2"
+        style={{ width: NAV_WIDTH, flexShrink: 0 }}
+      >
+        {topView ? (
+          /* 二级视图时显示返回按钮 */
+          <button
+            data-interactive
+            className="island-nav-item island-nav-item--active"
+            onClick={popView}
+            title="返回"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        ) : (
+          TAB_GROUPS.map((group, gi) => (
+            <div key={gi} className="flex flex-col items-center gap-1">
+              {gi > 0 && <span className="my-1 h-px w-5 ig-bg-panel-hover" />}
+              {group.map((tab) => {
+                const active = panelMode === tab.mode;
+                return (
+                  <button
+                    key={tab.mode}
+                    data-interactive
+                    className={`island-nav-item island-nav-item--labeled ${active ? "island-nav-item--active" : ""}`}
+                    onClick={() => setPanelMode(tab.mode)}
+                    title={tab.label}
+                  >
+                    <TabIcon name={tab.icon} />
+                    <span className="island-nav-label">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))
+        )}
       </div>
 
-      {/* 面板内容 */}
-      <div
-        className="island-panel-scroll island-panel-enter"
-        style={{ height: contentHeight }}
-      >
-        {panelMode === "task" && <TaskPanel />}
-        {panelMode === "log" && <LogPanel />}
-        {panelMode === "settings" && <SettingsPanel />}
-        {panelMode === "audit" && <AuditPanel />}
+      {/* 面板内容区 */}
+      <div className="island-panel-scroll flex-1 min-h-0 min-w-0">
+        {topView ? (
+          <div key={viewStack.length} className="island-view-push h-full">
+            {topView.kind === "stepDetail" && <StepDetailSheet stepIndex={topView.stepIndex} />}
+            {topView.kind === "taskDetail" && <TaskDetailSheet taskId={topView.taskId} />}
+            {topView.kind === "replay" && <ReplayPlayer taskId={topView.taskId} />}
+            {topView.kind === "sopRun" && <SopRunSheet sopId={topView.sopId} />}
+            {topView.kind === "evidence" && <AuditPanel />}
+          </div>
+        ) : (
+          <div key={panelMode} className="island-panel-enter h-full">
+            {panelMode === "task" && <TaskPanel />}
+            {panelMode === "history" && <HistoryPanel />}
+            {panelMode === "sop" && <SopPanel />}
+            {panelMode === "schedule" && <SchedulePanel />}
+            {panelMode === "stats" && <StatsPanel />}
+            {panelMode === "log" && <LogPanel />}
+            {panelMode === "settings" && <SettingsPanel />}
+            {panelMode === "audit" && <AuditPanel />}
+            {panelMode === "evolution" && <EvolutionPanel />}
+            {panelMode === "employee" && <EmployeePanel />}
+            {panelMode === "mission" && <MissionPanel />}
+          </div>
+        )}
       </div>
     </div>
   );
-}
-
-/** Tab 图标（SVG 内联，小尺寸） */
-function TabIcon({ name }: { name: string }) {
-  const common = {
-    width: 14,
-    height: 14,
-    viewBox: "0 0 16 16",
-    fill: "none",
-    style: { display: "inline-block", verticalAlign: "-2px" },
-  } as const;
-  switch (name) {
-    case "task":
-      return (
-        <svg {...common}>
-          <path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      );
-    case "log":
-      return (
-        <svg {...common}>
-          <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M5 6h6M5 8.5h4M5 11h2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-      );
-    case "settings":
-      return (
-        <svg {...common}>
-          <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M8 1.5v1.5M8 13v1.5M1.5 8h1.5M13 8h1.5M3.5 3.5l1 1M11.5 11.5l1 1M3.5 12.5l1-1M11.5 4.5l1-1"
-            stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-      );
-    case "audit":
-      return (
-        <svg {...common}>
-          <path d="M2.5 3.5h8.5v9h-8.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-          <path d="M11.5 5.5h2v5.5a1.5 1.5 0 01-1.5 1.5 1.5 1.5 0 01-1.5-1.5V5.5h1z" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M4.5 6.5h4.5M4.5 8.5h3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-        </svg>
-      );
-    default:
-      return null;
-  }
 }

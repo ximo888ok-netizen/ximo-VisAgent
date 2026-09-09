@@ -1,11 +1,12 @@
 // 前台窗口信息（通过 control-kit win32 getForegroundWindow + Electron screen 取 DPI）
-import { getForegroundWindow } from '@desktop-agi/control-kit';
+import { getForegroundWindow } from '@ximo-visagent/control-kit';
 import { screen } from 'electron';
 
 export async function getForegroundWindowInfo(): Promise<{ title: string; className: string }> {
   try {
     const win = await getForegroundWindow();
-    return { title: win.title, className: '' };
+    // P0-1 修复：className 参与安全规则匹配（如 block-settings/block-cmd）
+    return { title: win.title, className: win.className ?? '' };
   } catch {
     return { title: '', className: '' };
   }

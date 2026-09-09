@@ -1,0 +1,18 @@
+#!/bin/sh
+# pre-commit —— 提交前的最小完整门禁（安装：pnpm hooks:install）
+# 任一步失败即中止提交；确需绕过请显式使用 git commit --no-verify 并在说明里写原因。
+set -e
+
+echo "[pre-commit] lint"
+pnpm lint
+
+echo "[pre-commit] 存量债务预算"
+pnpm budget
+
+echo "[pre-commit] typecheck"
+pnpm typecheck
+
+echo "[pre-commit] test"
+pnpm test
+
+echo "[pre-commit] 通过"

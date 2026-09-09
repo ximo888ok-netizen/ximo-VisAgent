@@ -5,6 +5,7 @@ export type TaskStatus =
   | 'IDLE'
   | 'PLANNING'
   | 'RUNNING'
+  | 'PAUSED'
   | 'WAITING_APPROVAL'
   | 'COMPLETED'
   | 'FAILED'

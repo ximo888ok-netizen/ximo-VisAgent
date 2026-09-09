@@ -1,6 +1,6 @@
 {
-  "name": "@desktop-agi/control-kit",
-  "version": "0.1.0",
+  "name": "@ximo-visagent/control-kit",
+  "version": "1.0.0",
   "private": true,
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -16,12 +16,14 @@
     "build": "tsup",
     "test": "vitest run --exclude '__tests__/device.integration.*'",
     "test:device": "node --test __tests__/device.integration.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --max-warnings=0"
   },
   "dependencies": {
-    "@desktop-agi/agent-core": "workspace:*",
-    "@desktop-agi/perception": "workspace:*",
-    "@desktop-agi/shared-types": "workspace:*",
+    "@ximo-visagent/agent-core": "workspace:*",
+    "@ximo-visagent/llm-providers": "workspace:*",
+    "@ximo-visagent/perception": "workspace:*",
+    "@ximo-visagent/shared-types": "workspace:*",
     "exceljs": "^4.4.0",
     "koffi": "^2.9.0"
   },

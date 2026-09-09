@@ -1,7 +1,7 @@
 // files/* + office/* 工具实现：工作目录沙箱 + exceljs 文件级读写
-import { promises as fs } from 'node:fs';
+import { promises as fs, existsSync } from 'node:fs';
 import path from 'node:path';
-import type { ToolExecutor, ToolResult } from '@desktop-agi/agent-core';
+import type { ToolExecutor, ToolResult } from '@ximo-visagent/agent-core';
 import ExcelJS from 'exceljs';
 
 export class FileOfficeExecutor implements ToolExecutor {
@@ -49,6 +49,10 @@ export class FileOfficeExecutor implements ToolExecutor {
   private async fileList(args: Record<string, unknown>): Promise<ToolResult> {
     const dir = String(args.dir ?? '');
     const fp = this.resolveSafe(dir);
+    // 沙箱目录尚未创建时返回空列表而非 ENOENT（避免模型浪费步数在目录初始化上）
+    if (!existsSync(fp)) {
+      return { ok: true, summary: `目录不存在（视为空）: ${dir || '.'}` };
+    }
     const entries = await fs.readdir(fp, { withFileTypes: true });
     const list = entries.map((e) => `${e.isDirectory() ? '[D]' : '[F]'} ${e.name}`);
     return { ok: true, summary: `目录列表 (${list.length} 项):\n${list.join('\n')}` };

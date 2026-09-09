@@ -1,17 +1,17 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { ApprovalEngine, SafetyClassifier } from '../src';
-import type { ToolCall } from '@desktop-agi/shared-types';
+import type { ToolCall } from '@ximo-visagent/shared-types';
 
 describe('SafetyClassifier', () => {
   const c = new SafetyClassifier();
 
   it('L0 只读自动放行', () => {
-    const r = c.classify({ name: 'screenshot', args: {} });
+    const r = c.classify({ name: 'get_clipboard', args: {} });
     expect(r.level).toBe(0);
   });
 
   it('L1 常规点击', () => {
-    const r = c.classify({ name: 'element_click', args: { elementId: 1 } });
+    const r = c.classify({ name: 'mouse_click', args: { x: 1, y: 1 } });
     expect(r.level).toBe(1);
   });
 

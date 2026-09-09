@@ -1,67 +1,81 @@
 /**
- * IslandShell.tsx — 灵动岛根容器（预算 <400 行）
+ * IslandShell.tsx — 灵动岛根容器
  *
  * 职责：
- * 1. 订阅主进程事件 island:step / island:approval-pending / task-finished，驱动 store；
+ * 1. 订阅主进程事件 island:step / approval-pending / task-finished /
+ *    step-detail / usage / focus-quick-input，驱动 store；
  * 2. 深浅主题跟随 nativeTheme；
- * 3. 鼠标穿透管理（玻璃空白区回落到桌面）；
- * 4. 左侧 20px 拖拽手柄；
- * 5. 收拢 64 / 展开（面板 220–480 / 审批 280）高度切换。
+ * 3. 顶部 64px 拖拽手柄（原生窗口移动）；
+ * 4. 收拢/展开高度切换（面板内容驱动窗口尺寸）。
  *
- * 面板模式：task / log / settings / audit
+ * 面板模式：task / history / sop / log / settings / audit
  * 审批优先级最高：有 approval 时独占展开区。
  */
 import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
-  useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useIslandStore, PANEL_HEIGHTS } from "../../store/islandStore";
+import { PANEL_MODES, type PanelMode } from "@shared/island-panel-schemas";
+import { useIslandEvents } from "../../hooks/useIslandEvents";
 import { IslandStatus } from "./IslandStatus";
 import { IslandLog } from "./IslandLog";
 import { IslandActions } from "./IslandActions";
 import { IslandApproval } from "./IslandApproval";
 import { PanelContainer } from "./PanelContainer";
+import { ToastHost } from "../common/Toast";
 
 /** 高度：收拢 64，审批展开 280 */
 const HEIGHT_COLLAPSED = 64;
 const HEIGHT_APPROVAL = 280;
-/** 审批无操作自动回缩时长 */
-const APPROVAL_TIMEOUT_MS = 60_000;
-
-let logSeq = 0;
 
 export function IslandShell() {
   const status = useIslandStore((s) => s.status);
-  const currentLog = useIslandStore((s) => s.currentLog);
   const view = useIslandStore((s) => s.view);
   const panelMode = useIslandStore((s) => s.panelMode);
   const approval = useIslandStore((s) => s.approval);
-  const pushStep = useIslandStore((s) => s.pushStep);
-  const openApproval = useIslandStore((s) => s.openApproval);
-  const setTaskFinished = useIslandStore((s) => s.setTaskFinished);
 
   /* ---------- 事件订阅（主进程 -> 渲染进程） ---------- */
+  const approvalTimeoutMs = useIslandEvents();
+
+  /* ---------- P1-6：渲染层重载后恢复运行中任务状态（崩溃恢复） ---------- */
   useEffect(() => {
-    const un1 = window.islandAPI.onAgentStep((ev) => {
-      pushStep({ id: ++logSeq, ts: ev.ts, status: ev.status, text: ev.text });
+    void window.islandAPI.getActiveTasks().then((res) => {
+      if (!res.ok) return;
+      const st = useIslandStore.getState();
+      if (st.currentTaskId) return;
+      const { running, queued } = res.data;
+      const r = running[0];
+      if (r) {
+        st.setTaskStarted(r.taskId, r.goal, 0);
+      } else {
+        const last = queued[queued.length - 1];
+        if (last) st.setTaskStarted(last.taskId, last.goal, queued.length);
+      }
     });
-    const un2 = window.islandAPI.onApprovalPending((req) => {
-      openApproval(req, APPROVAL_TIMEOUT_MS);
+  }, []);
+
+  /* ---------- 托盘/主进程请求打开指定面板 ---------- */
+  useEffect(() => {
+    const un = window.islandAPI.onOpenPanel((mode) => {
+      const st = useIslandStore.getState();
+      if (st.approval) return; // 审批优先，不打断
+      // 合法面板名单单一来源在 shared（PANEL_MODES），本地不再手抄副本
+      if ((PANEL_MODES as readonly string[]).includes(mode)) {
+        st.setPanelMode(mode as PanelMode);
+      }
     });
-    const un3 = window.islandAPI.onTaskFinished((payload) => {
-      setTaskFinished(payload);
-    });
-    return () => {
-      un1();
-      un2();
-      un3();
-    };
-  }, [openApproval, pushStep, setTaskFinished]);
+    return un;
+  }, []);
+
+  /* ---------- 启动时预加载配置 ---------- */
+  const loadConfig = useIslandStore((s) => s.loadConfig);
+  useEffect(() => {
+    void loadConfig();
+  }, [loadConfig]);
 
   /* ---------- 深浅主题 ---------- */
   useEffect(() => {
@@ -80,22 +94,21 @@ export function IslandShell() {
     };
   }, []);
 
-  /* ---------- 鼠标穿透 ---------- */
-  const isOverInteractive = useIslandHitTest();
-
-  /* ---------- 点击中庭 -> 切换面板 ---------- */
+  /* ---------- 点击中庭 -> 切换收拢/展开 ---------- */
   const handleClick = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
-      // 审批展开时，点击中庭不做任何事
       if (approval) return;
-      // 点击操作区按钮不触发面板切换
       const el = e.target as HTMLElement;
-      if (el.closest?.("[data-interactive]")) return;
       if (el.closest?.('[data-action="focus-main"]')) {
-        void window.islandAPI.expand();
+        const store = useIslandStore.getState();
+        if (store.view === "collapsed") {
+          store.setPanelMode(store.panelMode);
+        } else {
+          useIslandStore.setState({ view: "collapsed" });
+        }
         return;
       }
-      // 切换收拢/展开
+      if (el.closest?.("[data-interactive]")) return;
       const store = useIslandStore.getState();
       if (store.view === "collapsed") {
         store.setPanelMode(store.panelMode);
@@ -106,25 +119,17 @@ export function IslandShell() {
     [approval],
   );
 
-  /* ---------- 自适应宽度 ---------- */
-  const width = useMemo(() => {
-    const textLen = currentLog?.text.length ?? 0;
-    const estimate = 460 + Math.min(textLen, 90) * 4;
-    return Math.max(400, Math.min(900, Math.round(estimate / 10) * 10));
-  }, [currentLog]);
-
-  /* ---------- 高度计算 ---------- */
+  /* ---------- 高度计算（宽度由原生窗口 resize 驱动，不再自适应） ---------- */
   const height = useMemo(() => {
     if (view === "collapsed") return HEIGHT_COLLAPSED;
     if (approval) return HEIGHT_APPROVAL;
-    // 面板模式
     return PANEL_HEIGHTS[panelMode] ?? HEIGHT_COLLAPSED;
   }, [view, approval, panelMode]);
 
-  /* ---------- 自适应窗口尺寸上报 ---------- */
+  /* ---------- 自适应窗口高度上报（宽度由用户拖拽控制） ---------- */
   useEffect(() => {
-    window.islandAPI.resize(width, height);
-  }, [width, height]);
+    window.islandAPI.resize(window.innerWidth, height);
+  }, [height]);
 
   const showApproval = view === "expanded" && approval !== null;
   const showPanel = view === "expanded" && approval === null;
@@ -132,39 +137,50 @@ export function IslandShell() {
   return (
     <div
       onClick={handleClick}
-      className={`island-glass island-passthrough island-no-select relative overflow-hidden rounded-[22px] transition-[height] duration-300 ${
-        approval ? "island-interactive-on" : isOverInteractive ? "island-interactive-on" : ""
-      }`}
-      style={{ width, height, transitionTimingFunction: "var(--island-ease)" }}
+      className="island-shell-bg island-no-select relative overflow-hidden rounded-[22px] transition-[height] duration-300"
+      style={{ height: "100vh", transitionTimingFunction: "var(--island-ease)" }}
     >
       {/* 顶部 64px 三区壳：左 84 / 中 弹性 / 右 120 */}
       <div className="flex h-16 items-stretch">
-        {/* 左缘 20px 拖拽区 */}
+        {/* 左缘 20px 拖拽区（移动窗口）：画出手柄圆点，可发现可命中 */}
         <span
           aria-hidden
-          className="w-5 shrink-0 cursor-grab"
+          title="拖动移动位置"
+          className="flex w-5 shrink-0 cursor-grab items-center justify-center opacity-40 transition-opacity hover:opacity-90 active:cursor-grabbing"
           style={{ WebkitAppRegion: "drag" } as CSSProperties}
-        />
-        <IslandStatus width={84} />
-        <span className="my-[15px] w-px shrink-0 bg-white/[0.07]" />
-        <IslandLog width={Math.max(0, width - 226)} />
-        <span className="my-[15px] w-px shrink-0 bg-white/[0.07]" />
+        >
+          <svg width="8" height="16" viewBox="0 0 8 16" fill="none">
+            <circle cx="2" cy="3" r="1.2" fill="var(--ig-t-faint)" />
+            <circle cx="6" cy="3" r="1.2" fill="var(--ig-t-faint)" />
+            <circle cx="2" cy="8" r="1.2" fill="var(--ig-t-faint)" />
+            <circle cx="6" cy="8" r="1.2" fill="var(--ig-t-faint)" />
+            <circle cx="2" cy="13" r="1.2" fill="var(--ig-t-faint)" />
+            <circle cx="6" cy="13" r="1.2" fill="var(--ig-t-faint)" />
+          </svg>
+        </span>
+        <IslandStatus width={104} />
+        <span className="my-[15px] w-px shrink-0 ig-bg-panel-hover" />
+        <IslandLog />
+        <span className="my-[15px] w-px shrink-0 ig-bg-panel-hover" />
         <IslandActions width={120} />
       </div>
 
       {/* 审批展开内容区 */}
       {showApproval && (
-        <div className="border-t border-white/[0.08] island-expand-anim">
-          <IslandApproval height={HEIGHT_APPROVAL - HEIGHT_COLLAPSED - 1} />
+        <div className="border-t ig-border-line island-expand-anim">
+          <IslandApproval height={HEIGHT_APPROVAL - HEIGHT_COLLAPSED - 1} timeoutMs={approvalTimeoutMs} />
         </div>
       )}
 
       {/* 面板展开内容区 */}
       {showPanel && (
-        <div className="border-t border-white/[0.08]">
-          <PanelContainer height={height - HEIGHT_COLLAPSED} />
+        <div className="border-t ig-border-line" style={{ height: `calc(100% - ${HEIGHT_COLLAPSED}px)` }}>
+          <PanelContainer />
         </div>
       )}
+
+      {/* Toast 反馈层 */}
+      <ToastHost />
 
       {/* 状态位 */}
       <span className="sr-only" aria-live="polite">
@@ -172,48 +188,4 @@ export function IslandShell() {
       </span>
     </div>
   );
-}
-
-/**
- * 命中测试 Hook：用 rAF 节流的 mousemove 判断光标是否悬于交互区。
- * 状态翻转时才调用 setPassthrough，避免高频 IPC。
- */
-function useIslandHitTest(): boolean {
-  const [over, setOver] = useState(false);
-  const lastSent = useRef<boolean | null>(null);
-
-  useEffect(() => {
-    let raf = 0;
-    const onMove = (e: MouseEvent) => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        const el = document.elementFromPoint(e.clientX, e.clientY);
-        const hit =
-          !!el &&
-          !!el.closest &&
-          (el.closest('[data-interactive]') ?? null) !== null;
-        setOver(hit);
-        if (lastSent.current !== hit) {
-          lastSent.current = hit;
-          window.islandAPI.setPassthrough(!hit);
-        }
-      });
-    };
-    const onLeave = () => {
-      setOver(false);
-      if (lastSent.current !== false) {
-        lastSent.current = false;
-        window.islandAPI.setPassthrough(true);
-      }
-    };
-    window.addEventListener("mousemove", onMove, true);
-    window.addEventListener("mouseout", onLeave, true);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("mousemove", onMove, true);
-      window.removeEventListener("mouseout", onLeave, true);
-    };
-  }, []);
-
-  return over;
 }

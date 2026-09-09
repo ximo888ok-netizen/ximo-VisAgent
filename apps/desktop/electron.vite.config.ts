@@ -9,24 +9,27 @@ export default defineConfig({
     plugins: [
       externalizeDepsPlugin({
         exclude: [
-          '@desktop-agi/agent-core',
-          '@desktop-agi/browser-session',
-          '@desktop-agi/control-kit',
-          '@desktop-agi/llm-providers',
-          '@desktop-agi/perception',
-          '@desktop-agi/safety',
-          '@desktop-agi/shared-types',
+          '@ximo-visagent/agent-core',
+          '@ximo-visagent/control-kit',
+          '@ximo-visagent/llm-providers',
+          '@ximo-visagent/perception',
+          '@ximo-visagent/safety',
+          '@ximo-visagent/shared-types',
         ],
       }),
     ],
     build: {
+      // 主进程资源（托盘/窗口图标 ?asset）必须落成文件：nativeImage.createFromPath
+      // 无法读取内联 data URL，且小文件默认会被 vite 内联
+      assetsInlineLimit: 0,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
       },
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    // zod 内联打包：sandbox:true 的 preload 无 require，必须全量 bundle
+    plugins: [externalizeDepsPlugin({ exclude: ['zod'] })],
     build: {
       rollupOptions: {
         input: {
@@ -46,6 +49,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           island: resolve(__dirname, 'src/renderer/island.html'),
+          aura: resolve(__dirname, 'src/renderer/aura.html'),
+          splash: resolve(__dirname, 'src/renderer/splash.html'),
         },
       },
     },

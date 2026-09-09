@@ -1,5 +1,5 @@
 // elementId 定位：UIA 树节点 → 物理坐标解析及模型输出校验
-import type { UiNode, UiTreeResult } from '@desktop-agi/shared-types';
+import type { UiNode, UiTreeResult } from '@ximo-visagent/shared-types';
 
 export interface ElementLocation {
   elementId: number;

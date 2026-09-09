@@ -1,22 +1,13 @@
-// 感知提供方：截图 + UIA 树 + 前台窗口（用 control-kit 的 HostPerception + Electron host）
-import { HostPerception, setHost } from '@desktop-agi/control-kit';
-import { createHostCapabilities } from './host-capabilities';
-import { getMonitorsPhysical } from './foreground';
+// 感知提供方：截图 + 前台窗口
+// 注意：host 的初始化由 orchestrator.ts 的 launch() 负责，
+// 此处只负责创建 perception 实例，不重复 setHost
+import { HostPerception } from '@ximo-visagent/control-kit';
 
 let perception: HostPerception | null = null;
-let hostInitialized = false;
 
 export function initPerception(): HostPerception {
   if (!perception) {
-    if (!hostInitialized) {
-      setHost(createHostCapabilities());
-      hostInitialized = true;
-    }
-    perception = new HostPerception(true);
+    perception = new HostPerception();
   }
   return perception;
-}
-
-export function getMonitors() {
-  return getMonitorsPhysical();
 }
