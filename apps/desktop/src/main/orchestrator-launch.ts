@@ -20,6 +20,7 @@ import { announceApprovalRequest } from './e2e-runner';
 import { finalizeTaskExperience } from './orchestrator-experience';
 import { classifyFailure, toStepSkeleton, persistAgentEvent } from './orchestrator-audit';
 import { pushTaskFinished, notifyTaskStarted, notifyTaskFinished, requestApprovalUI } from './orchestrator-notify';
+import { attachAnchorWatchdog } from './anchor-watchdog-host';
 import { initPerception } from './perception-host';
 import { createHostCapabilities } from './host-capabilities';
 import { CustomToolRuntime } from './custom-tools';
@@ -159,6 +160,10 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
   host.loops.set(t.taskId, { loop, goal: t.goal });
   audit.saveTask(t.taskId, t.goal);
 
+  // A-M3 前台看门狗（纯注入接线）：仅带 targetApp 的锚定任务装配，其余任务返回 null 链路不变。
+  // 判定/暂停/续跑/收口全在 anchor-watchdog*.ts 三文件内，这里不承载任何看门狗逻辑。
+  const watchdog = attachAnchorWatchdog(host, t);
+
   // BUG-14 修复：通知 UI 任务已开始执行（对排队任务尤其重要）
   notifyTaskStarted(t.taskId, t.goal);
   auraTaskStarted(t.taskId, t.goal);
@@ -236,6 +241,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
       }
     })
     .finally(() => {
+      watchdog?.stop();
       host.loops.delete(t.taskId);
       auraTaskFinished(t.taskId);
       // lastSteps 保留（SOP 保存窗口期使用），容量封顶 20 条
