@@ -34,8 +34,8 @@ export function MemorySettings({ config }: { config: AppConfigPayload }) {
       {/* 总开关 */}
       <div className="flex items-center justify-between rounded-lg ig-bg-panel px-3 py-2.5">
         <div className="min-w-0">
-          <div className="text-[11.5px] t-strong">工作记忆</div>
-          <div className="mt-0.5 text-[9.5px] t-faint">任务完成后自动提炼事实与偏好，注入后续任务上下文</div>
+          <div className="text-[12px] t-strong">工作记忆</div>
+          <div className="mt-0.5 text-[11px] t-faint">任务完成后自动提炼事实与偏好，注入后续任务上下文</div>
         </div>
         <button
           data-interactive
@@ -51,7 +51,7 @@ export function MemorySettings({ config }: { config: AppConfigPayload }) {
           {memories.length > 0 && (
             <button
               data-interactive
-              className={`text-[10px] ${confirmingClear ? "text-red-300" : "t-muted hover:text-red-300"}`}
+              className={`text-[12px] ${confirmingClear ? "ig-fg-danger" : "t-muted hover:ig-fg-danger"}`}
               onClick={() => {
                 if (confirmingClear) {
                   void clearMemories();
@@ -77,12 +77,12 @@ export function MemorySettings({ config }: { config: AppConfigPayload }) {
           )}
           {memoryError && (
             <div className="flex flex-col items-center gap-2 py-4">
-              <span className="text-[10.5px] text-red-300">记忆加载失败：{memoryError}</span>
-              <button data-interactive className="island-btn island-btn--ghost text-[10px]" onClick={() => void loadMemories()}>重试</button>
+              <span className="text-[12px] ig-fg-danger">记忆加载失败：{memoryError}</span>
+              <button data-interactive className="island-btn island-btn--ghost text-[12px]" onClick={() => void loadMemories()}>重试</button>
             </div>
           )}
           {!memoryLoading && !memoryError && memories.length === 0 && (
-            <div className="flex h-20 items-center justify-center text-[10.5px] t-faint">
+            <div className="flex h-20 items-center justify-center text-[12px] t-faint">
               暂无记忆 · 完成几个任务后会自动积累
             </div>
           )}
@@ -95,18 +95,18 @@ export function MemorySettings({ config }: { config: AppConfigPayload }) {
                 title={m.enabled ? "停用该条" : "启用该条"}
               />
               <span
-                className="shrink-0 rounded-full px-1.5 py-0.5 text-[8.5px]"
+                className="shrink-0 rounded-full px-1.5 py-0.5 text-[11px]"
                 style={{
                   background: m.kind === "preference" ? "rgba(96,165,250,0.15)" : "rgba(63,224,160,0.12)",
-                  color: m.kind === "preference" ? "#93c5fd" : "#3fe0a0",
+                  color: m.kind === "preference" ? "var(--p-ice-300)" : "var(--c-thinking)",
                 }}
               >
                 {m.kind === "preference" ? "偏好" : "事实"}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[10.5px] t-body" title={m.content}>{m.content}</span>
-              <span className="shrink-0 text-[8.5px] tabular-nums t-faint">{m.useCount > 0 ? `用${m.useCount}次` : ""}</span>
+              <span className="min-w-0 flex-1 truncate text-[12px] t-body" title={m.content}>{m.content}</span>
+              <span className="shrink-0 text-[11px] tabular-nums t-faint">{m.useCount > 0 ? `用${m.useCount}次` : ""}</span>
               <button
-                className="shrink-0 text-[10px] t-faint opacity-0 transition group-hover:opacity-100 hover:text-red-300"
+                className="shrink-0 text-[12px] t-faint opacity-0 transition group-hover:opacity-100 hover:ig-fg-danger"
                 onClick={() => {
                   void deleteMemory(m.id);
                 }}

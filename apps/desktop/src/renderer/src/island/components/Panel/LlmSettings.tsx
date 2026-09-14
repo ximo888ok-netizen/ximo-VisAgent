@@ -74,8 +74,8 @@ export function LlmSettings({ config }: { config: AppConfigPayload }) {
   return (
     <div className="rounded-xl border ig-border-line ig-bg-panel p-3">
       <div className="mb-3">
-        <h4 className="text-[12.5px] font-semibold t-strong">主大脑（多模态模型）</h4>
-        <p className="mt-0.5 text-[10.5px] t-faint">负责任务规划、推理决策、截图理解、界面识别</p>
+        <h4 className="text-[13px] font-semibold t-strong">主大脑（多模态模型）</h4>
+        <p className="mt-0.5 text-[12px] t-faint">负责任务规划、推理决策、截图理解、界面识别</p>
       </div>
 
       {/* 供应商 */}
@@ -159,7 +159,7 @@ export function LlmSettings({ config }: { config: AppConfigPayload }) {
       {/* 保存 + 连通性测试 */}
       <div className="flex gap-2">
         <button
-          className="island-btn island-btn--primary flex-1 text-[11px]"
+          className="island-btn island-btn--primary flex-1 text-[12px]"
           onClick={() => void handleSave()}
           disabled={saved}
           data-interactive
@@ -167,7 +167,7 @@ export function LlmSettings({ config }: { config: AppConfigPayload }) {
           {saved ? "✓ 已保存" : "保存配置"}
         </button>
         <button
-          className="island-btn island-btn--ghost text-[11px]"
+          className="island-btn island-btn--ghost text-[12px]"
           disabled={testing || !llm.apiKey}
           title={llm.apiKey.includes("****") ? "使用已保存的 Key 发起 1 次真实调用" : "保存后发起 1 次真实调用"}
           onClick={() => void handleTest()}
@@ -177,7 +177,7 @@ export function LlmSettings({ config }: { config: AppConfigPayload }) {
         </button>
       </div>
       {testResult && (
-        <div className={`mt-2 rounded-lg px-2.5 py-1.5 text-[10.5px] ${testResult.startsWith("✓") ? "bg-emerald-500/[0.07] text-emerald-300" : "bg-red-500/[0.07] text-red-300"}`}>
+        <div className={`mt-2 rounded-lg px-2.5 py-1.5 text-[12px] ${testResult.startsWith("✓") ? "ig-tag ig-tone-success" : "ig-tag ig-tone-danger"}`}>
           {testResult}
         </div>
       )}

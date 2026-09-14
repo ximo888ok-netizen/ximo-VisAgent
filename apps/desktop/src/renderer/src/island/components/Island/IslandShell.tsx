@@ -15,6 +15,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
@@ -28,11 +29,27 @@ import { IslandApproval } from "./IslandApproval";
 import { PanelContainer } from "./PanelContainer";
 import { ToastHost } from "../common/Toast";
 
-/** 高度：收拢 64，审批展开 280 */
+/** 高度：收拢 64，审批展开 340（容纳纵向审批卡的标题/截图条/信息区/按钮四段） */
 const HEIGHT_COLLAPSED = 64;
-const HEIGHT_APPROVAL = 280;
+const HEIGHT_APPROVAL = 340;
+
+/**
+ * 启动交接期保持壳体不透明。
+ *
+ * 为什么需要：splash 与真岛同位置重叠，且 splash 在真岛**下方**淡出 300ms
+ * （island-loader.ts 在 did-finish-load 之后 300ms 才 closeSplash）。
+ * 壳体做成半透明后，splash 的绿色进度条与「就绪」字样会透过玻璃显影；
+ * 改造前壳体不透明，真岛完全盖住 splash，所以这个叠加一直没被发现。
+ *
+ * 取值 1000ms：交接完成（did-finish-load + 300 淡出）最迟约在挂载后 700ms，
+ * 留约 300ms 余量。释放是一步到位的——此时 splash 已销毁 400ms 以上，
+ * 没有可对比的参照，肉眼察觉不到密度变化，所以不需要过渡动画。
+ */
+const HANDOFF_OPAQUE_MS = 1000;
 
 export function IslandShell() {
+  /** 启动交接期标记（见 HANDOFF_OPAQUE_MS 注释） */
+  const [handoff, setHandoff] = useState(true);
   const status = useIslandStore((s) => s.status);
   const view = useIslandStore((s) => s.view);
   const panelMode = useIslandStore((s) => s.panelMode);
@@ -131,6 +148,23 @@ export function IslandShell() {
     window.islandAPI.resize(window.innerWidth, height);
   }, [height]);
 
+  /**
+   * 玻璃透镜带深度：随高度自适应。
+   * 顶栏 64px 与展开面板 520px 对"斜面厚度"的需求差 5 倍，固定值必然一端报废。
+   * 在 JS 里算而不是用 CSS clamp：渐变色标里一旦解析失败，整条 background-image 会失效，
+   * 壳体会瞬间失去全部质感——这个失败模式不值得冒。
+   */
+  const glassBand = useMemo(
+    () => Math.max(10, Math.min(34, Math.round(height * 0.06))),
+    [height],
+  );
+
+  /* ---------- 启动交接：先不透明承接 splash，交接完成后再释放到用户设定值 ---------- */
+  useEffect(() => {
+    const t = window.setTimeout(() => setHandoff(false), HANDOFF_OPAQUE_MS);
+    return () => window.clearTimeout(t);
+  }, []);
+
   const showApproval = view === "expanded" && approval !== null;
   const showPanel = view === "expanded" && approval === null;
 
@@ -138,7 +172,15 @@ export function IslandShell() {
     <div
       onClick={handleClick}
       className="island-shell-bg island-no-select relative overflow-hidden rounded-[22px] transition-[height] duration-300"
-      style={{ height: "100vh", transitionTimingFunction: "var(--island-ease)" }}
+      style={
+        {
+          height: "100vh",
+          transitionTimingFunction: "var(--island-ease)",
+          "--glass-band": `${glassBand}px`,
+          /* 交接期覆写为 1（内联自定义属性只作用于本子树，不影响 :root 上用户的值） */
+          "--island-opacity": handoff ? 1 : undefined,
+        } as CSSProperties
+      }
     >
       {/* 顶部 64px 三区壳：左 84 / 中 弹性 / 右 120 */}
       <div className="flex h-16 items-stretch">
@@ -158,10 +200,10 @@ export function IslandShell() {
             <circle cx="6" cy="13" r="1.2" fill="var(--ig-t-faint)" />
           </svg>
         </span>
-        <IslandStatus width={104} />
-        <span className="my-[15px] w-px shrink-0 ig-bg-panel-hover" />
+        <IslandStatus width={156} />
+        <span className="my-4 w-px shrink-0 ig-bg-panel-hover" />
         <IslandLog />
-        <span className="my-[15px] w-px shrink-0 ig-bg-panel-hover" />
+        <span className="my-4 w-px shrink-0 ig-bg-panel-hover" />
         <IslandActions width={120} />
       </div>
 

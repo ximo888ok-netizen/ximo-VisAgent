@@ -97,8 +97,8 @@ export function TaskComposer({
               <path d="M12 2L14 8H20L15 12L17 18L12 14L7 18L9 12L4 8H10L12 2Z" stroke="var(--ig-t-muted)" strokeWidth="1.5" strokeLinejoin="round" />
             </svg>
           </div>
-          <p className="text-[13px] t-body font-medium">有什么可以帮你？</p>
-          <p className="mt-1 text-[10.5px] t-faint">输入任务，Agent 将自动执行</p>
+          <p className="text-[15px] t-body font-medium">有什么可以帮你？</p>
+          <p className="mt-1 text-[12px] t-faint">输入任务，Agent 将自动执行</p>
         </div>
       )}
       <div className="relative">
@@ -111,15 +111,15 @@ export function TaskComposer({
           rows={hasContent ? 1 : 2}
           maxLength={2000}
           className="island-input island-glow resize-none"
-          style={{ fontSize: "12.5px", lineHeight: "1.5", minHeight: hasContent ? 36 : 56 }}
+          style={{ fontSize: "13px", lineHeight: "1.5", minHeight: hasContent ? 36 : 56 }}
           data-interactive
         />
       </div>
       <div className="mt-2 flex items-center justify-between">
         {conversationTurns > 0 ? (
           <div className="flex items-center gap-2" data-interactive>
-            <span className="text-[10px] t-faint">已关联 {conversationTurns} 轮对话（可说"把刚才那个再…"）</span>
-            <button className="text-[10px] t-muted hover:t-body" onClick={() => void handleNewConversation()} data-interactive>
+            <span className="text-[12px] t-faint">已关联 {conversationTurns} 轮对话（可说"把刚才那个再…"）</span>
+            <button className="text-[12px] t-muted hover:t-body" onClick={() => void handleNewConversation()} data-interactive>
               新对话
             </button>
           </div>
@@ -127,11 +127,11 @@ export function TaskComposer({
           <div className="flex items-center gap-2" data-interactive>
             <ApprovalModeSelect />
             <ThinkingModeSelect />
-            <span className="text-[10px] t-faint">Enter 提交 · Shift+Enter 换行</span>
+            <span className="text-[12px] t-faint">Enter 提交 · Shift+Enter 换行</span>
           </div>
         )}
         <button
-          className="island-btn island-btn--primary text-[11.5px]"
+          className="island-btn island-btn--primary text-[12px]"
           disabled={!goal.trim() || submitting}
           onClick={handleSubmit}
           data-interactive

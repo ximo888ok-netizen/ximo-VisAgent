@@ -40,19 +40,17 @@ export function IslandActions({ width = 120 }: { width?: number }) {
         className="grid h-8 w-8 place-items-center rounded-full transition-all
                    duration-200 enabled:hover:scale-110 enabled:active:scale-90"
         style={{
-          background: "#e5484d",
-          boxShadow: "0 2px 8px rgba(229,72,77,0.4), inset 0 1px 0 rgba(255,255,255,0.18)",
+          background: "var(--p-ember-500)",
+          boxShadow:
+            "0 2px 8px color-mix(in srgb, var(--p-ember-500) 40%, transparent), inset 0 1px 0 rgba(255,255,255,0.18)",
           transitionTimingFunction: "var(--island-ease-bounce)",
         }}
       >
-        {/* 🛑 白描边八边形 */}
+        {/* 停止符号：圆角方块。34 网格 / 显示 20 / 描边 2.55（= 屏幕 1.5px，与全套图标一致）。
+            图形占 8~26，与右侧展开图标同一光学尺寸——改造前两个图标一个是 13.6 宽、
+            一个是 16 宽，并排看明显一大一小。 */}
         <svg width="20" height="20" viewBox="0 0 34 34" fill="none">
-          <polygon
-            points="23.8,19.8 19.8,23.8 14.2,23.8 10.2,19.8 10.2,14.2 14.2,10.2 19.8,10.2 23.8,14.2"
-            stroke="#fff"
-            strokeWidth="2.4"
-            strokeLinejoin="round"
-          />
+          <rect x="8" y="8" width="18" height="18" rx="5" stroke="#fff" strokeWidth="2.55" />
         </svg>
       </button>
 
@@ -63,22 +61,22 @@ export function IslandActions({ width = 120 }: { width?: number }) {
         aria-label={currentView === "collapsed" ? "展开面板" : "收拢面板"}
         title={currentView === "collapsed" ? "展开面板" : "收拢面板"}
         onClick={handleToggleExpand}
-        className="grid h-8 w-8 place-items-center rounded-[10px] transition-all
+        className="grid h-8 w-8 place-items-center rounded-lg transition-all
                    duration-200 hover:ig-bg-panel-hover active:scale-90"
         style={{ transitionTimingFunction: "var(--island-ease)" }}
       >
-        {/* ⤢ 双对角角标 */}
+        {/* 双对角角标：同样占 8~26，与左侧停止符号等重 */}
         <svg width="20" height="20" viewBox="0 0 34 34" fill="none">
           <path
-            d="M25 9 L25 11.9 M25 9 L22.1 9"
+            d="M26 8 L26 13.5 M26 8 L20.5 8"
             stroke="var(--ig-t-strong)"
-            strokeWidth="2"
+            strokeWidth="2.55"
             strokeLinecap="round"
           />
           <path
-            d="M9 25 L9 22.1 M9 25 L11.9 25"
+            d="M8 26 L8 20.5 M8 26 L13.5 26"
             stroke="var(--ig-t-strong)"
-            strokeWidth="2"
+            strokeWidth="2.55"
             strokeLinecap="round"
           />
         </svg>

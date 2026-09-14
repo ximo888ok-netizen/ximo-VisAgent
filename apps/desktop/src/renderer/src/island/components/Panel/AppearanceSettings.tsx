@@ -1,11 +1,23 @@
 /**
- * AppearanceSettings.tsx — 外观设置（主题切换 + 透明度控制）
+ * AppearanceSettings.tsx — 外观设置（主题切换 + 玻璃透明度）
  *
- * 主题：纯色暗黑 / 纯色纯白
- * 透明度：用户可调滑块（影响 --island-opacity 变量）
+ * 主题：暗黑 / 纯白
+ * 透明度：只作用于玻璃第 1 层（底色）的 alpha —— 文字、图标、描边不参与透明。
+ *         内容区另有独立压底（.island-panel-glass），所以壳调到最透也不影响可读性。
  */
 import { useState, useEffect } from "react";
 import { useIslandStore } from "../../store/islandStore";
+
+/** 壳体透明度三档预设（与 tokens.css 的 --glass-preset-* 同值） */
+const OPACITY_PRESETS = [
+  { value: 85, label: "稳", desc: "桌面只透出一层淡淡色晕，任何壁纸下都不影响阅读" },
+  { value: 68, label: "标准", desc: "看得见桌面轮廓，看不清细节。默认档" },
+  { value: 45, label: "高", desc: "桌面细节明显透出，最接近清透感；背后是白底文档时会偏亮" },
+] as const;
+
+/** 滑块下限与默认档（取值需与 tokens.css 的 --glass-opacity-min / --glass-preset-standard 一致） */
+const MIN_OPACITY = 40;
+const DEFAULT_OPACITY = 68;
 
 /** 边框强度三档：录屏、投屏或只是不喜欢它亮着时，必须能关掉 */
 type AuraIntensity = "off" | "subtle" | "full";
@@ -22,7 +34,7 @@ export function AppearanceSettings() {
   const saveConfig = useIslandStore((s) => s.saveConfig);
   const [aura, setAura] = useState<AuraIntensity>("full");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [opacity, setOpacity] = useState(100);
+  const [opacity, setOpacity] = useState(DEFAULT_OPACITY);
   const [saved, setSaved] = useState(false);
 
   // 读取已存的边框强度
@@ -41,14 +53,15 @@ export function AppearanceSettings() {
     return un;
   }, []);
 
-  // 从 localStorage 恢复透明度
+  // 从 localStorage 恢复透明度（存量值可能低于新下限，读取时钳制）
   useEffect(() => {
     const saved = localStorage.getItem("island-opacity");
     if (saved) {
       const v = Number(saved);
-      if (v > 0 && v <= 100) {
-        setOpacity(v);
-        applyOpacity(v);
+      if (Number.isFinite(v) && v > 0) {
+        const clamped = Math.min(100, Math.max(MIN_OPACITY, v));
+        setOpacity(clamped);
+        applyOpacity(clamped);
       }
     }
   }, []);
@@ -96,13 +109,25 @@ export function AppearanceSettings() {
         </div>
       </div>
 
-      {/* 透明度 */}
+      {/* 玻璃透明度 */}
       <div>
-        <label className="island-label">透明度</label>
+        <label className="island-label">玻璃透明度</label>
+        <div className="mb-2 flex gap-1">
+          {OPACITY_PRESETS.map((p) => (
+            <button
+              key={p.value}
+              data-interactive
+              className={`island-chip ${opacity === p.value ? "island-chip--active" : ""}`}
+              onClick={() => handleOpacity(p.value)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-3">
           <input
             type="range"
-            min={30}
+            min={MIN_OPACITY}
             max={100}
             value={opacity}
             onChange={(e) => handleOpacity(Number(e.target.value))}
@@ -110,9 +135,12 @@ export function AppearanceSettings() {
             style={{ accentColor: "var(--island-input-focus)" }}
             data-interactive
           />
-          <span className="w-10 text-right text-[11px] tabular-nums t-body">{opacity}%</span>
+          <span className="t-num w-10 text-right text-[12px] t-body">{opacity}%</span>
         </div>
-        <p className="mt-1 text-[10px] t-faint">滑动调整窗口背景透明度</p>
+        <p className="mt-1 text-[12px] t-faint">
+          {OPACITY_PRESETS.find((p) => p.value === opacity)?.desc ??
+            "只调整玻璃底色，文字与描边不参与透明"}
+        </p>
       </div>
 
       {/* Agent 在场指示边框 */}
@@ -137,21 +165,21 @@ export function AppearanceSettings() {
               }`}
             >
               <div className="flex items-center gap-2">
-                <span className="text-[12px] font-medium t-strong">{o.label}</span>
+                <span className="text-[13px] font-medium t-strong">{o.label}</span>
                 {aura === o.value && (
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="ml-auto">
-                    <path d="M3 8.5l3.5 3.5L13 4.5" stroke="var(--island-input-focus)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M3 8.5l3.5 3.5L13 4.5" stroke="var(--island-input-focus)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
               </div>
-              <p className="mt-0.5 text-[10px] t-faint">{o.desc}</p>
+              <p className="mt-0.5 text-[12px] t-faint">{o.desc}</p>
             </button>
           ))}
         </div>
-        <p className="mt-1 text-[10px] t-faint">边框不会进入 Agent 自己的截图，也不会挡住鼠标。</p>
+        <p className="mt-1 text-[12px] t-faint">边框不会进入 Agent 自己的截图，也不会挡住鼠标。</p>
       </div>
 
-      <button className="island-btn island-btn--primary w-full text-[11px]" onClick={handleSave} disabled={saved} data-interactive>
+      <button className="island-btn island-btn--primary w-full text-[12px]" onClick={handleSave} disabled={saved} data-interactive>
         {saved ? "✓ 已保存" : "保存外观设置"}
       </button>
     </div>
@@ -168,11 +196,11 @@ function ThemeCard({ active, label, bg, onClick }: { active: boolean; label: str
       }`}
     >
       <div className="flex items-center gap-2">
-        <span className="h-5 w-5 rounded-md border ig-border-line" style={{ background: bg }} />
-        <span className="text-[12px] font-medium t-strong">{label}</span>
+        <span className="h-5 w-5 rounded-lg border ig-border-line" style={{ background: bg }} />
+        <span className="text-[13px] font-medium t-strong">{label}</span>
         {active && (
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="ml-auto">
-            <path d="M3 8.5l3.5 3.5L13 4.5" stroke="var(--island-input-focus)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M3 8.5l3.5 3.5L13 4.5" stroke="var(--island-input-focus)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
       </div>

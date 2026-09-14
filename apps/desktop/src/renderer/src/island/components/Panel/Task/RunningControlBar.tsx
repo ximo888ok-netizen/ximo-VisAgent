@@ -14,7 +14,7 @@ function CostBadge({ promptTokens, completionTokens }: { promptTokens: number; c
   return (
     <span
       data-interactive
-      className="rounded-full ig-bg-panel-hover px-2 py-0.5 text-[10px] tabular-nums t-muted"
+      className="rounded-full ig-bg-panel-hover px-2 py-0.5 text-[12px] tabular-nums t-muted"
       title={`输入 ${promptTokens} / 输出 ${completionTokens} tokens`}
     >
       {k} tok
@@ -41,17 +41,17 @@ export function RunningControlBar({ onCancel }: { onCancel: () => void }) {
   return (
     <div className="mb-3 flex items-center justify-between rounded-lg ig-bg-panel px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
-        <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${taskPaused ? "bg-blue-400" : "bg-emerald-400 island-ring--thinking"}`} />
-        <span className="truncate text-[11px] t-body">
+        <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${taskPaused ? "ig-bg-info" : "ig-bg-success island-ring--thinking"}`} />
+        <span className="truncate text-[12px] t-body">
           {taskPaused ? "已暂停" : "运行中"}
         </span>
       </div>
       <div className="flex shrink-0 gap-1.5">
         <CostBadge promptTokens={promptTokens} completionTokens={completionTokens} />
-        <button className="island-btn island-btn--ghost px-2.5 text-[10.5px]" onClick={handlePauseToggle} data-interactive>
+        <button className="island-btn island-btn--ghost px-2.5 text-[12px]" onClick={handlePauseToggle} data-interactive>
           {taskPaused ? "继续" : "暂停"}
         </button>
-        <button className="island-btn island-btn--ghost px-2.5 text-[10.5px]" onClick={onCancel} data-interactive>
+        <button className="island-btn island-btn--ghost px-2.5 text-[12px]" onClick={onCancel} data-interactive>
           取消
         </button>
       </div>

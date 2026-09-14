@@ -25,16 +25,16 @@ export function ApprovalParamsEditor({
       }}
     >
       {keys.map((k) => (
-        <label key={k} className="flex items-center gap-2 text-[11px] t-body">
+        <label key={k} className="flex items-center gap-2 text-[12px] t-body">
           <span className="w-16 shrink-0 truncate">{k}</span>
           <input
             value={params[k] ?? ""}
             onChange={(e) => onChange(k, e.target.value)}
-            className="min-w-0 flex-1 rounded-md border ig-border-line ig-bg-panel px-2 py-1 text-[11.5px] text-[var(--ig-t-strong)] outline-none focus:border-[#2e7cf6]"
+            className="min-w-0 flex-1 rounded-lg border ig-border-line ig-bg-panel px-2 py-1 text-[12px] text-[var(--ig-t-strong)] outline-none focus:border-[var(--island-input-focus)]"
           />
         </label>
       ))}
-      <span className="col-span-2 text-right text-[9.5px] t-faint">Esc 退出编辑</span>
+      <span className="col-span-2 text-right text-[11px] t-faint">Esc 退出编辑</span>
     </div>
   );
 }

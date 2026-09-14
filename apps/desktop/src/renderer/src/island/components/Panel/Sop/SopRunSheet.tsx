@@ -63,7 +63,7 @@ export function SopRunSheet({ sopId }: { sopId: string }) {
   }, [variables, varValues]);
 
   if (!sop) {
-    return <div className="px-5 py-4 text-[12px] t-muted">模板不存在或已删除</div>;
+    return <div className="px-5 py-4 text-[13px] t-muted">模板不存在或已删除</div>;
   }
 
   const handleRun = async () => {
@@ -91,8 +91,8 @@ export function SopRunSheet({ sopId }: { sopId: string }) {
   return (
     <div className="space-y-3 px-5 py-4">
       <div>
-        <h3 className="text-[13px] font-semibold t-strong">运行模板 · {sop.name}</h3>
-        <p className="mt-0.5 text-[10.5px] t-muted">{sop.description}</p>
+        <h3 className="text-[15px] font-semibold t-strong">运行模板 · {sop.name}</h3>
+        <p className="mt-0.5 text-[12px] t-muted">{sop.description}</p>
       </div>
 
       {/* M8: 变量表单 */}
@@ -101,7 +101,7 @@ export function SopRunSheet({ sopId }: { sopId: string }) {
           <div className="island-label">变量填充（{'{{key}}'} 占位符将自动替换）</div>
           {variables.map((v) => (
             <div key={v.key}>
-              <label className="text-[10px] t-muted">{v.label}</label>
+              <label className="text-[12px] t-muted">{v.label}</label>
               <input
                 className="island-input"
                 value={varValues[v.key] ?? ""}
@@ -128,16 +128,16 @@ export function SopRunSheet({ sopId }: { sopId: string }) {
             }
           }}
           data-interactive
-          style={{ fontSize: "12px", lineHeight: 1.5 }}
+          style={{ fontSize: "13px", lineHeight: 1.5 }}
         />
       </div>
 
-      <div className="rounded-lg ig-bg-panel px-3 py-2 text-[10px] t-muted">
+      <div className="rounded-lg ig-bg-panel px-3 py-2 text-[12px] t-muted">
         将注入 {stepCount} 条历史步骤作为骨架参考，Agent 仍会根据实际屏幕决策。
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[11px] text-red-300">{error}</div>
+        <div className="rounded-lg ig-alert ig-tone-danger px-3 py-2 text-[13px]">{error}</div>
       )}
 
       <button

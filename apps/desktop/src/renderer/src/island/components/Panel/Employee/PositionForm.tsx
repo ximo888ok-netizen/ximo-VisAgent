@@ -129,13 +129,13 @@ export function PositionForm({ positionId, initial, onDone }: PositionFormProps)
 
   return (
     <div className="rounded-xl ig-bg-panel px-3 py-2.5 space-y-2">
-      <div className="text-[11px] t-strong font-medium">
+      <div className="text-[12px] t-strong font-medium">
         {isEdit ? "编辑岗位" : "新建岗位"}
       </div>
 
       <input
         data-interactive
-        className="island-input w-full text-[11px]"
+        className="island-input w-full text-[12px]"
         placeholder="岗位名称 *"
         value={name}
         onChange={(e) => setName(e.target.value)}
@@ -143,7 +143,7 @@ export function PositionForm({ positionId, initial, onDone }: PositionFormProps)
 
       <input
         data-interactive
-        className="island-input w-full text-[11px]"
+        className="island-input w-full text-[12px]"
         placeholder="角色画像（一句话描述）"
         value={roleProfile}
         onChange={(e) => setRoleProfile(e.target.value)}
@@ -151,7 +151,7 @@ export function PositionForm({ positionId, initial, onDone }: PositionFormProps)
 
       <input
         data-interactive
-        className="island-input w-full text-[11px]"
+        className="island-input w-full text-[12px]"
         placeholder="汇报对象"
         value={reportTo}
         onChange={(e) => setReportTo(e.target.value)}
@@ -159,7 +159,7 @@ export function PositionForm({ positionId, initial, onDone }: PositionFormProps)
 
       <textarea
         data-interactive
-        className="island-input w-full text-[10px] resize-none"
+        className="island-input w-full text-[12px] resize-none"
         rows={3}
         placeholder="职责范围（每行一条）"
         value={dutyScope}
@@ -168,7 +168,7 @@ export function PositionForm({ positionId, initial, onDone }: PositionFormProps)
 
       <textarea
         data-interactive
-        className="island-input w-full text-[10px] resize-none"
+        className="island-input w-full text-[12px] resize-none"
         rows={2}
         placeholder="硬边界（不做什么，每行一条）"
         value={dutyBoundary}
@@ -177,7 +177,7 @@ export function PositionForm({ positionId, initial, onDone }: PositionFormProps)
 
       <textarea
         data-interactive
-        className="island-input w-full text-[10px] resize-none"
+        className="island-input w-full text-[12px] resize-none"
         rows={2}
         placeholder="工作目标（每行一条）"
         value={goals}
@@ -186,7 +186,7 @@ export function PositionForm({ positionId, initial, onDone }: PositionFormProps)
 
       <textarea
         data-interactive
-        className="island-input w-full text-[10px] resize-none"
+        className="island-input w-full text-[12px] resize-none"
         rows={3}
         placeholder={"资料清单（每行格式：路径|优先级|类型）\n例：D:/docs/procurement.md|1|doc\n例：D:/src|2|dir"}
         value={knowledge}
@@ -194,12 +194,12 @@ export function PositionForm({ positionId, initial, onDone }: PositionFormProps)
       />
 
       {error && (
-        <div className="text-[10px] text-red-300">{error}</div>
+        <div className="text-[12px] ig-fg-danger">{error}</div>
       )}
 
       <button
         data-interactive
-        className="island-btn island-btn--primary w-full text-[10.5px]"
+        className="island-btn island-btn--primary w-full text-[12px]"
         disabled={saving || !name.trim()}
         onClick={() => void handleSubmit()}
       >

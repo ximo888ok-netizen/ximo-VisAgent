@@ -19,20 +19,52 @@
 
 :root {
   /* 纯色暗黑主题（默认） */
-  --island-bg: #1a1a1a;
-  --island-border: rgba(255, 255, 255, 0.08);
+  /* 壳体背景拆成 rgb + alpha 两段：透明度滑块只动 alpha，不再连带文字与描边一起变淡 */
+  --island-shell-rgb: 26, 26, 26;
+  --island-opacity: var(--glass-preset-standard);
+  /* ---- 第 4 层 边缘：一条外缘亮线 + 顶沿硬高光 + 底沿暗线。
+   *      三条线叠起来 = "这块东西有厚度、有光源、且封了口" ---- */
+  --island-border: rgba(255, 255, 255, 0.18);
+  --glass-rim-hot: rgba(255, 255, 255, 0.42);
+  --glass-shade-hot: rgba(0, 0, 0, 0.34);
+  /* ---- 第 3 层 透镜带（上下两段）+ 四周环境收边 —— 体积感的主体。
+   *      只有一片渐变带，玻璃读起来像纸；有上下两条带，才像一块有斜面的玻璃 ---- */
+  --glass-lens-top: rgba(255, 255, 255, 0.15);
+  --glass-lens-bottom: rgba(0, 0, 0, 0.42);
+  --glass-lens-ambient: rgba(255, 255, 255, 0.13);
+  --glass-hi-fade: rgba(255, 255, 255, 0);
+  --glass-shade-fade: rgba(0, 0, 0, 0);
+  /* ---- 第 5 层 镜面斜光 + 左上光斑（光源的存在感） ---- */
+  --glass-specular: rgba(255, 255, 255, 0.10);
+  --glass-hotspot: rgba(255, 255, 255, 0.14);
+  --glass-btn-sheen: rgba(255, 255, 255, 0.16);
+  /* ---- 第 6 层 内容压底。深色主题往下压，浅色主题往上压，方向朝各自的主题底色 ---- */
+  --glass-scrim: rgba(14, 15, 18, 0.42);
+  --glass-panel-top: rgba(255, 255, 255, 0.10);
+
+  /* 语义色调：提示块 / 状态标签的前景与底色来源（4 态取代此前的 7 个色族） */
+  --tone-danger: var(--p-ember-500);
+  --tone-danger-fg: var(--p-ember-400);
+  --tone-warning: var(--p-sun-400);
+  --tone-warning-fg: var(--p-sun-300);
+  --tone-success: var(--p-glow-400);
+  --tone-success-fg: var(--p-glow-400);
+  --tone-info: var(--p-ice-400);
+  --tone-info-fg: var(--p-ice-300);
   --island-border-strong: rgba(255, 255, 255, 0.18);
   --island-panel-bg: rgba(255, 255, 255, 0.03);
   --island-panel-bg-hover: rgba(255, 255, 255, 0.06);
   --island-input-bg: rgba(255, 255, 255, 0.05);
   --island-input-border: rgba(255, 255, 255, 0.12);
-  --island-input-focus: #2e7cf6;
+  --island-input-focus: var(--p-ice-500);
 
-  /* 四档文字色 */
+  /* 四档文字色（alpha 经实测校核：最差情况为"暗色主题 + 纯白文档背景"。
+   * 整改前 muted 0.42 / faint 0.25 分别只有 3.01:1 与 1.98:1，低于 WCAG AA 的 4.5:1。
+   * 玻璃让背景不再是恒定的 #1a1a1a，因此这两个层级必须提高，否则高透状态下会不可读。） */
   --ig-t-strong: #f2f4f8;
-  --ig-t-body: rgba(238, 241, 246, 0.72);
-  --ig-t-muted: rgba(238, 241, 246, 0.42);
-  --ig-t-faint: rgba(238, 241, 246, 0.25);
+  --ig-t-body: rgba(238, 241, 246, 0.80);
+  --ig-t-muted: rgba(238, 241, 246, 0.64);
+  --ig-t-faint: rgba(238, 241, 246, 0.46);
 
   --ig-panel: rgba(255, 255, 255, 0.03);
   --ig-panel-hover: rgba(255, 255, 255, 0.07);
@@ -40,30 +72,50 @@
 
   --ig-toast-bg: rgba(28, 30, 36, 0.92);
 
-  --c-idle: #e8eaf0;
-  --c-thinking: #3fe0a0;
-  --c-waiting: #fbbf24;
-  --c-error: #f87171;
+  --c-idle: var(--p-ink-9);
+  --c-thinking: var(--p-glow-400);
+  --c-waiting: var(--p-sun-400);
+  --c-error: var(--p-ember-400);
 
-  --island-ease: cubic-bezier(0.32, 0.72, 0, 1);
-  --island-ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --island-ease: var(--ease-standard);
+  --island-ease-bounce: var(--ease-spring);
 }
 
 /* 纯色浅白主题（html.light） */
 html.light {
-  --island-bg: #ffffff;
-  --island-border: rgba(24, 28, 40, 0.08);
+  --island-shell-rgb: 255, 255, 255;
+  /* 浅色主题下白底白岛，描边需要更实才看得出边界——与 splash 的 .bar 取值对齐 */
+  --island-border: rgba(24, 28, 40, 0.16);
+  --glass-rim-hot: rgba(255, 255, 255, 1);
+  --glass-shade-hot: rgba(15, 23, 42, 0.12);
+  /* 浅色主题下玻璃坐在亮底上，"厚度"表现为斜面偏暗而不是偏亮 */
+  --glass-lens-top: rgba(15, 23, 42, 0.045);
+  --glass-lens-bottom: rgba(15, 23, 42, 0.11);
+  --glass-lens-ambient: rgba(15, 23, 42, 0.06);
+  --glass-hi-fade: rgba(255, 255, 255, 0);
+  --glass-shade-fade: rgba(15, 23, 42, 0);
+  --glass-specular: rgba(255, 255, 255, 0.50);
+  --glass-hotspot: rgba(255, 255, 255, 0.70);
+  --glass-btn-sheen: rgba(255, 255, 255, 0.85);
+  --glass-scrim: rgba(255, 255, 255, 0.68);
+  --glass-panel-top: rgba(255, 255, 255, 0.90);
+
+  /* 浅色主题下前景色必须换成深色档，否则白底上的浅色文字远低于 AA */
+  --tone-danger-fg: var(--p-ember-600);
+  --tone-warning-fg: var(--p-sun-600);
+  --tone-success-fg: var(--p-glow-600);
+  --tone-info-fg: var(--p-ice-600);
   --island-border-strong: rgba(24, 28, 40, 0.16);
   --island-panel-bg: rgba(15, 23, 42, 0.03);
   --island-panel-bg-hover: rgba(15, 23, 42, 0.06);
   --island-input-bg: rgba(15, 23, 42, 0.04);
   --island-input-border: rgba(15, 23, 42, 0.12);
-  --island-input-focus: #2563eb;
+  --island-input-focus: var(--p-ice-600);
 
   --ig-t-strong: #171a21;
-  --ig-t-body: rgba(26, 29, 36, 0.74);
-  --ig-t-muted: rgba(26, 29, 36, 0.46);
-  --ig-t-faint: rgba(26, 29, 36, 0.28);
+  --ig-t-body: rgba(26, 29, 36, 0.80);
+  --ig-t-muted: rgba(26, 29, 36, 0.64);
+  --ig-t-faint: rgba(26, 29, 36, 0.54);
 
   --ig-panel: rgba(15, 23, 42, 0.035);
   --ig-panel-hover: rgba(15, 23, 42, 0.07);
@@ -71,10 +123,10 @@ html.light {
 
   --ig-toast-bg: rgba(255, 255, 255, 0.95);
 
-  --c-idle: #5b6270;
-  --c-thinking: #0e9f6e;
-  --c-waiting: #b45309;
-  --c-error: #dc2626;
+  --c-idle: var(--p-ink-6);
+  --c-thinking: var(--p-glow-600);
+  --c-waiting: var(--p-sun-600);
+  --c-error: var(--p-ember-600);
 }
 
 /* 语义工具类（组件颜色统一入口，两主题自动切换） */
@@ -92,15 +144,120 @@ html.light {
 .hover\:t-body:hover              { color: var(--ig-t-body); }
 .hover\:t-strong:hover            { color: var(--ig-t-strong); }
 
-/* ---- 2. 纯色背景 ---- */
+/* ---- 语义色调（提示块 / 状态标签的唯一入口） ------------------------------
+ *
+ * 为什么需要它：改造前提示块的颜色直接从 Tailwind 调色板里取，一共用了
+ * red / rose / amber / yellow / green / emerald / blue / zinc 等多个色族。
+ * 除了视觉上不统一，还有两个实打实的缺陷：
+ *   1. text-red-300 这类值不跟随主题 —— 浅色主题下白底上的红字只有约 2.2:1；
+ *   2. 同一个语义（比如"错误"）在不同面板用了不同色值。
+ *
+ * 现在收敛为 4 个语义态，前景色按主题切换：
+ *   danger 危险/失败 | warning 警告/待处理 | success 成功/运行中 | info 信息/进行中
+ */
+.ig-tone-danger  { --ig-tone: var(--tone-danger);  --ig-tone-fg: var(--tone-danger-fg); }
+.ig-tone-warning { --ig-tone: var(--tone-warning); --ig-tone-fg: var(--tone-warning-fg); }
+.ig-tone-success { --ig-tone: var(--tone-success); --ig-tone-fg: var(--tone-success-fg); }
+.ig-tone-info    { --ig-tone: var(--tone-info);    --ig-tone-fg: var(--tone-info-fg); }
 
-.island-shell-bg {
-  background: var(--island-bg);
+/* 只改前景色 / 只改底色的小工具（用于内联状态文字与状态点）。
+ * 注意顺序：这两个块必须排在 .ig-alert / .ig-tag 之前 —— 同特异性下后者胜出，
+ * 于是「同时带 ig-tag 与 ig-fg-x」的元素会以 ig-tag 的配色为准，不会互相打架。 */
+.ig-fg-danger  { color: var(--tone-danger-fg); }
+.ig-fg-warning { color: var(--tone-warning-fg); }
+.ig-fg-success { color: var(--tone-success-fg); }
+.ig-fg-info    { color: var(--tone-info-fg); }
+
+.ig-bg-danger  { background: var(--tone-danger); }
+.ig-bg-warning { background: var(--tone-warning); }
+.ig-bg-success { background: var(--tone-success); }
+.ig-bg-info    { background: var(--tone-info); }
+
+/* hover 变体（Tailwind v4 不为自定义类生成 hover:，需手动定义） */
+.hover\:ig-fg-danger:hover  { color: var(--tone-danger-fg); }
+.hover\:ig-fg-warning:hover { color: var(--tone-warning-fg); }
+.hover\:ig-fg-success:hover { color: var(--tone-success-fg); }
+.hover\:ig-fg-info:hover    { color: var(--tone-info-fg); }
+
+/** 带边框的提示块（错误卡 / 中断横幅 / 空态提示）。布局类仍需自行给出圆角与内边距 */
+.ig-alert {
+  background: color-mix(in srgb, var(--ig-tone) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ig-tone) 28%, transparent);
+  color: var(--ig-tone-fg);
 }
 
-/* 透明度控制：用户可通过 --island-opacity 调整 */
+/** 无边框的状态标签（徽标 / inline 状态） */
+.ig-tag {
+  background: color-mix(in srgb, var(--ig-tone) 12%, transparent);
+  color: var(--ig-tone-fg);
+}
+
+/* ---- 2. 玻璃壳体（六层材质） ----------------------------------------------
+ *
+ * 玻璃的"立体感"不来自模糊，而来自叠加。本层按渲染顺序自下而上：
+ *
+ *   1 底色层      rgba(rgb, opacity)             —— 明暗基调，唯一受滑块控制的一层
+ *   2 背景模糊    见 .island-panel-glass 注释      —— 桌面透出场景下不可用，已降级
+ *   3 透镜带      上下两段 clamp 渐变 + 四周收边   —— 体积感的主体
+ *   4 边缘        外缘亮线 + 顶沿硬高光 + 底沿暗线 —— "有厚度、有光源、封了口"
+ *   5 光         镜面斜光 + 左上光斑              —— 光滑表面 + 光源存在感
+ *   6 内容压底    见 .island-panel-glass           —— 保证文字对比度
+ *
+ * 关于第 3/4 层为什么这么做（第一版只画了 1px 描边，观感"单薄"）：
+ *   真玻璃的侧边不是一条线，而是一段有宽度的斜面。光在斜面上先被压缩再散开，
+ *   于是顶部形成一条亮带、底部形成一条暗带。**这两条带才是"体积"，描边只是"边界"。**
+ *   只画描边的结果就是：看起来像一张贴纸，而不是一块玻璃。
+ *
+ *   透镜带深度由 IslandShell 按当前高度算出后内联覆盖 --glass-band（见 tokens.css 注释）：
+ *   顶栏只有 64px 高、展开面板有 520px 高，固定 px 会在顶栏上吃掉整条，纯百分比会在面板上漫成一片。
+ *
+ * 1/3/5 层合并进同一个 background 堆叠（多层背景 = 天然的渲染顺序），
+ * 4 层用 inset box-shadow —— 不占布局，窗口内容区尺寸不变。
+ *
+ * 透明度只作用于第 1 层的 alpha。早期实现把 opacity 加在壳根节点上，
+ * 滑块一拉低文字/图标/描边会跟着变淡（70% 时正文对比度约 2.3:1），已修正。
+ *
+ * 注意：CSS backdrop-filter 无法采样桌面——它只模糊同一合成上下文里的 DOM 内容，
+ * Electron 透明窗口背后的壁纸不在其中。"糊掉桌面"这一层由自绘压底替代。
+ */
 .island-shell-bg {
-  opacity: var(--island-opacity, 1);
+  /* 兜底层：底色单独声明。若下面任一渐变层解析失败，壳体只会失去质感，不会变成全透明。
+   * （用 background 简写时，任何一层非法都会让整条声明失效——那是灾难性失败模式） */
+  background-color: rgba(var(--island-shell-rgb), var(--island-opacity, 0.68));
+  background-image:
+    /* 5a 左上光斑：光源的"存在证据"，固定尺寸，在展开面板上收敛为一道角光 */
+    radial-gradient(
+      var(--glass-hotspot-w) var(--glass-hotspot-h) at 16% 0%,
+      var(--glass-hotspot),
+      var(--glass-hi-fade) 100%
+    ),
+    /* 5b 镜面斜光 */
+    linear-gradient(var(--glass-specular-angle), var(--glass-specular) 0%, var(--glass-hi-fade) var(--glass-specular-stop)),
+    /* 3 透镜带：顶亮底暗，构成斜面 */
+    linear-gradient(
+      180deg,
+      var(--glass-lens-top) 0,
+      var(--glass-hi-fade) var(--glass-band),
+      var(--glass-shade-fade) calc(100% - var(--glass-band)),
+      var(--glass-lens-bottom) 100%
+    );
+  box-shadow:
+    /* 4a 外缘亮线 */
+    inset 0 0 0 1px var(--island-border),
+    /* 4b 顶沿硬高光：唯一"硬"的一笔，光源感全靠它 */
+    inset 0 1px 0 0 var(--glass-rim-hot),
+    /* 4c 底沿暗线：给物件"封口" */
+    inset 0 -1px 0 0 var(--glass-shade-hot),
+    /* 3b 四周环境收边：让斜面在四角平滑收口，而不是四条硬边 */
+    inset 0 0 30px -14px var(--glass-lens-ambient);
+}
+
+/* 内容层：分层透的关键——壳可以透，内容区必须压底。
+ * 方向朝主题底色（深色主题往下压、浅色主题往上压），所以两种主题都抬高对比度。
+ * 该层与 --island-opacity 无关：用户把壳调到最透，内容区仍然可读。 */
+.island-panel-glass {
+  background: var(--glass-scrim);
+  box-shadow: inset 0 1px 0 0 var(--glass-panel-top);
 }
 
 /* ---- 3. 状态灯动画 ------------------------------------------------------- */
@@ -234,19 +391,49 @@ html.light {
   background: var(--island-input-focus);
 }
 
+/** 一级导航栏：4 项常驻。overflow-y 兜底，避免今后加项时又被窗口下缘裁掉 */
+.island-nav-bar {
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.island-nav-bar::-webkit-scrollbar { width: 0; }
+
 /** 带文字标签的导航项：图标上、文字下，纵向排列（不用悬停猜图标） */
 .island-nav-item--labeled {
   width: 56px;
-  height: 46px;
+  height: 44px;
   flex-direction: column;
   gap: 2px;
 }
 .island-nav-label {
-  font-size: 9px;
+  font-size: var(--fs-micro);
   line-height: 1;
   font-weight: 500;
   letter-spacing: 0.5px;
   white-space: nowrap;
+}
+
+/** 二级上下文 chip 行（一级分组内的面板切换，横向排布不吃竖向空间） */
+.island-chip {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  color: var(--ig-t-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-instant) var(--island-ease),
+              background var(--dur-instant) var(--island-ease);
+}
+.island-chip:hover { color: var(--ig-t-body); background: var(--ig-panel-hover); }
+.island-chip--active {
+  color: var(--ig-t-strong);
+  background: var(--ig-panel-hover);
+}
+.island-chip:focus-visible {
+  outline: 2px solid var(--island-input-focus);
+  outline-offset: 1px;
 }
 
 /** 面板滚动区 */
@@ -356,7 +543,7 @@ html.light .island-select option { background: #fff; color: #1a1d24; }
 
 /* ---- 8. 微交互（按钮 / 开关 / toast / 呼吸光 / 过渡） ---------------------- */
 
-/** 通用按钮 */
+/** 通用按钮 —— 含玻璃第 5 层的动态化：悬停时镜面光斑位移，做出"光滑表面被光扫过" */
 .island-btn {
   display: inline-flex;
   align-items: center;
@@ -367,33 +554,45 @@ html.light .island-select option { background: #fff; color: #1a1d24; }
   padding: 0 16px;
   height: 34px;
   cursor: pointer;
+  /* 镜面层：一条窄高光带，gradient 铺 200% 尺寸，
+     靠 background-position 0%→100% 让高光带从右向左扫过按钮表面 */
+  background-image: linear-gradient(
+    var(--glass-specular-angle),
+    var(--glass-hi-fade) 0%,
+    var(--glass-btn-sheen) var(--glass-sheen-peak),
+    var(--glass-hi-fade) var(--glass-sheen-tail)
+  );
+  background-size: 200% 200%;
+  background-position: 0% 0%;
   transition:
     transform 160ms var(--island-ease),
-    background 160ms var(--island-ease),
+    background-color 160ms var(--island-ease),
+    background-position var(--dur-instant) var(--island-ease),
     opacity 160ms var(--island-ease),
     box-shadow 200ms var(--island-ease);
 }
+.island-btn:hover:not(:disabled) { background-position: 100% 100%; }
 .island-btn:active { transform: scale(0.96); }
 .island-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .island-btn--primary {
-  background: var(--island-input-focus);
+  background-color: var(--island-input-focus);
   color: #fff;
-  box-shadow: 0 2px 8px rgba(46, 124, 246, 0.25);
+  box-shadow: 0 2px 8px var(--p-ice-500-a25);
 }
 .island-btn--primary:hover:not(:disabled) {
-  box-shadow: 0 4px 16px rgba(46, 124, 246, 0.35);
+  box-shadow: 0 4px 16px var(--p-ice-500-a35);
 }
 .island-btn--danger {
-  background: rgba(229, 72, 77, 0.1);
-  border: 1px solid rgba(229, 72, 77, 0.6);
-  color: #ffa6a6;
+  background-color: var(--p-ember-500-a10);
+  border: 1px solid var(--p-ember-500-a60);
+  color: var(--p-ember-200);
 }
-html.light .island-btn--danger { color: #b91c1c; }
+html.light .island-btn--danger { color: var(--p-ember-600); }
 .island-btn--ghost {
   border: 1px solid var(--island-input-border);
   color: var(--ig-t-body);
 }
-.island-btn--ghost:hover:not(:disabled) { background: var(--ig-panel-hover); }
+.island-btn--ghost:hover:not(:disabled) { background-color: var(--ig-panel-hover); }
 
 /** 开关 */
 .island-toggle {

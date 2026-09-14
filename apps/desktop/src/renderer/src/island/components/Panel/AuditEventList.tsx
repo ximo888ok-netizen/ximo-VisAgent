@@ -17,11 +17,11 @@ export function AuditEventList() {
         <div className="text-center">
           <div className="mx-auto mb-2 h-10 w-10 rounded-full ig-bg-panel grid place-items-center">
             <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-              <path d="M2.5 3.5h8.5v9h-8.5z" stroke="var(--ig-t-faint)" strokeWidth="1.3" strokeLinejoin="round" />
-              <path d="M4.5 6.5h4.5M4.5 8.5h3" stroke="var(--ig-t-faint)" strokeWidth="1.1" strokeLinecap="round" />
+              <path d="M2.5 3.5h8.5v9h-8.5z" stroke="var(--ig-t-faint)" strokeWidth="1.2" strokeLinejoin="round" />
+              <path d="M4.5 6.5h4.5M4.5 8.5h3" stroke="var(--ig-t-faint)" strokeWidth="1.2" strokeLinecap="round" />
             </svg>
           </div>
-          <p className="text-[11px] t-faint">选择左侧任务以查看审计</p>
+          <p className="text-[12px] t-faint">选择左侧任务以查看审计</p>
         </div>
       </div>
     );
@@ -40,7 +40,7 @@ export function AuditEventList() {
   if (events.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
-        <span className="text-[11px] t-faint">无审计事件</span>
+        <span className="text-[12px] t-faint">无审计事件</span>
       </div>
     );
   }
@@ -73,20 +73,20 @@ function AuditEventRow({ event, delay }: { event: AuditRowPayload; delay: number
       {/* 内容 */}
       <div className="flex-1 pb-1.5">
         <div className="flex items-baseline gap-2">
-          <span className="text-[10px] t-faint font-mono">
+          <span className="text-[12px] t-faint font-mono">
             #{event.seq}
           </span>
           <span
-            className="text-[10px] font-medium uppercase tracking-wide"
+            className="text-[12px] font-medium uppercase tracking-wide"
             style={{ color: kindColor }}
           >
             {event.kind}
           </span>
-          <span className="text-[9.5px] t-faint ml-auto">
+          <span className="text-[11px] t-faint ml-auto">
             {new Date(event.timestamp).toLocaleTimeString("zh-CN", { hour12: false })}
           </span>
         </div>
-        <div className="mt-0.5 text-[11.5px] leading-snug t-body">
+        <div className="mt-0.5 text-[12px] leading-snug t-body">
           {event.detail}
         </div>
       </div>
@@ -97,17 +97,17 @@ function AuditEventRow({ event, delay }: { event: AuditRowPayload; delay: number
 function kindToColor(kind: string): string {
   // M04 修复：kind 集合对齐主进程实际落库值（orchestrator onAgentEvent 中 type 字段）
   switch (kind) {
-    case "step": return "#3fe0a0";
-    case "status": return "#60a5fa";
-    case "llm_usage": return "#a78bfa";
-    case "approval_pending": return "#fbbf24";
-    case "approval_decided": return "#fbbf24";
-    case "approval_result": return "#fbbf24";
-    case "approval_mode_changed": return "#60a5fa";
-    case "error": return "#f87171";
-    case "evidence": return "#6b7280";
-    case "task_result": return "#3fe0a0";
-    case "perception": return "#6b7280";
+    case "step": return "var(--c-thinking)";
+    case "status": return "var(--p-ice-400)";
+    case "llm_usage": return "var(--p-orchid-400)";
+    case "approval_pending": return "var(--c-waiting)";
+    case "approval_decided": return "var(--c-waiting)";
+    case "approval_result": return "var(--c-waiting)";
+    case "approval_mode_changed": return "var(--p-ice-400)";
+    case "error": return "var(--c-error)";
+    case "evidence": return "var(--p-ink-6)";
+    case "task_result": return "var(--c-thinking)";
+    case "perception": return "var(--p-ink-6)";
     default: return "var(--ig-t-faint)";
   }
 }

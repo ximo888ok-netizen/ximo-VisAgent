@@ -47,26 +47,26 @@ export function FinishedCard({
   return (
     <div className="mt-3 island-fade-up">
       <div
-        className="rounded-2xl rounded-tl-sm px-3.5 py-2.5"
+        className="rounded-xl rounded-tl-sm px-3.5 py-2.5"
         style={{
           background: completed ? "rgba(63,224,160,0.08)" : "rgba(248,113,113,0.08)",
           border: `1px solid ${completed ? "rgba(63,224,160,0.2)" : "rgba(248,113,113,0.2)"}`,
         }}
       >
-        <div className="flex items-center justify-between text-[10px] t-faint mb-1">
-          <span style={{ color: completed ? "#3fe0a0" : "#f87171" }}>
+        <div className="flex items-center justify-between text-[12px] t-faint mb-1">
+          <span style={{ color: completed ? "var(--c-thinking)" : "var(--c-error)" }}>
             {completed ? "✓ 已完成" : `✕ ${statusLabel(finished.status)}`}
           </span>
           <span>{finished.steps} 步 · {finished.totalTokens} tokens</span>
         </div>
-        <div className="text-[12px] leading-snug t-strong">
+        <div className="text-[13px] leading-snug t-strong">
           {finished.finalAnswer || (completed ? "任务已完成" : "未返回详细结果，可在历史面板查看")}
         </div>
       </div>
       {/* 存为 SOP */}
       <div className="mt-2 flex gap-1.5">
         <input
-          className="island-input h-7 flex-1 text-[11px]"
+          className="island-input h-7 flex-1 text-[12px]"
           placeholder="存为 SOP 模板名"
           value={sopName}
           onChange={(e) => setSopName(e.target.value)}
@@ -76,7 +76,7 @@ export function FinishedCard({
           data-interactive
         />
         <button
-          className="island-btn island-btn--primary h-7 px-3 text-[10.5px]"
+          className="island-btn island-btn--primary h-7 px-3 text-[12px]"
           disabled={!sopName.trim()}
           onClick={handleSaveSop}
           data-interactive

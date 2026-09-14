@@ -68,9 +68,9 @@ export function SchedulePanel() {
   return (
     <div className="flex h-full flex-col px-4 py-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[11px] t-strong font-medium">定时任务</span>
+        <span className="text-[12px] t-strong font-medium">定时任务</span>
         {!creating && (
-          <button data-interactive className="island-btn island-btn--primary h-6 px-2.5 text-[10px]" onClick={() => setCreating(true)}>
+          <button data-interactive className="island-btn island-btn--primary h-6 px-2.5 text-[12px]" onClick={() => setCreating(true)}>
             + 新建
           </button>
         )}
@@ -81,7 +81,7 @@ export function SchedulePanel() {
         {creating && (
           <div className="island-fade-up rounded-xl ig-bg-panel px-3 py-2.5">
             <input
-              className="island-input mb-2 text-[11px]"
+              className="island-input mb-2 text-[12px]"
               placeholder="任务名称，如：每日日报"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -93,7 +93,7 @@ export function SchedulePanel() {
                 <button
                   key={m}
                   data-interactive
-                  className={`flex-1 rounded-md py-1 text-[10px] ${mode === m ? "t-strong" : "t-muted"}`}
+                  className={`flex-1 rounded-lg py-1 text-[12px] ${mode === m ? "t-strong" : "t-muted"}`}
                   style={mode === m ? { background: "rgba(46,124,246,0.15)" } : undefined}
                   onClick={() => setMode(m)}
                 >
@@ -103,7 +103,7 @@ export function SchedulePanel() {
             </div>
             {mode === "sop" ? (
               <select
-                className="island-select mb-2 w-full text-[11px]"
+                className="island-select mb-2 w-full text-[12px]"
                 value={sopId}
                 onChange={(e) => setSopId(e.target.value)}
                 data-interactive
@@ -115,7 +115,7 @@ export function SchedulePanel() {
               </select>
             ) : (
               <textarea
-                className="island-input mb-2 resize-none text-[11px]"
+                className="island-input mb-2 resize-none text-[12px]"
                 rows={2}
                 placeholder="任务目标，如：整理下载文件夹"
                 value={goal}
@@ -129,7 +129,7 @@ export function SchedulePanel() {
                 <button
                   key={p.cron}
                   data-interactive
-                  className={`rounded-full px-2 py-0.5 text-[9.5px] ${cron === p.cron ? "ig-bg-panel-hover t-strong" : "t-muted hover:t-body"}`}
+                  className={`rounded-full px-2 py-0.5 text-[11px] ${cron === p.cron ? "ig-bg-panel-hover t-strong" : "t-muted hover:t-body"}`}
                   onClick={() => setCron(p.cron)}
                 >
                   {p.label}
@@ -137,18 +137,18 @@ export function SchedulePanel() {
               ))}
             </div>
             <input
-              className="island-input mb-2 font-mono text-[10.5px]"
+              className="island-input mb-2 font-mono text-[12px]"
               value={cron}
               onChange={(e) => setCron(e.target.value)}
               placeholder="分 时 日 月 周"
               data-interactive
             />
-            {error && <div className="mb-2 text-[10px] text-red-300">{error}</div>}
+            {error && <div className="mb-2 text-[12px] ig-fg-danger">{error}</div>}
             <div className="flex gap-1.5">
-              <button data-interactive className="island-btn island-btn--primary flex-1 h-7 text-[10.5px]" disabled={busy} onClick={() => void handleCreate()}>
+              <button data-interactive className="island-btn island-btn--primary flex-1 h-7 text-[12px]" disabled={busy} onClick={() => void handleCreate()}>
                 {busy ? "创建中…" : "创建定时任务"}
               </button>
-              <button data-interactive className="island-btn island-btn--ghost h-7 px-3 text-[10.5px]" onClick={() => setCreating(false)}>
+              <button data-interactive className="island-btn island-btn--ghost h-7 px-3 text-[12px]" onClick={() => setCreating(false)}>
                 取消
               </button>
             </div>
@@ -164,12 +164,12 @@ export function SchedulePanel() {
         )}
         {jobsError && (
           <div className="flex flex-col items-center gap-2 py-6">
-            <span className="text-[11px] text-red-300">定时任务加载失败：{jobsError}</span>
-            <button data-interactive className="island-btn island-btn--ghost text-[10.5px]" onClick={() => void loadJobs()}>重试</button>
+            <span className="text-[12px] ig-fg-danger">定时任务加载失败：{jobsError}</span>
+            <button data-interactive className="island-btn island-btn--ghost text-[12px]" onClick={() => void loadJobs()}>重试</button>
           </div>
         )}
         {!jobsLoading && !jobsError && jobs.length === 0 && !creating && (
-          <div className="flex h-24 items-center justify-center text-[11px] t-faint">
+          <div className="flex h-24 items-center justify-center text-[12px] t-faint">
             暂无定时任务 · 点击「+ 新建」创建
           </div>
         )}

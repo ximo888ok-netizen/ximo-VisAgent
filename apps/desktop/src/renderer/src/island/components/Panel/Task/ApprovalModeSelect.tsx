@@ -39,7 +39,7 @@ export function ApprovalModeSelect() {
   return (
     <div data-interactive>
       <select
-        className="island-select px-2 py-1 text-[10.5px]"
+        className="island-select px-2 py-1 text-[12px]"
         style={{ paddingRight: 22 }}
         value={mode}
         disabled={busy}
@@ -53,19 +53,19 @@ export function ApprovalModeSelect() {
         ))}
       </select>
       {confirming && (
-        <div className="mt-2 rounded-lg border border-red-500/30 bg-red-500/[0.08] px-3 py-2 island-fade-up">
-          <p className="text-[11px] leading-relaxed text-red-200">
+        <div className="mt-2 rounded-lg ig-alert ig-tone-danger px-3 py-2 island-fade-up">
+          <p className="text-[12px] leading-relaxed ig-fg-danger">
             「完全自主」将不再询问你：
             <br />· PowerShell / 命令行、系统设置面板
             <br />· 银行域名页面（icbc、cmbchina、95599 等）
             <br />· 每任务最多自动放行 L3 3 次、L2 20 次，超限恢复询问
           </p>
           <div className="mt-1.5 flex items-center justify-end gap-2">
-            <button className="island-btn island-btn--ghost px-2.5 text-[10.5px]" onClick={() => setConfirming(false)}>
+            <button className="island-btn island-btn--ghost px-2.5 text-[12px]" onClick={() => setConfirming(false)}>
               取消
             </button>
             <button
-              className="island-btn island-btn--danger px-2.5 text-[10.5px]"
+              className="island-btn island-btn--danger px-2.5 text-[12px]"
               disabled={busy}
               onClick={() => void apply("autonomous", true)}
             >

@@ -61,21 +61,21 @@ export function WorldModelPanel() {
   return (
     <div className="space-y-3">
       <label className="island-label">世界模型</label>
-      <p className="text-[11px] t-faint leading-relaxed">
+      <p className="text-[12px] t-faint leading-relaxed">
         结构化事实存储，任务启动时按置信度 top-k 注入 Agent 上下文。
       </p>
 
       {/* 快速熟悉环境 */}
       <button
         data-interactive
-        className="island-btn island-btn--primary w-full text-[10px]"
+        className="island-btn island-btn--primary w-full text-[12px]"
         onClick={handleScan}
         disabled={envScanning}
       >
         {envScanning ? "正在扫描环境…" : "⚡ 快速熟悉环境"}
       </button>
       {envScanning && (
-        <div className="text-[10px] t-faint text-center">
+        <div className="text-[12px] t-faint text-center">
           Agent 正在扫描已安装应用与工作目录，提炼环境事实…
         </div>
       )}
@@ -83,25 +83,25 @@ export function WorldModelPanel() {
       {/* 搜索 */}
       <div className="flex gap-2">
         <input
-          className="island-input flex-1 text-[11px]"
+          className="island-input flex-1 text-[12px]"
           placeholder="搜索事实…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           data-interactive
         />
-        <button data-interactive className="island-btn island-btn--ghost text-[10px]" onClick={handleSearch}>
+        <button data-interactive className="island-btn island-btn--ghost text-[12px]" onClick={handleSearch}>
           搜索
         </button>
       </div>
 
       {/* 添加表单 */}
       <div className="rounded-lg ig-bg-panel p-2.5 space-y-2">
-        <div className="text-[10px] t-faint">手动添加</div>
+        <div className="text-[12px] t-faint">手动添加</div>
         <div className="flex gap-2">
           <select
             data-interactive
-            className="rounded-md ig-bg-base px-2 py-1 text-[10px] t-body"
+            className="rounded-lg ig-bg-base px-2 py-1 text-[12px] t-body"
             value={newKind}
             onChange={(e) => setNewKind(e.target.value as EnvFactKind)}
           >
@@ -110,7 +110,7 @@ export function WorldModelPanel() {
             ))}
           </select>
           <input
-            className="island-input flex-1 text-[11px]"
+            className="island-input flex-1 text-[12px]"
             placeholder="事实内容…"
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
@@ -120,7 +120,7 @@ export function WorldModelPanel() {
         </div>
         <button
           data-interactive
-          className="island-btn island-btn--primary w-full text-[10px]"
+          className="island-btn island-btn--primary w-full text-[12px]"
           onClick={handleAdd}
           disabled={!newContent.trim()}
         >
@@ -137,33 +137,33 @@ export function WorldModelPanel() {
           </>
         )}
         {!envFactsLoading && envFacts.length === 0 && (
-          <div className="flex h-16 items-center justify-center text-[11px] t-faint">
+          <div className="flex h-16 items-center justify-center text-[12px] t-faint">
             暂无事实 · 任务完成后自动提炼
           </div>
         )}
         {envFacts.map((fact) => (
           <div key={fact.id} className="flex items-start gap-2 rounded-lg ig-bg-panel px-2.5 py-2">
-            <div className="shrink-0 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[9px] text-blue-300">
+            <div className="shrink-0 rounded-lg ig-tag ig-tone-info px-1.5 py-0.5 text-[11px] ig-fg-info">
               {KIND_LABEL[fact.kind] ?? fact.kind}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] t-body">{fact.content}</div>
-              <div className="mt-0.5 text-[9px] t-faint">
+              <div className="text-[12px] t-body">{fact.content}</div>
+              <div className="mt-0.5 text-[11px] t-faint">
                 观察 {fact.timesObserved} 次
                 {fact.lastVerifiedAt && ` · 验证于 ${new Date(fact.lastVerifiedAt).toLocaleDateString("zh-CN")}`}
               </div>
             </div>
             <div className="shrink-0">
-              <div className="h-1.5 w-10 overflow-hidden rounded-full bg-zinc-700">
+              <div className="h-1.5 w-10 overflow-hidden rounded-full ig-bg-panel-hover">
                 <div
                   className="h-full rounded-full"
                   style={{
                     width: `${Math.round(fact.confidence * 100)}%`,
-                    background: fact.confidence >= 0.7 ? "#3fe0a0" : fact.confidence >= 0.5 ? "#fbbf24" : "#f87171",
+                    background: fact.confidence >= 0.7 ? "var(--c-thinking)" : fact.confidence >= 0.5 ? "var(--c-waiting)" : "var(--c-error)",
                   }}
                 />
               </div>
-              <div className="mt-0.5 text-right text-[8px] t-faint tabular-nums">
+              <div className="mt-0.5 text-right text-[11px] t-faint tabular-nums">
                 {Math.round(fact.confidence * 100)}%
               </div>
             </div>

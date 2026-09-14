@@ -44,7 +44,7 @@ export function CapabilityList() {
       <div className="flex items-center gap-1.5">
         <input
           data-interactive
-          className="island-input flex-1 text-[11px]"
+          className="island-input flex-1 text-[12px]"
           placeholder="搜索能力卡..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -52,14 +52,14 @@ export function CapabilityList() {
         />
         <button
           data-interactive
-          className="island-btn island-btn--ghost text-[10.5px]"
+          className="island-btn island-btn--ghost text-[12px]"
           onClick={handleSearch}
         >
           搜索
         </button>
         <button
           data-interactive
-          className="island-btn island-btn--ghost text-[10.5px]"
+          className="island-btn island-btn--ghost text-[12px]"
           onClick={handleSeed}
           disabled={seeding}
         >
@@ -72,7 +72,7 @@ export function CapabilityList() {
         <div className="flex items-center gap-1.5">
           <input
             data-interactive
-            className="island-input flex-1 text-[10.5px]"
+            className="island-input flex-1 text-[12px]"
             placeholder="输入任务目标，匹配能力卡..."
             value={matchGoal}
             onChange={(e) => setMatchGoal(e.target.value)}
@@ -80,7 +80,7 @@ export function CapabilityList() {
           />
           <button
             data-interactive
-            className="island-btn island-btn--ghost text-[10.5px]"
+            className="island-btn island-btn--ghost text-[12px]"
             onClick={handleMatch}
             disabled={capMatchLoading || !matchGoal.trim()}
           >
@@ -90,10 +90,10 @@ export function CapabilityList() {
         {showMatch && capMatchResult && (
           <div className="mt-1.5 space-y-1">
             {capMatchResult.items.length === 0 ? (
-              <div className="text-[10px] t-faint">无匹配能力卡</div>
+              <div className="text-[12px] t-faint">无匹配能力卡</div>
             ) : (
               capMatchResult.items.map((item) => (
-                <div key={item.capabilityId} className="flex items-center gap-2 text-[10px]">
+                <div key={item.capabilityId} className="flex items-center gap-2 text-[12px]">
                   <span className="t-strong">{item.title}</span>
                   <span className="t-faint">{(item.score * 100).toFixed(0)}%</span>
                 </div>
@@ -109,7 +109,7 @@ export function CapabilityList() {
       )}
 
       {capabilities.length === 0 && !loading && (
-        <div className="py-8 text-center text-[11px] t-faint">
+        <div className="py-8 text-center text-[12px] t-faint">
           还没有能力卡。点击「重置种子」导入预设能力集。
         </div>
       )}

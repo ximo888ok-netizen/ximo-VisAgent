@@ -27,10 +27,10 @@ export function JobCard({ job, onToggle, onDelete, onViewSop }: {
           onClick={() => onToggle(!job.enabled)}
           title={job.enabled ? "点击暂停" : "点击启用"}
         />
-        <span className="min-w-0 flex-1 truncate text-[11.5px] t-strong" title={job.name}>{job.name}</span>
-        <span className="shrink-0 font-mono text-[9.5px] t-faint">{job.cron}</span>
+        <span className="min-w-0 flex-1 truncate text-[12px] t-strong" title={job.name}>{job.name}</span>
+        <span className="shrink-0 font-mono text-[11px] t-faint">{job.cron}</span>
         <button
-          className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] transition ${confirming ? "bg-red-500/20 text-red-300 opacity-100" : "t-faint opacity-0 group-hover:opacity-100 hover:text-red-300"}`}
+          className={`shrink-0 rounded-lg px-1.5 py-0.5 text-[12px] transition ${confirming ? "ig-tag ig-tone-danger opacity-100" : "t-faint opacity-0 group-hover:opacity-100 hover:text-[var(--p-ember-400)]"}`}
           onClick={() => {
             if (confirming) onDelete();
             else setConfirming(true);
@@ -40,7 +40,7 @@ export function JobCard({ job, onToggle, onDelete, onViewSop }: {
           {confirming ? "确认?" : "✕"}
         </button>
       </div>
-      <div className="mt-1 flex items-center justify-between text-[9.5px] t-faint">
+      <div className="mt-1 flex items-center justify-between text-[11px] t-faint">
         <button className="min-w-0 flex-1 truncate text-left hover:t-body" onClick={onViewSop} disabled={!job.sopId} title={job.goal || "自定义目标"}>
           {job.goal || "自定义目标"}
         </button>

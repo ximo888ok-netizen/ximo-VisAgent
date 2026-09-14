@@ -24,7 +24,7 @@ export function TaskList() {
   if (tasks.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-4">
-        <span className="text-[11px] t-faint">无任务记录</span>
+        <span className="text-[12px] t-faint">无任务记录</span>
       </div>
     );
   }
@@ -47,20 +47,20 @@ export function TaskList() {
               <span
                 className="inline-block h-2 w-2 rounded-full flex-shrink-0"
                 style={{
-                  background: task.status === "COMPLETED" ? "#3fe0a0" : task.status === "FAILED" ? "#f87171" : "#fbbf24",
+                  background: task.status === "COMPLETED" ? "var(--c-thinking)" : task.status === "FAILED" ? "var(--c-error)" : "var(--c-waiting)",
                 }}
               />
-              <span className="text-[11px] t-body truncate" style={{ maxWidth: 160 }}>
+              <span className="text-[12px] t-body truncate" style={{ maxWidth: 160 }}>
                 {task.goal}
               </span>
             </div>
             <div className="mt-1 ml-4 flex items-center justify-between">
-              <span className="text-[9.5px] t-faint">
+              <span className="text-[11px] t-faint">
                 {new Date(task.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
               </span>
               <div className="flex items-center gap-2">
-                <span className="text-[9.5px]" style={{
-                  color: isDone ? (task.status === "COMPLETED" ? "#3fe0a0" : "#f87171") : "#fbbf24",
+                <span className="text-[11px]" style={{
+                  color: isDone ? (task.status === "COMPLETED" ? "var(--c-thinking)" : "var(--c-error)") : "var(--c-waiting)",
                 }}>
                   {/* M03 修复：QUEUED/WAITING_APPROVAL/PAUSED 不再一律显示"运行中" */}
                   {statusLabel(task.status)}

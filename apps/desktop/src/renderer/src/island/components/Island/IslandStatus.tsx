@@ -19,23 +19,30 @@ const RING_CLASS: Record<AgentStatus, string> = {
 
 const RING_COLOR: Record<AgentStatus, string> = {
   idle: "var(--ig-t-strong)",
-  thinking: "#3fe0a0",
-  paused: "#60a5fa",
-  waiting_approval: "#fbbf24",
-  error: "#f87171",
-  stopped: "#f87171",
+  thinking: "var(--c-thinking)",
+  paused: "var(--p-ice-400)",
+  waiting_approval: "var(--c-waiting)",
+  error: "var(--c-error)",
+  stopped: "var(--c-error)",
 };
 
 /**
- * 指示灯 SVG：外壳圈 + 状态环。
+ * 指示灯 SVG：外壳圈 + 状态环（同心双环）+ 中心点。
+ *
+ * 绘制规范与其他图标一致：20 网格 / 显示 20 / 描边统一 1.5。
+ * 改造前这里一个图标里混用了 2、2.2、1.2 三种粗细，而且外壳圈与状态环
+ * 半径相同（都是 8.4）——状态色一上，外壳圈就被完全盖住，等于白画。
+ * 现在外壳 r=8.25、状态环 r=6.1，两环都看得见，"环里有环"也更精致。
+ *
  * - idle   白色呼吸（动画调 opacity）
- * - thinking 绿色弧形环旋转
+ * - thinking 彩色 300° 弧旋转 + 弧端圆点
  * - waiting  黄色脉冲
  * - error/stopped 红色（轻微跳动，动画在外层做 transform）
  */
 function Indicator({ status }: { status: AgentStatus }) {
   const color = RING_COLOR[status];
   const isThinking = status === "thinking";
+  const sw = 1.5;
   return (
     <svg
       data-interactive
@@ -47,30 +54,23 @@ function Indicator({ status }: { status: AgentStatus }) {
       viewBox="0 0 20 20"
       fill="none"
     >
-      <circle cx="10" cy="10" r="8.4" stroke="var(--ig-t-faint)" strokeWidth="2" />
+      {/* 外壳圈：恒定存在，给指示灯一个"容器" */}
+      <circle cx="10" cy="10" r="8.25" stroke="var(--ig-t-faint)" strokeWidth={sw} />
       {isThinking ? (
         <>
-          {/* 绿色流动环：300° 开口弧，配合外层旋转动画 */}
+          {/* 彩色流动环：约 300° 开口弧，配合外层旋转动画 */}
           <path
-            d="M10 1.6 A 8.4 8.4 0 1 1 2.73 5.8"
+            d="M10 3.9 A 6.1 6.1 0 1 1 4.72 6.95"
             stroke={color}
-            strokeWidth="2.2"
+            strokeWidth={sw}
             strokeLinecap="round"
           />
-          <circle cx="2.73" cy="5.8" r="1.6" fill="#8cf0c8" />
+          <circle cx="4.72" cy="6.95" r="1.2" fill="var(--c-thinking)" />
         </>
       ) : (
         <>
-          <circle cx="10" cy="10" r="8.4" stroke={color} strokeWidth="2.2" />
-          <circle cx="10" cy="10" r="2.8" fill={color} />
-          <circle
-            cx="10"
-            cy="10"
-            r="5.6"
-            stroke={color}
-            strokeWidth="1.2"
-            opacity={0.45}
-          />
+          <circle cx="10" cy="10" r="6.1" stroke={color} strokeWidth={sw} />
+          <circle cx="10" cy="10" r="2.1" fill={color} />
         </>
       )}
     </svg>
@@ -82,9 +82,9 @@ function ModeChip({ mode }: { mode: string }) {
   const isAutonomous = mode === "autonomous";
   return (
     <span
-      className="shrink-0 rounded px-1 py-0.5 text-[9px] font-medium"
+      className="shrink-0 rounded px-1 py-0.5 text-[11px] font-medium"
       style={{
-        color: isAutonomous ? "#fca5a5" : "#67e8f9",
+        color: isAutonomous ? "var(--p-ember-200)" : "var(--p-ice-300)",
         background: isAutonomous ? "rgba(239,68,68,0.15)" : "rgba(6,182,212,0.12)",
         border: `1px solid ${isAutonomous ? "rgba(239,68,68,0.35)" : "rgba(6,182,212,0.3)"}`,
       }}
@@ -94,11 +94,25 @@ function ModeChip({ mode }: { mode: string }) {
   );
 }
 
-export function IslandStatus({ width = 104 }: { width?: number }) {
+/**
+ * 左翼状态区。
+ *
+ * 宽度必须由调用方给定且**不得小于最宽状态**——本区是固定宽度，内容只会溢出不会收缩，
+ * 一旦溢出就会盖住分隔线和中庭日志。内部宽度预算（最坏情况 = 「等待审批」+「完全自主」）：
+ *
+ *   pl-3 12 + 指示灯 20 + gap 6 + 标签 52（「等待审批」4 字 × 13px）
+ *         + gap 6 + 档位徽标 54（「完全自主」4 字 × 11px + px-1 + 描边）  = 150
+ *
+ * 因此 width 取 156（= 150 + 6 余量）。改动标签文案或字号后必须重算这里。
+ *
+ * 原本末尾还有一个与指示灯同色的 1.5px 小圆点（标注"辅助低对比度环境辨识"），
+ * 但它和指示灯表达的是同一个状态、只多占 12px —— 在高透玻璃上它更像噪点。
+ * 故移除，把这 12px 还给内容。
+ */
+export function IslandStatus({ width = 156 }: { width?: number }) {
   const status = useIslandStore((s) => s.status);
   const approvalMode = useIslandStore((s) => s.config?.approvalMode);
   const label = useMemo(() => AGENT_STATUS_LABEL[status], [status]);
-  const color = RING_COLOR[status];
 
   return (
     <div
@@ -108,18 +122,12 @@ export function IslandStatus({ width = 104 }: { width?: number }) {
     >
       <Indicator status={status} />
       <span
-        className="whitespace-nowrap text-[12px] font-semibold"
-        style={{ color: status === "waiting_approval" ? "#fcd34d" : status === "paused" ? "#93c5fd" : "var(--ig-t-strong)" }}
+        className="whitespace-nowrap text-[13px] font-semibold"
+        style={{ color: status === "waiting_approval" ? "var(--p-sun-300)" : status === "paused" ? "var(--p-ice-300)" : "var(--ig-t-strong)" }}
       >
         {label}
       </span>
       {approvalMode && approvalMode !== "manual" && <ModeChip mode={approvalMode} />}
-      {/* 状态色小点，辅助低对比度环境辨识 */}
-      <span
-        aria-hidden
-        className="ml-auto h-1.5 w-1.5 rounded-full opacity-70"
-        style={{ background: color }}
-      />
     </div>
   );
 }

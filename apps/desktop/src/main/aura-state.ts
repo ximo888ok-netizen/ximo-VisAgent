@@ -66,6 +66,7 @@ function emit(): void {
       : '',
     islandOnLeft: s.screenWidth > 0 && s.islandCenterX < s.screenWidth / 2,
     degraded,
+    intensity: getAuraIntensity(),
   };
   pushAura(frame);
   // 只有需要被看见时才做降级探测，空闲时不留轮询开销

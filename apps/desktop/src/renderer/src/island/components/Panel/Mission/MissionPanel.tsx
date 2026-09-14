@@ -48,7 +48,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   return (
     <button
       data-interactive
-      className={`rounded-full px-3 py-1 text-[11px] font-medium transition-colors ${
+      className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
         active ? 'ig-bg-panel-hover t-strong' : 't-muted hover:t-body'
       }`}
       onClick={onClick}

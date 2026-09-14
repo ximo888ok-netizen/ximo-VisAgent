@@ -18,11 +18,11 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  draft: "#8b8b8b",
-  onboarding: "#fbbf24",
-  active: "#3fe0a0",
-  suspended: "#f87171",
-  offboarded: "#6b7280",
+  draft: "var(--p-ink-7)",
+  onboarding: "var(--c-waiting)",
+  active: "var(--c-thinking)",
+  suspended: "var(--c-error)",
+  offboarded: "var(--p-ink-6)",
 };
 
 type FormMode = "none" | "create" | "edit";
@@ -110,10 +110,10 @@ export function EmployeePanel() {
   return (
     <div className="flex h-full flex-col px-4 py-3">
       <div className="mb-3 flex items-center gap-2">
-        <span className="text-[11px] t-strong font-medium">员工管理</span>
+        <span className="text-[12px] t-strong font-medium">员工管理</span>
         <button
           data-interactive
-          className="ml-auto rounded-full px-2.5 py-1 text-[10.5px] ig-bg-panel-hover t-body hover:t-strong"
+          className="ml-auto rounded-full px-2.5 py-1 text-[12px] ig-bg-panel-hover t-body hover:t-strong"
           onClick={() => { setFormMode((v) => v === "create" ? "none" : "create"); setEditTarget(null); }}
         >
           {formMode === "create" ? "取消" : "+ 新建岗位"}
@@ -136,14 +136,14 @@ export function EmployeePanel() {
           <div className="island-skeleton h-16 rounded-xl ig-bg-panel" />
         )}
         {error && (
-          <div className="rounded-xl bg-red-500/10 px-3 py-2 text-[10.5px] text-red-300">
+          <div className="rounded-xl ig-tag ig-tone-danger px-3 py-2 text-[13px]">
             {error}
             <button data-interactive className="ml-2 underline" onClick={() => void loadPositions()}>重试</button>
           </div>
         )}
 
         {positions.length === 0 && !loading && !error && formMode !== "create" && (
-          <div className="py-8 text-center text-[11px] t-faint">
+          <div className="py-8 text-center text-[12px] t-faint">
             还没有岗位。点击「新建岗位」创建第一个岗位。
           </div>
         )}
@@ -151,30 +151,30 @@ export function EmployeePanel() {
         {positions.map((pos) => (
           <div key={pos.id} className="rounded-xl ig-bg-panel px-3 py-2.5">
             <div className="flex items-center gap-2">
-              <span className="text-[12px] t-strong font-medium">{pos.name}</span>
+              <span className="text-[13px] t-strong font-medium">{pos.name}</span>
               <span
-                className="rounded-full px-1.5 py-0.5 text-[9px]"
-                style={{ background: `${STATUS_COLOR[pos.status]}20`, color: STATUS_COLOR[pos.status] }}
+                className="rounded-full px-1.5 py-0.5 text-[11px]"
+                style={{ background: `color-mix(in srgb, ${STATUS_COLOR[pos.status]} 13%, transparent)`, color: STATUS_COLOR[pos.status] }}
               >
                 {STATUS_LABEL[pos.status] ?? pos.status}
               </span>
               <button
                 data-interactive
-                className="ml-auto text-[10px] t-muted hover:t-body"
+                className="ml-auto text-[12px] t-muted hover:t-body"
                 onClick={() => handleSelect(pos.id)}
               >
                 {selectedId === pos.id ? "收起" : "详情"}
               </button>
               <button
                 data-interactive
-                className="text-[10px] text-blue-300/70 hover:text-blue-300"
+                className="text-[12px] ig-fg-info hover:ig-fg-info"
                 onClick={() => handleEdit(pos)}
               >
                 编辑
               </button>
               <button
                 data-interactive
-                className="text-[10px] text-red-300/60 hover:text-red-300"
+                className="text-[12px] ig-fg-danger hover:ig-fg-danger"
                 onClick={() => void handleDelete(pos.id)}
               >
                 删除
@@ -182,7 +182,7 @@ export function EmployeePanel() {
             </div>
 
             {pos.roleProfile && (
-              <div className="mt-1 text-[10px] t-muted line-clamp-2">{pos.roleProfile}</div>
+              <div className="mt-1 text-[12px] t-muted line-clamp-2">{pos.roleProfile}</div>
             )}
 
             {selectedId === pos.id && selected && (
@@ -194,7 +194,7 @@ export function EmployeePanel() {
                 {(pos.status === "draft" || pos.status === "active") && (
                   <button
                     data-interactive
-                    className="island-btn island-btn--primary w-full text-[10.5px]"
+                    className="island-btn island-btn--primary w-full text-[12px]"
                     onClick={() => void handleStartOnboarding(pos.id)}
                   >
                     {pos.status === "draft" ? "启动入职流程" : "重新入职（增量更新）"}
@@ -229,7 +229,7 @@ function PositionDetails({ position }: { position: PositionRowPayload }) {
   const knowledge = safeJsonArr(position.knowledgeJson);
 
   return (
-    <div className="space-y-1.5 text-[10px]">
+    <div className="space-y-1.5 text-[12px]">
       {position.reportTo && (
         <div className="t-muted">汇报对象: {position.reportTo}</div>
       )}
@@ -244,7 +244,7 @@ function PositionDetails({ position }: { position: PositionRowPayload }) {
       {boundary.length > 0 && (
         <div>
           <div className="t-faint">硬边界</div>
-          <ul className="ml-3 list-disc text-red-300/80">
+          <ul className="ml-3 list-disc ig-fg-danger">
             {boundary.map((s, i) => <li key={i}>{String(s)}</li>)}
           </ul>
         </div>

@@ -54,13 +54,13 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
     <div>
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h4 className="text-[12.5px] font-semibold t-strong">安全规则</h4>
-          <p className="mt-0.5 text-[10.5px] t-faint">
+          <h4 className="text-[13px] font-semibold t-strong">安全规则</h4>
+          <p className="mt-0.5 text-[12px] t-faint">
             标记高危操作（L3）或提升审批级别（L2）；L3 是否自动放行取决于「完全自主」档位
           </p>
         </div>
         <button
-          className="island-btn island-btn--ghost text-[10.5px]"
+          className="island-btn island-btn--ghost text-[12px]"
           style={{ height: 28, padding: "0 10px" }}
           onClick={add}
           data-interactive
@@ -72,7 +72,7 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
       {/* 规则列表 */}
       <div className="space-y-2">
         {rules.length === 0 && (
-          <div className="rounded-lg border ig-border-line ig-bg-panel py-6 text-center text-[11px] t-faint">
+          <div className="rounded-lg border ig-border-line ig-bg-panel py-6 text-center text-[12px] t-faint">
             暂无安全规则
           </div>
         )}
@@ -84,7 +84,7 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
           >
             {/* 行 1：ID + 开关 + 删除 */}
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-[10.5px] font-mono t-muted truncate" style={{ maxWidth: 120 }}>
+              <span className="text-[12px] font-mono t-muted truncate" style={{ maxWidth: 120 }}>
                 {rule.id}
               </span>
               <div className="flex items-center gap-2">
@@ -96,7 +96,7 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
                 />
                 <button
                   data-interactive
-                  className="text-[10px] text-red-400/60 hover:text-red-400 transition-colors"
+                  className="text-[12px] ig-fg-danger hover:ig-fg-danger transition-colors"
                   onClick={() => remove(rule.id)}
                 >
                   删除
@@ -109,7 +109,7 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
               <div>
                 <label className="island-label">App 匹配</label>
                 <input
-                  className="island-input text-[11px]"
+                  className="island-input text-[12px]"
                   style={{ padding: "4px 8px" }}
                   value={rule.appPattern ?? ""}
                   onChange={(e) => update(rule.id, { appPattern: e.target.value || undefined })}
@@ -120,7 +120,7 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
               <div>
                 <label className="island-label">域名匹配</label>
                 <input
-                  className="island-input text-[11px]"
+                  className="island-input text-[12px]"
                   style={{ padding: "4px 8px" }}
                   value={rule.domainPattern ?? ""}
                   onChange={(e) => update(rule.id, { domainPattern: e.target.value || undefined })}
@@ -134,7 +134,7 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
             <div className="mt-2 flex items-center gap-2">
               <label className="island-label mb-0">级别</label>
               <select
-                className="island-select text-[11px]"
+                className="island-select text-[12px]"
                 style={{ padding: "2px 20px 2px 6px", height: 22 }}
                 value={rule.levelOverride ?? 1}
                 onChange={(e) => update(rule.id, { levelOverride: Number(e.target.value) as 0 | 1 | 2 | 3 })}
@@ -153,7 +153,7 @@ export function SafetyRulesSettings({ config }: { config: AppConfigPayload }) {
       {/* 保存 */}
       {dirty && (
         <button
-          className="island-btn island-btn--primary mt-3 w-full text-[11px] island-fade-up"
+          className="island-btn island-btn--primary mt-3 w-full text-[12px] island-fade-up"
           onClick={handleSave}
           disabled={saved}
           data-interactive

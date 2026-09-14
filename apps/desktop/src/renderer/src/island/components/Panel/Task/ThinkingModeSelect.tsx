@@ -40,7 +40,7 @@ export function ThinkingModeSelect() {
   return (
     <div data-interactive>
       <select
-        className="island-select px-2 py-1 text-[10.5px]"
+        className="island-select px-2 py-1 text-[12px]"
         style={{ paddingRight: 22 }}
         value={mode}
         onChange={(e) => void onChange(e.target.value as Mode)}

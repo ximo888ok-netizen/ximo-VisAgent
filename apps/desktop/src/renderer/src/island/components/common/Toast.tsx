@@ -6,9 +6,9 @@ import { useIslandStore } from "../../store/islandStore";
 import type { ToastKind } from "../../store/uiSlice";
 
 const KIND_STYLE: Record<ToastKind, { bar: string; icon: string }> = {
-  success: { bar: "#3fe0a0", icon: "✓" },
-  error: { bar: "#f87171", icon: "✕" },
-  info: { bar: "#60a5fa", icon: "i" },
+  success: { bar: "var(--c-thinking)", icon: "✓" },
+  error: { bar: "var(--c-error)", icon: "✕" },
+  info: { bar: "var(--p-ice-400)", icon: "i" },
 };
 
 export function ToastHost() {
@@ -34,12 +34,12 @@ export function ToastHost() {
           >
             <span className="w-0.5 self-stretch rounded-full" style={{ background: style.bar }} />
             <span
-              className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-[10px] font-bold"
+              className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-[12px] font-bold"
               style={{ background: style.bar, color: "#fff" }}
             >
               {style.icon}
             </span>
-            <span className="island-toast-text text-[11.5px] leading-snug">{t.text}</span>
+            <span className="island-toast-text text-[12px] leading-snug">{t.text}</span>
           </button>
         );
       })}

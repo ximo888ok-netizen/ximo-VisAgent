@@ -7,13 +7,13 @@ export function ErrorCard({ error }: { error: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div
-      className="mt-2 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[11px] text-red-300 island-fade-up"
+      className="mt-2 rounded-lg ig-alert ig-tone-danger px-3 py-2 text-[13px] island-fade-up"
       data-interactive
       onClick={() => setExpanded((v) => !v)}
     >
       <div style={expanded ? undefined : { maxHeight: 36, overflow: "hidden" }}>{error}</div>
       {error.length > 60 && (
-        <div className="mt-1 text-[9.5px] text-red-300/50">{expanded ? "▲ 收起" : "▼ 展开全文"}</div>
+        <div className="mt-1 text-[11px] ig-fg-danger">{expanded ? "▲ 收起" : "▼ 展开全文"}</div>
       )}
     </div>
   );

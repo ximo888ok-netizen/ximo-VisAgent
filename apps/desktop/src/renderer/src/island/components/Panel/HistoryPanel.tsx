@@ -40,7 +40,7 @@ export function HistoryPanel() {
           <button
             key={key}
             data-interactive
-            className={`rounded-full px-2.5 py-1 text-[10.5px] transition ${
+            className={`rounded-full px-2.5 py-1 text-[12px] transition ${
               filter === key ? "ig-bg-panel-hover t-strong" : "t-muted hover:t-body"
             }`}
             onClick={() => setFilter(key)}
@@ -50,7 +50,7 @@ export function HistoryPanel() {
         ))}
         <button
           data-interactive
-          className="ml-auto text-[10.5px] t-muted hover:t-body"
+          className="ml-auto text-[12px] t-muted hover:t-body"
           onClick={refresh}
         >
           刷新
@@ -70,14 +70,14 @@ export function HistoryPanel() {
         {/* P2-13 修复：加载失败与空态区分，失败提供重试入口 */}
         {!loading && auditError && (
           <div className="flex h-24 flex-col items-center justify-center gap-2">
-            <span className="text-[11px] text-red-300">历史记录加载失败：{auditError}</span>
-            <button data-interactive className="island-btn island-btn--ghost text-[10.5px]" onClick={refresh}>
+            <span className="text-[12px] ig-fg-danger">历史记录加载失败：{auditError}</span>
+            <button data-interactive className="island-btn island-btn--ghost text-[12px]" onClick={refresh}>
               重试
             </button>
           </div>
         )}
         {!loading && !auditError && filtered.length === 0 && (
-          <div className="flex h-24 items-center justify-center text-[11px] t-faint">暂无任务记录</div>
+          <div className="flex h-24 items-center justify-center text-[12px] t-faint">暂无任务记录</div>
         )}
         {filtered.map((t) => {
           const color = STATUS_COLOR[t.status] ?? STATUS_COLOR_FALLBACK;
@@ -89,26 +89,26 @@ export function HistoryPanel() {
             >
               <div className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
-                <span className="min-w-0 flex-1 truncate text-[11.5px] t-strong" title={`${statusLabel(t.status)} · ${t.goal}`}>{t.goal}</span>
-                <span className="shrink-0 text-[9.5px] tabular-nums t-faint">
+                <span className="min-w-0 flex-1 truncate text-[12px] t-strong" title={`${statusLabel(t.status)} · ${t.goal}`}>{t.goal}</span>
+                <span className="shrink-0 text-[11px] tabular-nums t-faint">
                   {t.steps !== null && t.steps !== undefined ? `${t.steps}步` : ""}
                   {t.tokens ? ` · ${(t.tokens / 1000).toFixed(1)}k` : ""}
                 </span>
               </div>
               <div className="mt-1 flex items-center justify-between">
-                <span className="text-[9.5px] t-faint">
+                <span className="text-[11px] t-faint">
                   {new Date(t.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
                   {t.failureKind && t.status !== "COMPLETED" && ` · ${t.failureKind}`}
                 </span>
                 <span className="flex gap-1 opacity-0 transition group-hover:opacity-100">
                   <button
-                    className="rounded-md ig-bg-panel-hover px-2 py-0.5 text-[9.5px] t-body hover:ig-bg-panel-hover"
+                    className="rounded-lg ig-bg-panel-hover px-2 py-0.5 text-[11px] t-body hover:ig-bg-panel-hover"
                     onClick={() => pushView({ kind: "taskDetail", taskId: t.taskId })}
                   >
                     详情
                   </button>
                   <button
-                    className="rounded-md ig-bg-panel-hover px-2 py-0.5 text-[9.5px] t-body hover:ig-bg-panel-hover"
+                    className="rounded-lg ig-bg-panel-hover px-2 py-0.5 text-[11px] t-body hover:ig-bg-panel-hover"
                     onClick={() => pushView({ kind: "replay", taskId: t.taskId })}
                   >
                     回放

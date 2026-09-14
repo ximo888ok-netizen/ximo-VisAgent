@@ -28,6 +28,14 @@ import type {
 
 export const ISLAND_MAX_WIDTH = 900;
 export const ISLAND_MIN_WIDTH = 400;
+/**
+ * 首次启动的默认宽度。
+ *
+ * 收起态要同时容纳：拖拽点 20 + 状态区 156 + 分隔线 + 中庭日志 + 分隔线 + 操作区 120。
+ * 400px 下中庭只剩 400-20-156-2-120 = 102px，跑马灯几乎一直在滚、读不出内容；
+ * 480px 下为 182px，明显可读。下限仍是 ISLAND_MIN_WIDTH，用户可继续拖窄。
+ */
+export const ISLAND_DEFAULT_WIDTH = 480;
 export const ISLAND_COLLAPSED_HEIGHT = 64;
 export const ISLAND_EXPANDED_HEIGHT = 280;
 /** 屏幕顶部留白（需求：距边缘 10px） */
@@ -49,7 +57,7 @@ function loadLayout(): { x: number; y: number; width: number; height: number } |
       return {
         x: raw.x,
         y: raw.y,
-        width: typeof raw.width === "number" ? raw.width : ISLAND_MIN_WIDTH,
+        width: typeof raw.width === "number" ? raw.width : ISLAND_DEFAULT_WIDTH,
         height: typeof raw.height === "number" ? raw.height : ISLAND_COLLAPSED_HEIGHT,
       };
     }
@@ -89,7 +97,7 @@ function clampIntoWorkArea(x: number, y: number, w: number, h: number): Rectangl
 export function getIslandInitialBounds(): Rectangle {
   const primary = screen.getPrimaryDisplay().workArea;
   const saved = loadLayout();
-  const width = saved?.width ?? ISLAND_MIN_WIDTH;
+  const width = saved?.width ?? ISLAND_DEFAULT_WIDTH;
   const height = saved?.height ?? ISLAND_COLLAPSED_HEIGHT;
   if (saved) return clampIntoWorkArea(saved.x, primary.y + TOP_MARGIN, width, height);
   return {

@@ -54,10 +54,10 @@ export function SettingsPanel() {
   if (configError && !config) {
     return (
       <div className="px-5 py-4">
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-3 text-[12px] text-red-300">
+        <div className="rounded-lg ig-alert ig-tone-danger px-3 py-3 text-[13px]">
           配置加载失败：{configError}
         </div>
-        <button className="island-btn island-btn--ghost mt-3 text-[11px]" onClick={loadConfig} data-interactive>
+        <button className="island-btn island-btn--ghost mt-3 text-[12px]" onClick={loadConfig} data-interactive>
           重试
         </button>
       </div>
@@ -74,7 +74,7 @@ export function SettingsPanel() {
           <button
             key={sec.key}
             data-interactive
-            className={`flex-1 rounded-md py-1.5 text-[11px] font-medium transition-all duration-200 ${
+            className={`flex-1 rounded-lg py-1.5 text-[12px] font-medium transition-all duration-200 ${
               activeSection === sec.key
                 ? "t-strong"
                 : "t-muted hover:t-body"

@@ -9,17 +9,17 @@ import type { EnvFactRowPayload } from "@shared/island-contracts";
 export function WorldModelInline({ envFacts }: { envFacts: EnvFactRowPayload[] }) {
   return (
     <div className="space-y-1.5">
-      <span className="text-[11px] t-strong font-medium">世界模型事实</span>
+      <span className="text-[12px] t-strong font-medium">世界模型事实</span>
       {envFacts.length === 0 && (
-        <div className="flex h-16 items-center justify-center text-[11px] t-faint">
+        <div className="flex h-16 items-center justify-center text-[12px] t-faint">
           暂无事实 · 任务完成后自动提炼
         </div>
       )}
       {envFacts.slice(0, 30).map((f) => (
         <div key={f.id} className="flex items-center gap-2 rounded-lg ig-bg-panel px-2.5 py-2">
-          <span className="rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[9px] text-blue-300">{f.kind}</span>
-          <span className="text-[11px] t-body flex-1 truncate">{f.content}</span>
-          <span className="text-[9px] t-faint tabular-nums">{Math.round(f.confidence * 100)}%</span>
+          <span className="rounded-lg ig-tag ig-tone-info px-1.5 py-0.5 text-[11px]">{f.kind}</span>
+          <span className="text-[12px] t-body flex-1 truncate">{f.content}</span>
+          <span className="text-[11px] t-faint tabular-nums">{Math.round(f.confidence * 100)}%</span>
         </div>
       ))}
     </div>

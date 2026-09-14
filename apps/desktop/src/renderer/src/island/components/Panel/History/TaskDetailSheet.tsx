@@ -49,7 +49,7 @@ export function TaskDetailSheet({ taskId }: { taskId: string }) {
       {resumable && (
         <button
           data-interactive
-          className="island-btn island-btn--primary w-full text-[11px]"
+          className="island-btn island-btn--primary w-full text-[12px]"
           disabled={resuming}
           onClick={() => void handleResume()}
         >
@@ -64,7 +64,7 @@ export function TaskDetailSheet({ taskId }: { taskId: string }) {
           {events.map((ev) => (
             <AuditEventRow key={ev.id} ev={ev} />
           ))}
-          {events.length === 0 && <div className="py-6 text-center text-[11px] t-faint">无审计记录</div>}
+          {events.length === 0 && <div className="py-6 text-center text-[12px] t-faint">无审计记录</div>}
         </div>
       )}
     </div>
@@ -74,16 +74,16 @@ export function TaskDetailSheet({ taskId }: { taskId: string }) {
 function TaskHeader({ task }: { task: TaskRowPayload }) {
   return (
     <div className="rounded-lg ig-bg-panel px-3 py-2.5">
-      <div className="text-[12px] t-strong">{task.goal}</div>
-      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[10px] t-muted">
+      <div className="text-[13px] t-strong">{task.goal}</div>
+      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[12px] t-muted">
         <span>状态：{statusLabel(task.status)}</span>
         {task.steps !== null && task.steps !== undefined && <span>步骤：{task.steps}</span>}
         {task.tokens !== null && task.tokens !== undefined && <span>token：{task.tokens.toLocaleString()}</span>}
         {task.finishedAt && <span>完成于：{new Date(task.finishedAt).toLocaleString("zh-CN")}</span>}
-        {task.failureKind && task.status !== "COMPLETED" && <span className="text-red-300/70">归因：{task.failureKind}</span>}
+        {task.failureKind && task.status !== "COMPLETED" && <span className="ig-fg-danger">归因：{task.failureKind}</span>}
       </div>
       {task.summary && (
-        <div className="mt-1.5 line-clamp-3 text-[11px] t-body">{task.summary}</div>
+        <div className="mt-1.5 line-clamp-3 text-[12px] t-body">{task.summary}</div>
       )}
     </div>
   );
@@ -109,10 +109,10 @@ function AuditEventRow({ ev }: { ev: AuditRowPayload }) {
     if (d.decidedBy === "policy") detail = `策略放行（L${String(d.level ?? "?")}）${detail ? " · " + detail : ""}`;
   } catch { /* ignore */ }
   return (
-    <div className="flex items-center gap-2 rounded-md ig-bg-panel px-2.5 py-1.5">
-      <span className="w-14 shrink-0 text-[9.5px] t-muted">{KIND_LABEL[ev.kind] ?? ev.kind}</span>
-      <span className="min-w-0 flex-1 truncate text-[10.5px] t-body">{detail || "(无摘要)"}</span>
-      <span className="shrink-0 text-[9px] tabular-nums t-faint">
+    <div className="flex items-center gap-2 rounded-lg ig-bg-panel px-2.5 py-1.5">
+      <span className="w-14 shrink-0 text-[11px] t-muted">{KIND_LABEL[ev.kind] ?? ev.kind}</span>
+      <span className="min-w-0 flex-1 truncate text-[12px] t-body">{detail || "(无摘要)"}</span>
+      <span className="shrink-0 text-[11px] tabular-nums t-faint">
         {new Date(ev.timestamp).toLocaleTimeString("zh-CN", { hour12: false })}
       </span>
     </div>

@@ -56,7 +56,7 @@ export function AuditPanel() {
     <div className="flex flex-col" style={{ height: "100%" }}>
       {/* 统计指标条 */}
       <div className="grid grid-cols-4 gap-2 px-4 pt-3">
-        <StatCard label="成功率" value={`${stats.rate}%`} accent={stats.rate >= 70 ? "#3fe0a0" : "#fbbf24"} />
+        <StatCard label="成功率" value={`${stats.rate}%`} accent={stats.rate >= 70 ? "var(--c-thinking)" : "var(--c-waiting)"} />
         <StatCard label="平均步数" value={String(stats.avgSteps)} />
         <StatCard label="累计 token" value={stats.totalTokens >= 1000 ? `${(stats.totalTokens / 1000).toFixed(1)}k` : String(stats.totalTokens)} />
         <StatCard label="任务总数" value={String(stats.count)} />
@@ -64,12 +64,12 @@ export function AuditPanel() {
 
       {/* 顶部条 */}
       <div className="flex items-center justify-between px-4 py-2">
-        <span className="text-[11px] t-muted">
+        <span className="text-[12px] t-muted">
           {auditLoading ? "加载中…" : "审计记录（近 50 任务）"}
         </span>
         <div className="flex gap-1.5">
           <button
-            className="island-btn island-btn--ghost text-[10.5px]"
+            className="island-btn island-btn--ghost text-[12px]"
             style={{ height: 26, padding: "0 10px" }}
             onClick={() => void handleExport("csv")}
             data-interactive
@@ -77,7 +77,7 @@ export function AuditPanel() {
             导出 CSV
           </button>
           <button
-            className="island-btn island-btn--ghost text-[10.5px]"
+            className="island-btn island-btn--ghost text-[12px]"
             style={{ height: 26, padding: "0 10px" }}
             onClick={() => void handleExport("json")}
             data-interactive
@@ -89,7 +89,7 @@ export function AuditPanel() {
 
       {/* 导出结果提示 */}
       {(csvExportResult || exportMsg) && (
-        <div className="mx-4 mt-1 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[11px] text-emerald-300 island-fade-up">
+        <div className="mx-4 mt-1 rounded-lg ig-alert ig-tone-success px-3 py-2 text-[13px] island-fade-up">
           {exportMsg ?? (csvExportResult?.ok ? `已导出至 ${csvExportResult.path}` : `导出失败：${csvExportResult?.error}`)}
         </div>
       )}

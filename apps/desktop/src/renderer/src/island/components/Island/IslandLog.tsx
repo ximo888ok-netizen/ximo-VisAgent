@@ -66,13 +66,13 @@ export function IslandLog({ width }: { width?: number }) {
       {overflows ? (
         // 无缝滚动：内容复制两遍，利用 -50% 位移循环
         <div ref={trackRef} className="island-marquee__track" style={style}>
-          <span className="pr-8 text-[12.5px] text-[var(--ig-t-strong)]">{text}</span>
-          <span aria-hidden className="pr-8 text-[12.5px] text-[var(--ig-t-strong)]">
+          <span className="pr-8 text-[13px] text-[var(--ig-t-strong)]">{text}</span>
+          <span aria-hidden className="pr-8 text-[13px] text-[var(--ig-t-strong)]">
             {text}
           </span>
         </div>
       ) : (
-        <span ref={trackRef} className="truncate text-[12.5px] text-[var(--ig-t-strong)]">
+        <span ref={trackRef} className="truncate text-[13px] text-[var(--ig-t-strong)]">
           {text}
         </span>
       )}

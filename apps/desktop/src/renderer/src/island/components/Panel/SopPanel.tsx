@@ -91,14 +91,14 @@ export function SopPanel() {
   return (
     <div className="flex h-full flex-col px-4 py-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[10.5px] t-faint">
+        <span className="text-[12px] t-faint">
           任务完成后在任务面板「存为模板」；运行时注入步骤骨架提升成功率
         </span>
         <div className="flex shrink-0 gap-2">
-          <button data-interactive className="text-[10.5px] t-muted hover:t-body" onClick={() => void loadSops()}>
+          <button data-interactive className="text-[12px] t-muted hover:t-body" onClick={() => void loadSops()}>
             刷新
           </button>
-          <button data-interactive className="text-[10.5px] t-muted hover:t-body" onClick={() => importInputRef.current?.click()}>
+          <button data-interactive className="text-[12px] t-muted hover:t-body" onClick={() => importInputRef.current?.click()}>
             导入
           </button>
           <input
@@ -127,14 +127,14 @@ export function SopPanel() {
         )}
         {!sopLoading && sopError && (
           <div className="flex flex-col items-center justify-center gap-2 py-8">
-            <span className="text-[11px] text-red-300">模板列表加载失败：{sopError}</span>
-            <button data-interactive className="island-btn island-btn--ghost text-[10.5px]" onClick={() => void loadSops()}>
+            <span className="text-[12px] ig-fg-danger">模板列表加载失败：{sopError}</span>
+            <button data-interactive className="island-btn island-btn--ghost text-[12px]" onClick={() => void loadSops()}>
               重试
             </button>
           </div>
         )}
         {!sopLoading && !sopError && sops.length === 0 && (
-          <div className="flex h-24 items-center justify-center text-[11px] t-faint">
+          <div className="flex h-24 items-center justify-center text-[12px] t-faint">
             暂无模板 · 完成一个任务后保存试试
           </div>
         )}

@@ -2,7 +2,7 @@
  * aura.css — 极光边框
  *
  * 只用 opacity / transform 做动画（合成层，不触发布局与重绘），
- * 呼吸频率 0.35Hz 左右：明显能看出"活着"，又远低于可能引起不适的闪烁区间。
+ * 呼吸频率 0.45Hz 左右：谷值 0.2 / 峰值 1.0，差值 0.8 确保肉眼可见。
  */
 
 html,
@@ -31,11 +31,19 @@ body,
   transition: opacity 260ms ease, background 260ms ease;
 }
 
+/* subtle 档：边框更薄、更淡 */
+.aura-root[data-aura-intensity='subtle'] {
+  --aura-thick: 10px;
+}
+.aura-root[data-aura-intensity='subtle'] .aura-edge {
+  opacity: 0.55;
+}
+
 .aura-top {
   top: 0;
   left: 0;
   right: 0;
-  height: var(--aura-thick, 14px);
+  height: var(--aura-thick, 22px);
   background: linear-gradient(to bottom, var(--aura-color), transparent);
 }
 
@@ -43,7 +51,7 @@ body,
   bottom: 0;
   left: 0;
   right: 0;
-  height: var(--aura-thick, 14px);
+  height: var(--aura-thick, 22px);
   background: linear-gradient(to top, var(--aura-color), transparent);
 }
 
@@ -51,7 +59,7 @@ body,
   left: 0;
   top: 0;
   bottom: 0;
-  width: var(--aura-thick, 14px);
+  width: var(--aura-thick, 22px);
   background: linear-gradient(to right, var(--aura-color), transparent);
 }
 
@@ -59,14 +67,14 @@ body,
   right: 0;
   top: 0;
   bottom: 0;
-  width: var(--aura-thick, 14px);
+  width: var(--aura-thick, 22px);
   background: linear-gradient(to left, var(--aura-color), transparent);
 }
 
 /* 待审批时朝灵动岛那一侧偏置：亮的一侧就是该看的方向 */
 .aura-lean-left .aura-left,
 .aura-lean-right .aura-right {
-  --aura-thick: 18px;
+  --aura-thick: 28px;
 }
 
 .aura-breath {
@@ -77,23 +85,31 @@ body,
   animation: auraUrgent 1.7s ease-in-out infinite;
 }
 
+/**
+ * 呼吸动画：谷值 0.2 → 峰值 1.0，差值 0.8 肉眼明确可辨。
+ * 同时叠 box-shadow 脉动让边框外溢的光晕也在呼吸。
+ */
 @keyframes auraBreath {
   0%,
   100% {
-    opacity: 0.62;
+    opacity: 0.2;
+    box-shadow: 0 0 4px var(--aura-color);
   }
   50% {
     opacity: 1;
+    box-shadow: 0 0 18px var(--aura-color), 0 0 32px var(--aura-color);
   }
 }
 
 @keyframes auraUrgent {
   0%,
   100% {
-    opacity: 0.7;
+    opacity: 0.25;
+    box-shadow: 0 0 4px var(--aura-color);
   }
   45% {
     opacity: 1;
+    box-shadow: 0 0 20px var(--aura-color), 0 0 40px var(--aura-color);
   }
 }
 
@@ -103,6 +119,7 @@ body,
   .aura-urgent {
     animation: none;
     opacity: 0.9;
+    box-shadow: 0 0 8px var(--aura-color);
   }
 }
 

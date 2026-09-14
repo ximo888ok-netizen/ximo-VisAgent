@@ -26,14 +26,14 @@ export function StepDetailSheet({ stepIndex }: { stepIndex: number }) {
   }, [taskId, step]);
 
   if (!step) {
-    return <div className="px-5 py-4 text-[12px] t-muted">步骤 #{stepIndex} 不在当前会话中（重启后请到历史面板查看）</div>;
+    return <div className="px-5 py-4 text-[13px] t-muted">步骤 #{stepIndex} 不在当前会话中（重启后请到历史面板查看）</div>;
   }
 
   return (
     <div className="space-y-3 px-5 py-4">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-[13px] font-semibold t-strong">步骤 #{step.index} 详情</h3>
-        <span className={`text-[10.5px] ${step.ok === false ? "text-red-300" : "text-emerald-300/80"}`}>
+        <h3 className="text-[15px] font-semibold t-strong">步骤 #{step.index} 详情</h3>
+        <span className={`text-[12px] ${step.ok === false ? "ig-fg-danger" : "ig-fg-success"}`}>
           {step.ok === false ? "失败" : step.ok ? "成功" : "—"}
           {step.durationMs !== undefined && ` · ${(step.durationMs / 1000).toFixed(1)}s`}
         </span>
@@ -42,7 +42,7 @@ export function StepDetailSheet({ stepIndex }: { stepIndex: number }) {
       {/* 思考 */}
       <section>
         <div className="island-label mb-1">Thought</div>
-        <div className="rounded-lg ig-bg-panel px-3 py-2 text-[11.5px] leading-relaxed t-body">
+        <div className="rounded-lg ig-bg-panel px-3 py-2 text-[12px] leading-relaxed t-body">
           {step.thought || "(空)"}
         </div>
       </section>
@@ -51,7 +51,7 @@ export function StepDetailSheet({ stepIndex }: { stepIndex: number }) {
       {step.actionName && (
         <section>
           <div className="island-label mb-1">动作 · {step.actionName}{step.level !== undefined && ` · L${step.level}`}</div>
-          <pre className="overflow-auto rounded-lg bg-black/30 px-3 py-2 text-[10.5px] leading-relaxed t-body" style={{ maxHeight: 120 }}>
+          <pre className="overflow-auto rounded-lg bg-black/30 px-3 py-2 text-[12px] leading-relaxed t-body" style={{ maxHeight: 120 }}>
             {JSON.stringify(step.args ?? {}, null, 2)}
           </pre>
         </section>
@@ -60,7 +60,7 @@ export function StepDetailSheet({ stepIndex }: { stepIndex: number }) {
       {/* 结果 */}
       <section>
         <div className="island-label mb-1">结果</div>
-        <div className={`rounded-lg px-3 py-2 text-[11.5px] leading-relaxed ${step.ok === false ? "bg-red-500/[0.07] text-red-200/85" : "ig-bg-panel t-body"}`}>
+        <div className={`rounded-lg px-3 py-2 text-[12px] leading-relaxed ${step.ok === false ? "ig-tag ig-tone-danger" : "ig-bg-panel t-body"}`}>
           {step.resultSummary || "(空)"}
         </div>
       </section>
@@ -73,7 +73,7 @@ export function StepDetailSheet({ stepIndex }: { stepIndex: number }) {
         ) : evidence ? (
           <img src={evidence} alt={`步骤 ${step.index} 执行前截图`} className="w-full rounded-lg border ig-border-line" />
         ) : (
-          <div className="rounded-lg ig-bg-panel px-3 py-4 text-center text-[10.5px] t-faint">
+          <div className="rounded-lg ig-bg-panel px-3 py-4 text-center text-[12px] t-faint">
             该步骤无证据截图（仅 L1 以上操作与审批前会留证）
           </div>
         )}

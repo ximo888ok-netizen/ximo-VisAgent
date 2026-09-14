@@ -31,17 +31,17 @@ export function WorkspaceSettings({ config }: { config: AppConfigPayload }) {
   return (
     <div>
       <label className="island-label">沙箱工作目录</label>
-      <p className="mb-2 text-[11px] t-faint leading-relaxed">
+      <p className="mb-2 text-[12px] t-faint leading-relaxed">
         Agent 的文件读写操作仅限此目录（路径逃逸防护）。修改后需重启任务生效。
       </p>
       <div className="flex gap-2">
         <input
-          className="island-input flex-1 text-[11px]"
+          className="island-input flex-1 text-[12px]"
           value={dir}
           onChange={(e) => setDir(e.target.value)}
           data-interactive
         />
-        <button className="island-btn island-btn--ghost text-[11px]" onClick={handlePick} data-interactive>
+        <button className="island-btn island-btn--ghost text-[12px]" onClick={handlePick} data-interactive>
           浏览…
         </button>
         <button

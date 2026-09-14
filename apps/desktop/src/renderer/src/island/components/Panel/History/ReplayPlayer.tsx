@@ -85,10 +85,10 @@ export function ReplayPlayer({ taskId }: { taskId: string }) {
         {frame ? (
           <img src={frame} alt={`步骤 ${step?.index ?? ""} 截图`} className="h-full w-full object-contain" draggable={false} />
         ) : steps.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-[11px] t-faint">无可回放步骤</div>
+          <div className="flex h-full items-center justify-center text-[12px] t-faint">无可回放步骤</div>
         ) : (
           <div className="island-skeleton flex h-full w-full items-center justify-center ig-bg-panel">
-            <span className="text-[11px] t-faint">
+            <span className="text-[12px] t-faint">
               {loading ? "加载步骤截图…" : "该步骤无截图"}
             </span>
           </div>
@@ -97,10 +97,10 @@ export function ReplayPlayer({ taskId }: { taskId: string }) {
         {step && (
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-3 pb-2 pt-6">
             <div className="flex items-center gap-2">
-              <span className="rounded ig-bg-panel-hover px-1.5 py-0.5 text-[10px] font-semibold t-strong">#{step.index}</span>
-              <span className="text-[10.5px] t-body">{step.actionName ?? "思考"}</span>
+              <span className="rounded ig-bg-panel-hover px-1.5 py-0.5 text-[12px] font-semibold t-strong">#{step.index}</span>
+              <span className="text-[12px] t-body">{step.actionName ?? "思考"}</span>
             </div>
-            <div className="mt-0.5 line-clamp-2 text-[10px] t-muted">{step.resultSummary || step.thought}</div>
+            <div className="mt-0.5 line-clamp-2 text-[12px] t-muted">{step.resultSummary || step.thought}</div>
           </div>
         )}
       </div>
@@ -109,7 +109,7 @@ export function ReplayPlayer({ taskId }: { taskId: string }) {
       <div className="mt-2 flex items-center gap-2">
         <button
           data-interactive
-          className="island-btn island-btn--ghost h-7 px-2.5 text-[11px]"
+          className="island-btn island-btn--ghost h-7 px-2.5 text-[12px]"
           disabled={steps.length === 0}
           onClick={() => (playing ? setPlaying(false) : (setCur(0), setPlaying(true)))}
         >
@@ -117,7 +117,7 @@ export function ReplayPlayer({ taskId }: { taskId: string }) {
         </button>
         <button
           data-interactive
-          className="island-btn island-btn--ghost h-7 px-2 text-[11px]"
+          className="island-btn island-btn--ghost h-7 px-2 text-[12px]"
           disabled={cur === 0}
           onClick={() => setCur((c) => Math.max(0, c - 1))}
         >
@@ -125,7 +125,7 @@ export function ReplayPlayer({ taskId }: { taskId: string }) {
         </button>
         <button
           data-interactive
-          className="island-btn island-btn--ghost h-7 px-2 text-[11px]"
+          className="island-btn island-btn--ghost h-7 px-2 text-[12px]"
           disabled={cur >= steps.length - 1}
           onClick={() => setCur((c) => Math.min(steps.length - 1, c + 1))}
         >
@@ -139,14 +139,14 @@ export function ReplayPlayer({ taskId }: { taskId: string }) {
           value={cur}
           data-interactive
           onChange={(e) => setCur(Number(e.target.value))}
-          className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full ig-bg-panel-hover accent-[#2e7cf6]"
+          className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full ig-bg-panel-hover accent-[var(--island-input-focus)]"
         />
-        <span className="shrink-0 text-[10px] tabular-nums t-muted">
+        <span className="shrink-0 text-[12px] tabular-nums t-muted">
           {steps.length === 0 ? "0/0" : `${cur + 1}/${steps.length}`}
         </span>
         <button
           data-interactive
-          className="island-btn island-btn--ghost h-7 px-2 text-[10px]"
+          className="island-btn island-btn--ghost h-7 px-2 text-[12px]"
           onClick={() => setSpeed((s) => (s === 1 ? 2 : s === 2 ? 0.5 : 1))}
         >
           {speed}x

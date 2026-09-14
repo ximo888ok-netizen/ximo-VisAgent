@@ -74,7 +74,7 @@ export function TaskPanel() {
           {/* 用户消息 */}
           {currentTaskGoal && (
             <div className="mb-3 flex justify-end">
-              <div className="max-w-[80%] rounded-2xl rounded-tr-sm px-3.5 py-2 text-[12px] t-strong"
+              <div className="max-w-[80%] rounded-xl rounded-tr-sm px-3.5 py-2 text-[13px] t-strong"
                 style={{ background: "var(--island-input-focus)", color: "#fff" }}>
                 {currentTaskGoal}
               </div>
@@ -83,12 +83,12 @@ export function TaskPanel() {
 
           {/* 排队横幅 */}
           {taskQueuedIndex !== null && !taskRunning && (
-            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2.5 island-fade-up">
-              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400 island-ring--waiting" />
+            <div className="mb-3 flex items-center gap-2 rounded-lg ig-alert ig-tone-warning px-3 py-2.5 island-fade-up">
+              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full ig-bg-warning island-ring--waiting" />
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] text-amber-200/90">排队中（前方 {taskQueuedIndex} 个任务）</div>
+                <div className="text-[12px] ig-fg-warning">排队中（前方 {taskQueuedIndex} 个任务）</div>
               </div>
-              <button className="island-btn island-btn--ghost shrink-0 px-2.5 text-[10.5px]" onClick={handleCancel} data-interactive>
+              <button className="island-btn island-btn--ghost shrink-0 px-2.5 text-[12px]" onClick={handleCancel} data-interactive>
                 取消
               </button>
             </div>

@@ -34,8 +34,8 @@ export function LogPanel() {
               <path d="M5 15l-2 4 3-2h12l3 2-2-4" stroke="var(--ig-t-faint)" strokeWidth="1.5" strokeLinejoin="round" />
             </svg>
           </div>
-          <p className="text-[12px] t-faint">尚无执行记录</p>
-          <p className="mt-1 text-[11px] t-faint">在「任务」面板输入任务以开始</p>
+          <p className="text-[13px] t-faint">尚无执行记录</p>
+          <p className="mt-1 text-[12px] t-faint">在「任务」面板输入任务以开始</p>
         </div>
       </div>
     );
@@ -46,8 +46,8 @@ export function LogPanel() {
       {/* 任务目标 */}
       {currentTaskGoal && (
         <div className="mb-3 rounded-lg border ig-border-line ig-bg-panel px-3 py-2">
-          <div className="text-[10px] t-faint">任务目标</div>
-          <div className="mt-0.5 text-[12px] t-body">{currentTaskGoal}</div>
+          <div className="text-[12px] t-faint">任务目标</div>
+          <div className="mt-0.5 text-[13px] t-body">{currentTaskGoal}</div>
         </div>
       )}
 
@@ -65,13 +65,13 @@ export function LogPanel() {
             />
             {/* 内容 */}
             <div className="flex-1 pb-1">
-              <div className="text-[10px] t-faint">
+              <div className="text-[12px] t-faint">
                 {new Date(log.ts).toLocaleTimeString("zh-CN", { hour12: false })}
                 <span className="ml-2" style={{ color: statusColor(log.status) }}>
                   {statusText(log.status)}
                 </span>
               </div>
-              <div className="mt-0.5 text-[12px] leading-snug t-strong">
+              <div className="mt-0.5 text-[13px] leading-snug t-strong">
                 {log.text}
               </div>
             </div>
@@ -88,13 +88,13 @@ export function LogPanel() {
             border: `1px solid ${taskFinished.status === "COMPLETED" ? "rgba(63,224,160,0.2)" : "rgba(248,113,113,0.2)"}`,
           }}
         >
-          <div className="flex items-center justify-between text-[11px]">
-            <span style={{ color: taskFinished.status === "COMPLETED" ? "#3fe0a0" : "#f87171" }}>
+          <div className="flex items-center justify-between text-[12px]">
+            <span style={{ color: taskFinished.status === "COMPLETED" ? "var(--c-thinking)" : "var(--c-error)" }}>
               {taskFinished.status === "COMPLETED" ? "任务完成" : taskFinished.status}
             </span>
             <span className="t-faint">{taskFinished.steps} 步 · {taskFinished.totalTokens} tokens</span>
           </div>
-          <div className="mt-1 text-[11.5px] leading-snug t-body" style={{ maxHeight: 48, overflow: "hidden" }}>
+          <div className="mt-1 text-[12px] leading-snug t-body" style={{ maxHeight: 48, overflow: "hidden" }}>
             {taskFinished.finalAnswer}
           </div>
         </div>
@@ -106,11 +106,11 @@ export function LogPanel() {
 function statusColor(s: string): string {
   switch (s) {
     case "idle": return "var(--ig-t-muted)";
-    case "thinking": return "#3fe0a0";
-    case "paused": return "#60a5fa";
-    case "waiting_approval": return "#fbbf24";
-    case "error": return "#f87171";
-    case "stopped": return "#f87171";
+    case "thinking": return "var(--c-thinking)";
+    case "paused": return "var(--p-ice-400)";
+    case "waiting_approval": return "var(--c-waiting)";
+    case "error": return "var(--c-error)";
+    case "stopped": return "var(--c-error)";
     default: return "var(--ig-t-muted)";
   }
 }

@@ -14,12 +14,12 @@ const SUBTASK_STATUS_LABEL: Record<string, string> = {
 };
 
 const SUBTASK_STATUS_COLOR: Record<string, string> = {
-  pending: '#8b8b8b',
-  running: '#3b82f6',
-  awaiting_review: '#fbbf24',
-  done: '#3fe0a0',
-  failed: '#ef4444',
-  skipped: '#6b7280',
+  pending: 'var(--p-ink-7)',
+  running: 'var(--p-ice-500)',
+  awaiting_review: 'var(--c-waiting)',
+  done: 'var(--c-thinking)',
+  failed: 'var(--p-ember-500)',
+  skipped: 'var(--p-ink-6)',
 };
 
 export function MissionDetail({ missionId }: { missionId: string }) {
@@ -37,7 +37,7 @@ export function MissionDetail({ missionId }: { missionId: string }) {
 
   return (
     <div className="rounded-xl ig-bg-panel px-3 py-2.5 space-y-2 border-t ig-border-line">
-      <div className="text-[11px] t-strong font-medium">子任务 ({detail.subtasks.length})</div>
+      <div className="text-[12px] t-strong font-medium">子任务 ({detail.subtasks.length})</div>
 
       {detail.subtasks.map((st, idx) => (
         <SubtaskRow
@@ -61,29 +61,29 @@ function SubtaskRow({ subtask, index, onUpdateStatus }: {
   return (
     <div className="rounded-lg ig-bg-panel-hover px-2.5 py-2 space-y-1">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] t-faint">#{index + 1}</span>
-        <span className="text-[11px] t-strong line-clamp-1">{subtask.title}</span>
+        <span className="text-[12px] t-faint">#{index + 1}</span>
+        <span className="text-[12px] t-strong line-clamp-1">{subtask.title}</span>
         <span
-          className="rounded-full px-1.5 py-0.5 text-[9px] flex-shrink-0"
-          style={{ background: `${SUBTASK_STATUS_COLOR[subtask.status]}20`, color: SUBTASK_STATUS_COLOR[subtask.status] }}
+          className="rounded-full px-1.5 py-0.5 text-[11px] flex-shrink-0"
+          style={{ background: `color-mix(in srgb, ${SUBTASK_STATUS_COLOR[subtask.status]} 13%, transparent)`, color: SUBTASK_STATUS_COLOR[subtask.status] }}
         >
           {SUBTASK_STATUS_LABEL[subtask.status] ?? subtask.status}
         </span>
       </div>
 
       {subtask.instruction && (
-        <div className="text-[10px] t-muted line-clamp-2">{subtask.instruction}</div>
+        <div className="text-[12px] t-muted line-clamp-2">{subtask.instruction}</div>
       )}
 
       {subtask.capabilityId && (
-        <div className="text-[9px] t-faint">能力卡: {subtask.capabilityId}</div>
+        <div className="text-[11px] t-faint">能力卡: {subtask.capabilityId}</div>
       )}
 
       {/* 产物 */}
       {subtask.artifacts && subtask.artifacts.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {subtask.artifacts.map((art) => (
-            <span key={art.id} className="rounded ig-bg-panel px-1.5 py-0.5 text-[9px] t-faint">
+            <span key={art.id} className="rounded ig-bg-panel px-1.5 py-0.5 text-[11px] t-faint">
               {art.label || art.path}
             </span>
           ))}
@@ -92,7 +92,7 @@ function SubtaskRow({ subtask, index, onUpdateStatus }: {
 
       {/* 审核备注 */}
       {subtask.reviewNote && (
-        <div className="text-[9px] t-muted">备注: {subtask.reviewNote}</div>
+        <div className="text-[11px] t-muted">备注: {subtask.reviewNote}</div>
       )}
 
       {/* 状态操作 */}
@@ -100,7 +100,7 @@ function SubtaskRow({ subtask, index, onUpdateStatus }: {
         {subtask.status === 'pending' && (
           <button
             data-interactive
-            className="island-btn island-btn--ghost text-[9px] px-1.5 py-0.5"
+            className="island-btn island-btn--ghost text-[11px] px-1.5 py-0.5"
             onClick={() => void onUpdateStatus('running')}
           >
             开始
@@ -110,21 +110,21 @@ function SubtaskRow({ subtask, index, onUpdateStatus }: {
           <>
             <button
               data-interactive
-              className="island-btn island-btn--ghost text-[9px] px-1.5 py-0.5"
+              className="island-btn island-btn--ghost text-[11px] px-1.5 py-0.5"
               onClick={() => void onUpdateStatus('done')}
             >
               完成
             </button>
             <button
               data-interactive
-              className="island-btn island-btn--ghost text-[9px] px-1.5 py-0.5 text-red-300/70"
+              className="island-btn island-btn--ghost text-[11px] px-1.5 py-0.5 ig-fg-danger"
               onClick={() => void onUpdateStatus('failed')}
             >
               失败
             </button>
             <button
               data-interactive
-              className="island-btn island-btn--ghost text-[9px] px-1.5 py-0.5"
+              className="island-btn island-btn--ghost text-[11px] px-1.5 py-0.5"
               onClick={() => void onUpdateStatus('skipped')}
             >
               跳过

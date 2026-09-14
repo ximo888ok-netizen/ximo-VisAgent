@@ -5,6 +5,7 @@
 import { createRoot } from "react-dom/client";
 import { IslandShell } from "./components/Island/IslandShell";
 import "./styles/tailwind.css";
+import "./styles/tokens.css";
 import "./styles/island.css";
 
 createRoot(document.getElementById("root")!).render(

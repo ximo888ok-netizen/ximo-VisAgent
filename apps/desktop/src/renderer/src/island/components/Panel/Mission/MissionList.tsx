@@ -17,13 +17,13 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  draft: '#8b8b8b',
-  queued: '#fbbf24',
-  running: '#3b82f6',
-  paused: '#f87171',
-  completed: '#3fe0a0',
-  failed: '#ef4444',
-  cancelled: '#6b7280',
+  draft: 'var(--p-ink-7)',
+  queued: 'var(--c-waiting)',
+  running: 'var(--p-ice-500)',
+  paused: 'var(--c-error)',
+  completed: 'var(--c-thinking)',
+  failed: 'var(--p-ember-500)',
+  cancelled: 'var(--p-ink-6)',
 };
 
 const PRIORITY_LABEL: Record<string, string> = {
@@ -78,7 +78,7 @@ export function MissionList() {
     <div className="space-y-2">
       <button
         data-interactive
-        className="island-btn island-btn--primary w-full text-[10.5px]"
+        className="island-btn island-btn--primary w-full text-[12px]"
         onClick={() => setShowCreate(true)}
       >
         + 新建任务
@@ -89,7 +89,7 @@ export function MissionList() {
       )}
 
       {missions.length === 0 && !loading && (
-        <div className="py-8 text-center text-[11px] t-faint">
+        <div className="py-8 text-center text-[12px] t-faint">
           还没有任务。点击「新建任务」创建第一个任务。
         </div>
       )}
@@ -116,22 +116,22 @@ function MissionRow({ mission, expanded, onSelect }: {
   return (
     <div className="rounded-xl ig-bg-panel px-3 py-2.5">
       <div className="flex items-center gap-2">
-        <span className="text-[12px] t-strong font-medium line-clamp-1">{mission.goal}</span>
+        <span className="text-[13px] t-strong font-medium line-clamp-1">{mission.goal}</span>
         <span
-          className="rounded-full px-1.5 py-0.5 text-[9px] flex-shrink-0"
-          style={{ background: `${STATUS_COLOR[mission.status]}20`, color: STATUS_COLOR[mission.status] }}
+          className="rounded-full px-1.5 py-0.5 text-[11px] flex-shrink-0"
+          style={{ background: `color-mix(in srgb, ${STATUS_COLOR[mission.status]} 13%, transparent)`, color: STATUS_COLOR[mission.status] }}
         >
           {STATUS_LABEL[mission.status] ?? mission.status}
         </span>
         <button
           data-interactive
-          className="ml-auto text-[10px] t-muted hover:t-body"
+          className="ml-auto text-[12px] t-muted hover:t-body"
           onClick={onSelect}
         >
           {expanded ? '收起' : '详情'}
         </button>
       </div>
-      <div className="mt-0.5 flex items-center gap-2 text-[9px] t-faint">
+      <div className="mt-0.5 flex items-center gap-2 text-[11px] t-faint">
         <span>{PRIORITY_LABEL[mission.priority] ?? mission.priority}</span>
         <span>{new Date(mission.createdAt).toLocaleString()}</span>
       </div>
@@ -159,10 +159,10 @@ function MissionCreateForm({ onDone, onCreate }: {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <span className="text-[11px] t-strong font-medium">新建任务</span>
+        <span className="text-[12px] t-strong font-medium">新建任务</span>
         <button
           data-interactive
-          className="ml-auto text-[10px] t-muted hover:t-body"
+          className="ml-auto text-[12px] t-muted hover:t-body"
           onClick={onDone}
         >
           取消
@@ -170,23 +170,23 @@ function MissionCreateForm({ onDone, onCreate }: {
       </div>
       <input
         data-interactive
-        className="island-input w-full text-[10.5px]"
+        className="island-input w-full text-[12px]"
         placeholder="任务目标（如：整理本周销售数据到 Excel）"
         value={goal}
         onChange={(e) => setGoal(e.target.value)}
       />
       <textarea
         data-interactive
-        className="island-input w-full text-[10.5px] resize-none"
+        className="island-input w-full text-[12px] resize-none"
         rows={4}
         placeholder={'子任务（每行一个）\n如：\n打开销售数据 Excel\n筛选本周数据\n填充汇总公式'}
         value={subtaskText}
         onChange={(e) => setSubtaskText(e.target.value)}
       />
-      <div className="text-[9px] t-faint">{subtasks.length} 个子任务</div>
+      <div className="text-[11px] t-faint">{subtasks.length} 个子任务</div>
       <button
         data-interactive
-        className="island-btn island-btn--primary w-full text-[10.5px]"
+        className="island-btn island-btn--primary w-full text-[12px]"
         onClick={handleCreate}
         disabled={saving || !goal.trim() || subtasks.length === 0}
       >

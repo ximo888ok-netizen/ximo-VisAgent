@@ -32,7 +32,7 @@ export function EvolutionPanel() {
           <button
             key={t.key}
             data-interactive
-            className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] transition ${
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] transition ${
               tab === t.key ? "ig-bg-panel-hover t-strong" : "t-muted hover:t-body"
             }`}
             onClick={() => setTab(t.key)}

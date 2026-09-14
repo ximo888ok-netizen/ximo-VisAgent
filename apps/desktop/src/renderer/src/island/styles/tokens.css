@@ -1,0 +1,145 @@
+/* ============================================================================
+ * tokens.css — 设计令牌（全渲染层唯一来源）
+ *
+ * 分层：
+ *   原语 --p-*   固定值，不随主题变化（品牌色、状态色、字体、字号、间距、圆角、动效）
+ *   语义 --s-*   由 island.css 按主题映射到原语（文字层级 / 材质 / 描边）
+ *
+ * 纪律：组件只消费 island.css 暴露的语义与组件变量（--ig-* / --island-* / --c-*），
+ *       不直接引用 --p-*，更不写裸 hex。裸 hex 只允许出现在本文件。
+ *
+ * 本文件为「尺子」：先定规格，组件逐个按规格替换（见 UI视觉升级方案 §5 第三步）。
+ * ========================================================================== */
+
+:root {
+  /* ---- 原语色：中性阶 ---- */
+  --p-ink-0: #0e0f12;
+  --p-ink-1: #17191e;
+  --p-ink-2: #1f2229;
+  --p-ink-3: #2a2e37;
+  --p-ink-4: #3a3f4a;
+  --p-ink-5: #4d525d;
+  --p-ink-6: #5b6270;
+  --p-ink-7: #8b909c;
+  --p-ink-8: #b4b8c2;
+  --p-ink-9: #e8eaf0;
+  --p-ink-10: #f2f4f8;
+  --p-paper-0: #ffffff;
+  --p-paper-1: #f7f8fa;
+
+  /* ---- 原语色：品牌（极光青绿——全项目唯一签名色） ---- */
+  --p-glow-300: #8cf0c8;
+  --p-glow-400: #3fe0a0;
+  --p-glow-600: #0e9f6e;
+
+  /* ---- 原语色：交互主色 ---- */
+  --p-ice-300: #93c5fd;
+  --p-ice-400: #60a5fa;
+  --p-ice-500: #2e7cf6;
+  --p-ice-600: #2563eb;
+
+  /* ---- 原语色：等待 / 审批 ---- */
+  --p-sun-300: #fcd34d;
+  --p-sun-400: #fbbf24;
+  --p-sun-600: #b45309;
+
+  /* ---- 原语色：危险（唯一来源，取代此前 6 个近似色） ---- */
+  --p-ember-200: #ffa6a6;
+  --p-ember-400: #f87171;
+  --p-ember-500: #e5484d;
+  --p-ember-600: #b91c1c;
+  /* 需要 alpha 的组合预置成令牌，避免组件层再写裸 rgba */
+  --p-ember-500-a10: rgba(229, 72, 77, 0.1);
+  --p-ember-500-a60: rgba(229, 72, 77, 0.6);
+  --p-ice-500-a12: rgba(46, 124, 246, 0.12);
+  --p-ice-500-a15: rgba(46, 124, 246, 0.15);
+  --p-ice-500-a25: rgba(46, 124, 246, 0.25);
+  --p-ice-500-a35: rgba(46, 124, 246, 0.35);
+
+  /* ---- 原语色：事件分类（仅用于审计日志的事件类型色码，不参与界面语义） ---- */
+  --p-orchid-400: #a78bfa;
+
+  /* ---- 字体栈（含中文字显式回退，不再依赖 Chromium 系统兜底） ---- */
+  --font-sans: -apple-system, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI",
+    "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  /* Tailwind v4 preflight 消费这两个变量，覆盖其默认栈 */
+  --default-font-family: var(--font-sans);
+  --default-mono-font-family: var(--font-mono);
+
+  /* ---- 字号阶梯（6 级，删除全部 .5 半档） ---- */
+  --fs-micro: 11px;
+  --fs-caption: 12px;
+  --fs-body: 13px;
+  --fs-title: 15px;
+  --fs-head: 17px;
+  --fs-display: 21px;
+
+  /* ---- 行高阶梯 ---- */
+  --lh-micro: 14px;
+  --lh-caption: 16px;
+  --lh-body: 20px;
+  --lh-title: 22px;
+  --lh-head: 24px;
+  --lh-display: 28px;
+
+  /* ---- 间距阶梯（8pt 为骨 / 4pt 为筋；6px 与 10px 从组件层移除） ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-12: 48px;
+
+  /* ---- 圆角阶梯（5 级，取代此前 7 种） ---- */
+  --r-chip: 4px;
+  --r-control: 8px;
+  --r-card: 12px;
+  --r-container: 20px;
+  --r-shell: 22px;
+  --r-pill: 9999px;
+
+  /* ---- 动效（3 时长 / 2 缓动） ---- */
+  --dur-instant: 120ms;
+  --dur-view: 220ms;
+  --dur-frame: 320ms;
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ---- 玻璃材质几何（主题无关。光与色的取值在 island.css 按主题给） ----
+   * 六层构成见 island.css §2 注释；此处只定义不随主题变化的量。
+   */
+  /* 上下透镜带深度。顶栏只有 64px 高、展开面板有 520px 高，固定值会在顶栏上吃掉整条、
+   * 百分比会在面板上漫成一片，所以由 IslandShell 按当前高度算出后内联覆盖此默认值。
+   * 不在渐变色标里用 clamp()：色标一旦解析失败会让整条 background-image 失效，
+   * 壳体就会失去全部质感——这个失败模式不值得冒。 */
+  --glass-band: 14px;
+  /* 左上光斑（光源反射）。尺寸用固定 px：在展开面板上自然收敛为一颗角光，不会糊满整块。 */
+  --glass-hotspot-w: 150px;
+  --glass-hotspot-h: 48px;
+  --glass-specular-angle: 148deg;  /* 镜面斜光方向 */
+  --glass-specular-stop: 42%;      /* 壳体镜面斜光的衰减位置 */
+  --glass-sheen-peak: 45%;         /* 按钮高光带的峰值位置 */
+  --glass-sheen-tail: 88%;         /* 按钮高光带的尾部位置 */
+  --glass-blur-panel: 12px;        /* L1 面板模糊半径 */
+  --glass-blur-overlay: 24px;      /* L2 浮层模糊半径 */
+  --glass-saturate: 140%;          /* 模糊同时提饱和，避免"灰玻璃" */
+  /* 壳体透明度三档（用户可在外观设置里切） */
+  --glass-preset-steady: 0.85;
+  --glass-preset-standard: 0.68;
+  --glass-preset-clear: 0.45;
+  /* 滑块可调范围 */
+  --glass-opacity-min: 40;
+  --glass-opacity-max: 100;
+}
+
+/* 字体与数字对齐：全渲染层唯一入口 */
+html {
+  font-family: var(--font-sans);
+}
+
+/** 数字等宽：时间戳、计数、统计值统一使用，避免滚动时左右抖 */
+.t-num {
+  font-variant-numeric: tabular-nums;
+}

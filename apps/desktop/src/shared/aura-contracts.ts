@@ -27,6 +27,8 @@ export const AuraFrameSchema = z.object({
   degraded: z.boolean().default(false),
   /** 审批档位：运行中边框据此换色（auto=青 / autonomous=橙红）；非法值由 aura-state fail-closed 回 manual */
   mode: z.enum(["manual", "auto", "autonomous"]).default("manual"),
+  /** 边框强度：subtle 时边框更薄更淡，full 时完整粗度与呼吸幅度 */
+  intensity: z.enum(['off', 'subtle', 'full']).default('full'),
 });
 export type AuraFrame = z.infer<typeof AuraFrameSchema>;
 

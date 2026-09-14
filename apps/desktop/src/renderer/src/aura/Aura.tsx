@@ -76,6 +76,7 @@ export function Aura() {
       style={{ ['--aura-color' as string]: modeColor ?? COLOR[state] }}
       data-aura-state={state}
       data-aura-mode={mode}
+      data-aura-intensity={frame?.intensity ?? 'full'}
       data-degraded={frame?.degraded ? '1' : '0'}
     >
       <div className={`aura-edge aura-top ${anim}`} />

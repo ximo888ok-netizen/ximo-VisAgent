@@ -57,34 +57,34 @@ export function MetaGateTab() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] t-strong font-medium">宪法门</span>
-        <button data-interactive className="island-btn island-btn--ghost text-[10px]" onClick={() => void load()}>刷新</button>
+        <span className="text-[12px] t-strong font-medium">宪法门</span>
+        <button data-interactive className="island-btn island-btn--ghost text-[12px]" onClick={() => void load()}>刷新</button>
       </div>
 
       {status && (
         <div className="rounded-lg ig-bg-panel px-3 py-2">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] t-faint">元层演化</span>
+            <span className="text-[12px] t-faint">元层演化</span>
             <span
-              className="rounded-full px-2 py-0.5 text-[9px]"
-              style={{ background: status.enabled ? "#3fe0a020" : "#f8717120", color: status.enabled ? "#3fe0a0" : "#f87171" }}
+              className="rounded-full px-2 py-0.5 text-[11px]"
+              style={{ background: status.enabled ? "color-mix(in srgb, var(--c-thinking) 13%, transparent)" : "color-mix(in srgb, var(--c-error) 13%, transparent)", color: status.enabled ? "var(--c-thinking)" : "var(--c-error)" }}
             >
               {status.enabled ? "启用中" : "已停用"}
             </span>
             {status.pending > 0 && (
-              <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-300">
+              <span className="rounded-full ig-tag ig-tone-warning px-1.5 py-0.5 text-[11px]">
                 {status.pending} 项待批
               </span>
             )}
           </div>
           {!status.enabled && (
             <>
-              <div className="mt-1.5 text-[10px] text-amber-300">
+              <div className="mt-1.5 text-[12px] ig-fg-warning">
                 检测到越权尝试，元层已自动停用：{status.lastViolation ?? "原因未知"}
               </div>
               <button
                 data-interactive
-                className="mt-2 island-btn island-btn--ghost text-[10px]"
+                className="mt-2 island-btn island-btn--ghost text-[12px]"
                 onClick={() => void restore(true)}
               >
                 人工确认并重新启用元层
@@ -94,12 +94,12 @@ export function MetaGateTab() {
         </div>
       )}
 
-      {error && <div className="rounded-md bg-rose-500/10 px-2 py-1.5 text-[10px] text-rose-300">{error}</div>}
+      {error && <div className="rounded-lg ig-tag ig-tone-danger px-2 py-1.5 text-[12px] ig-fg-danger">{error}</div>}
 
       <div className="space-y-1.5">
-        <span className="text-[10px] t-faint">待办提案</span>
+        <span className="text-[12px] t-faint">待办提案</span>
         {items.length === 0 && (
-          <div className="flex h-14 items-center justify-center rounded-lg ig-bg-panel text-[11px] t-faint">
+          <div className="flex h-14 items-center justify-center rounded-lg ig-bg-panel text-[12px] t-faint">
             没有等待审批的元层变更
           </div>
         )}
@@ -108,11 +108,11 @@ export function MetaGateTab() {
 
       {history.length > 0 && (
         <div className="space-y-1">
-          <span className="text-[10px] t-faint">最近决定</span>
+          <span className="text-[12px] t-faint">最近决定</span>
           {history.map((p) => (
             <div key={p.id} className="flex items-center gap-2 rounded-lg ig-bg-panel px-2.5 py-1.5">
-              <span className="flex-1 min-w-0 truncate text-[10px] t-muted">{ACTION_LABELS[p.action] ?? p.action}</span>
-              <span className={`rounded-full px-1.5 py-0.5 text-[8px] ${p.status === "executed" ? "bg-emerald-500/10 text-emerald-300" : p.status === "failed" ? "bg-rose-500/10 text-rose-300" : "bg-zinc-500/10 text-zinc-400"}`}>
+              <span className="flex-1 min-w-0 truncate text-[12px] t-muted">{ACTION_LABELS[p.action] ?? p.action}</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[11px] ${p.status === "executed" ? "ig-tag ig-tone-success" : p.status === "failed" ? "ig-tag ig-tone-danger" : "ig-bg-panel t-muted"}`}>
                 {p.status === "executed" ? "已生效" : p.status === "rejected" ? "已拒绝" : p.status === "failed" ? "执行失败" : p.status}
               </span>
             </div>
@@ -134,20 +134,20 @@ function ProposalCard({
 }) {
   const atoms = describePayload(proposal.payloadJson);
   return (
-    <div className="rounded-lg border border-amber-500/15 ig-bg-panel px-3 py-2">
+    <div className="rounded-lg ig-alert ig-tone-warning px-3 py-2">
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-[11px] t-strong">{ACTION_LABELS[proposal.action] ?? proposal.action}</div>
-          <div className="mt-0.5 text-[9px] t-faint">目标 {proposal.targetId}</div>
-          <div className="mt-1 text-[10px] t-muted">{proposal.reason}</div>
-          {atoms && <div className="mt-1 truncate text-[9px] t-faint">{atoms}</div>}
+          <div className="text-[12px] t-strong">{ACTION_LABELS[proposal.action] ?? proposal.action}</div>
+          <div className="mt-0.5 text-[11px] t-faint">目标 {proposal.targetId}</div>
+          <div className="mt-1 text-[12px] t-muted">{proposal.reason}</div>
+          {atoms && <div className="mt-1 truncate text-[11px] t-faint">{atoms}</div>}
         </div>
       </div>
       <div className="mt-2 flex items-center gap-1.5">
         <button
           data-interactive
           disabled={busy}
-          className="island-btn island-btn--primary text-[10px] disabled:opacity-40"
+          className="island-btn island-btn--primary text-[12px] disabled:opacity-40"
           onClick={() => void onDecide(proposal.id, "approve")}
         >
           {busy ? "处理中…" : "批准并生效"}
@@ -155,7 +155,7 @@ function ProposalCard({
         <button
           data-interactive
           disabled={busy}
-          className="island-btn island-btn--ghost text-[10px] disabled:opacity-40"
+          className="island-btn island-btn--ghost text-[12px] disabled:opacity-40"
           onClick={() => void onDecide(proposal.id, "reject")}
         >
           拒绝

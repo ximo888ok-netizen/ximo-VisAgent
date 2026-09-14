@@ -1,100 +1,149 @@
 /**
- * TabIcons.tsx — 面板导航图标（SVG 内联，小尺寸）
+ * TabIcons.tsx — 面板导航图标（内联 SVG）
  *
- * 从 PanelContainer 拆出：纯呈现，10 个模式各一支 path，无状态无副作用。
+ * 绘制规范（全套 11 个图标一致，不得单独破例）：
+ * - 网格 16×16，内容留约 1.5px 安全边距（绘制范围 2.5 ~ 13.5）
+ * - 描边统一 1.5，圆头圆角（round cap / round join）
+ * - 一律 currentColor，颜色由父级文字色决定
+ * - 容器类图形（圆 / 方）统一用 r=5.5 或 11×11，保证光学重量一致
+ *
+ * 为什么统一：改造前这一套里混用了 1.1 / 1.2 / 1.3 / 1.5 四种描边粗细。
+ * 人眼对线宽差异极其敏感——并排两个图标一个 1.1 一个 1.5，就会读出"不是一套东西"，
+ * 这是界面显得不精致的头号来源。
  */
+const BOX = {
+  width: 16,
+  height: 16,
+  viewBox: "0 0 16 16",
+  fill: "none",
+} as const;
+
+/** 统一描边：所有图标共用，不要在内联处再写 strokeWidth */
+const S = {
+  stroke: "currentColor",
+  strokeWidth: 1.5,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+} as const;
+
+/** 实心小点（不需要描边，用 fill 表达） */
+const DOT = { fill: "currentColor", stroke: "none" } as const;
+
 export function TabIcon({ name }: { name: string }) {
-  const common = {
-    width: 16,
-    height: 16,
-    viewBox: "0 0 16 16",
-    fill: "none",
-  } as const;
   switch (name) {
+    /* 任务：对话流（三条递减的线，无容器） */
     case "task":
       return (
-        <svg {...common}>
-          <path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <svg {...BOX}>
+          <path d="M3 5h10M3 8h10M3 11h6" {...S} />
         </svg>
       );
+
+    /* 历史：时钟 */
     case "history":
       return (
-        <svg {...common}>
-          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M8 5v3l2 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        <svg {...BOX}>
+          <circle cx="8" cy="8" r="5.5" {...S} />
+          <path d="M8 4.8v3.4l2.3 1.4" {...S} />
         </svg>
       );
+
+    /* SOP：竖版文档 + 三行正文 */
     case "sop":
       return (
-        <svg {...common}>
-          <rect x="2.5" y="2" width="11" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+        <svg {...BOX}>
+          <rect x="3" y="2.5" width="10" height="11" rx="1.6" {...S} />
+          <path d="M5.6 6h4.8M5.6 8.4h4.8M5.6 10.8h2.8" {...S} />
         </svg>
       );
+
+    /* 定时：日历（与"历史"的时钟明确区分）+ 一个实心日期点 */
     case "schedule":
       return (
-        <svg {...common}>
-          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M8 4.5V8l2.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-          <path d="M5.5 1.5v1.5M10.5 1.5v1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <svg {...BOX}>
+          <rect x="2.5" y="3.5" width="11" height="10" rx="1.6" {...S} />
+          <path d="M2.5 6.6h11M5.6 2v2.6M10.4 2v2.6" {...S} />
+          <circle cx="8" cy="10.3" r="1" {...DOT} />
         </svg>
       );
+
+    /* 统计：四根柱 */
     case "stats":
       return (
-        <svg {...common}>
-          <path d="M2.5 13.5V11M5.5 13.5V7.5M8.5 13.5V5M11.5 13.5V8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <svg {...BOX}>
+          <path d="M3.6 13V9.6M6.5 13V6.2M9.5 13V8.2M12.4 13V4" {...S} />
         </svg>
       );
+
+    /* 日志：终端窗口 + 提示符 */
     case "log":
       return (
-        <svg {...common}>
-          <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M5 6h6M5 8.5h4M5 11h2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <svg {...BOX}>
+          <rect x="2.5" y="3.5" width="11" height="9" rx="1.6" {...S} />
+          <path d="M5.4 6.6 7 8.2l-1.6 1.6M8.6 9.8h3" {...S} />
         </svg>
       );
+
+    /* 设置：齿轮（圆心 + 八向齿） */
     case "settings":
       return (
-        <svg {...common}>
-          <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M8 1.5v1.5M8 13v1.5M1.5 8h1.5M13 8h1.5M3.5 3.5l1 1M11.5 11.5l1 1M3.5 12.5l1-1M11.5 4.5l1-1"
-            stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <svg {...BOX}>
+          <circle cx="8" cy="8" r="2.3" {...S} />
+          <path
+            d="M8 2.4v2M8 11.6v2M2.4 8h2M11.6 8h2M4.03 4.03l1.42 1.42M10.55 10.55l1.42 1.42M4.03 11.97l1.42-1.42M10.55 5.45l1.42-1.42"
+            {...S}
+          />
         </svg>
       );
+
+    /* 审计：带夹板的记录本 */
     case "audit":
       return (
-        <svg {...common}>
-          <path d="M2.5 3.5h8.5v9h-8.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-          <path d="M11.5 5.5h2v5.5a1.5 1.5 0 01-1.5 1.5 1.5 1.5 0 01-1.5-1.5V5.5h1z" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M4.5 6.5h4.5M4.5 8.5h3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+        <svg {...BOX}>
+          <rect x="3" y="3" width="10" height="10.5" rx="1.6" {...S} />
+          <path d="M6 3V2.2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V3" {...S} />
+          <path d="M5.6 7.2h4.8M5.6 9.8h2.8" {...S} />
         </svg>
       );
+
+    /* 演化：新芽（成长语义，比抽象曲线更可读） */
     case "evolution":
       return (
-        <svg {...common}>
-          <path d="M8 2.5C5 2.5 4 5 4 7c0 1.5.5 2.5 1 3.5.4.8.5 1.2.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none" />
-          <path d="M8 2.5c3 0 4 2.5 4 4.5 0 1.5-.5 2.5-1 3.5-.4.8-.5 1.2-.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none" />
-          <circle cx="8" cy="2.5" r="1.2" fill="currentColor" />
-          <circle cx="4" cy="7" r="1" fill="currentColor" />
-          <circle cx="12" cy="7" r="1" fill="currentColor" />
-          <path d="M6.5 13.5h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        <svg {...BOX}>
+          <path d="M8 13.5V7.2" {...S} />
+          <path d="M8 7.2C8 4.6 6.1 2.8 3.4 2.8c0 2.6 1.9 4.4 4.6 4.4Z" {...S} />
+          <path d="M8 7.2c0-2.6 1.9-4.4 4.6-4.4 0 2.6-1.9 4.4-4.6 4.4Z" {...S} />
         </svg>
       );
+
+    /* 员工：人像 */
     case "employee":
       return (
-        <svg {...common}>
-          <circle cx="8" cy="5" r="2.2" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M3 13.5c0-3 2.2-5 5-5s5 2 5 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none" />
+        <svg {...BOX}>
+          <circle cx="8" cy="5.6" r="2.6" {...S} />
+          <path d="M3.2 13.6c0-2.9 2.1-4.9 4.8-4.9s4.8 2 4.8 4.9" {...S} />
         </svg>
       );
+
+    /* 任务库：带勾的方框 */
     case "mission":
       return (
-        <svg {...common}>
-          <rect x="2.5" y="2" width="11" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M5 5h6M5 8h4M5 11h5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-          <circle cx="11" cy="11" r="1.5" fill="currentColor" />
+        <svg {...BOX}>
+          <rect x="2.5" y="2.5" width="11" height="11" rx="2.2" {...S} />
+          <path d="M5.6 8.1 7.2 9.8l3.3-3.7" {...S} />
         </svg>
       );
+
     default:
       return null;
   }
+}
+
+/** 返回箭头（二级视图用，与上面共用同一绘制规范） */
+export function BackIcon() {
+  return (
+    <svg {...BOX}>
+      <path d="M9.8 3.5 5.4 8l4.4 4.5" {...S} />
+    </svg>
+  );
 }

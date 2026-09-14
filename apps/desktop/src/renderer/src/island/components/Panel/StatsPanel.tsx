@@ -40,13 +40,13 @@ export function StatsPanel() {
     <div className="flex h-full flex-col px-4 py-3">
       {/* 时间范围筛选 */}
       <div className="mb-3 flex items-center gap-1">
-        <span className="text-[11px] t-strong font-medium">任务统计</span>
+        <span className="text-[12px] t-strong font-medium">任务统计</span>
         <div className="ml-auto flex gap-1">
           {[7, 30, 90].map((d) => (
             <button
               key={d}
               data-interactive
-              className={`rounded-full px-2.5 py-1 text-[10.5px] transition ${statsDays === d ? "ig-bg-panel-hover t-strong" : "t-muted hover:t-body"}`}
+              className={`rounded-full px-2.5 py-1 text-[12px] transition ${statsDays === d ? "ig-bg-panel-hover t-strong" : "t-muted hover:t-body"}`}
               onClick={() => pickDays(d)}
             >
               {d === 7 ? "近 7 天" : d === 30 ? "近 30 天" : "近 90 天"}
@@ -64,8 +64,8 @@ export function StatsPanel() {
         )}
         {statsError && !stats && (
           <div className="flex flex-col items-center gap-2 py-6">
-            <span className="text-[11px] text-red-300">统计加载失败：{statsError}</span>
-            <button data-interactive className="island-btn island-btn--ghost text-[10.5px]" onClick={() => void loadStats()}>重试</button>
+            <span className="text-[12px] ig-fg-danger">统计加载失败：{statsError}</span>
+            <button data-interactive className="island-btn island-btn--ghost text-[12px]" onClick={() => void loadStats()}>重试</button>
           </div>
         )}
         {stats && (
@@ -80,7 +80,7 @@ export function StatsPanel() {
 
             {/* 结果分布 */}
             <div className="rounded-xl ig-bg-panel px-3 py-2.5">
-              <div className="mb-1.5 text-[11px] t-strong font-medium">结果分布</div>
+              <div className="mb-1.5 text-[12px] t-strong font-medium">结果分布</div>
               <div className="flex h-2.5 overflow-hidden rounded-full">
                 <Bar status="COMPLETED" value={stats.completed} total={stats.totalTasks} />
                 <Bar status="FAILED" value={stats.failed} total={stats.totalTasks} />
@@ -89,7 +89,7 @@ export function StatsPanel() {
               </div>
               <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                 {(["COMPLETED", "FAILED", "CANCELLED", "INTERRUPTED"] as const).map((k) => (
-                  <span key={k} className="flex items-center gap-1 text-[9.5px] t-muted">
+                  <span key={k} className="flex items-center gap-1 text-[11px] t-muted">
                     <span className="h-1.5 w-1.5 rounded-full" style={{ background: BAR_COLOR[k] }} />
                     {TASK_STATUS_LABEL[k]} {countOf(stats, k)}
                   </span>
@@ -99,30 +99,30 @@ export function StatsPanel() {
 
             {/* 失败归因 */}
             <div className="rounded-xl ig-bg-panel px-3 py-2.5">
-              <div className="mb-2 text-[11px] t-strong font-medium">失败归因</div>
+              <div className="mb-2 text-[12px] t-strong font-medium">失败归因</div>
               {stats.failureKinds.length === 0 ? (
-                <div className="py-2 text-center text-[10.5px] t-faint">期间无失败任务 🎉</div>
+                <div className="py-2 text-center text-[12px] t-faint">期间无失败任务 🎉</div>
               ) : (
                 <div className="space-y-1.5">
                   {stats.failureKinds.map((f) => (
                     <div key={f.kind} className="flex items-center gap-2">
-                      <span className="w-20 shrink-0 truncate text-[10px] t-muted" title={f.kind}>
+                      <span className="w-20 shrink-0 truncate text-[12px] t-muted" title={f.kind}>
                         {FAILURE_KIND_LABEL[f.kind] ?? f.kind}
                       </span>
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full ig-bg-panel-hover">
                         <div
-                          className="h-full rounded-full bg-red-400/70"
+                          className="h-full rounded-full ig-tag ig-tone-danger"
                           style={{ width: `${Math.max(4, (f.count / (stats.failureKinds[0]?.count ?? 1)) * 100)}%` }}
                         />
                       </div>
-                      <span className="w-6 shrink-0 text-right text-[10px] tabular-nums t-muted">{f.count}</span>
+                      <span className="w-6 shrink-0 text-right text-[12px] tabular-nums t-muted">{f.count}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="pb-1 text-center text-[9.5px] t-faint">
+            <div className="pb-1 text-center text-[11px] t-faint">
               累计消耗 {stats.totalTokens >= 1000 ? `${(stats.totalTokens / 1000).toFixed(1)}k` : stats.totalTokens} tokens
             </div>
           </>
@@ -149,14 +149,14 @@ function Bar({ status, value, total }: { status: string; value: number; total: n
 function StatCard({ label, value, sub, ratio, good }: { label: string; value: string; sub?: string; ratio?: number; good?: boolean }) {
   return (
     <div className="rounded-xl ig-bg-panel px-3 py-2.5">
-      <div className="text-[9.5px] t-faint">{label}</div>
+      <div className="text-[11px] t-faint">{label}</div>
       <div
         className="mt-0.5 text-[17px] font-semibold tabular-nums"
-        style={{ color: good && ratio !== undefined ? (ratio >= 0.8 ? "#3fe0a0" : ratio >= 0.5 ? "#fbbf24" : "#f87171") : undefined }}
+        style={{ color: good && ratio !== undefined ? (ratio >= 0.8 ? "var(--c-thinking)" : ratio >= 0.5 ? "var(--c-waiting)" : "var(--c-error)") : undefined }}
       >
         {value}
       </div>
-      {sub && <div className="mt-0.5 text-[9px] t-faint">{sub}</div>}
+      {sub && <div className="mt-0.5 text-[11px] t-faint">{sub}</div>}
     </div>
   );
 }
