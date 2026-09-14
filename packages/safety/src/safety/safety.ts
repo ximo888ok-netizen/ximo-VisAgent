@@ -168,6 +168,11 @@ export class ApprovalEngine {
     return this.pending.get(id);
   }
 
+  /** 待人工的审批快照（PENDING/TIMEOUT；已决定的记录留在 map 里供 loop 轮询，不外泄） */
+  listPending(): Approval[] {
+    return [...this.pending.values()].filter((a) => a.status === 'PENDING' || a.status === 'TIMEOUT');
+  }
+
   /** 检查是否超时（超时→状态置 TIMEOUT 但仍挂起，任务暂停等人工） */
   checkTimeout(id: string): boolean {
     const a = this.pending.get(id);

@@ -1,6 +1,14 @@
 // 截图坐标系 ↔ 物理像素坐标系换算（win32 预算债，勿并回 win32.ts）
 // 宿主每帧截图后 setScreenScale(物理宽/截图宽)：模型输出的是截图系坐标，
 // SendInput 注入和 UIA rect 都是物理像素。两个坐标系的桥在此集中。
+//
+// ★ 项目范围声明（2026-09-14 与用户确认）：本项目【仅支持单屏】。
+//   这里刻意只保留全局单对 scaleX/scaleY（描述唯一那块屏）。多屏 / 混合 DPI 的
+//   按屏坐标映射是【有意不做】的范围裁剪，不是遗漏或缺陷——不要当 bug 去"修"它。
+//   若未来需求变更为多屏，改动点：① 本文件按监视器注册几何、按点所在屏换算；
+//   ② win32.ts virtualScreen() 用注册并集替代 DPI 上下文相关的 GetSystemMetrics；
+//   ③ ui-locate.ts 宽高换算按屏取 scale；④ host-capabilities.ts captureScreen
+//   目前锁定 primary display 截图，需扩展到指定屏。
 let _scaleX = 1;
 let _scaleY = 1;
 

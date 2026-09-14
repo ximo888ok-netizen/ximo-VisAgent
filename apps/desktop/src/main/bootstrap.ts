@@ -18,7 +18,12 @@ import type { Scheduler } from './scheduler';
 import type { EmployeeStore } from './stores/employee-store';
 import type { WeChatBot } from './wechat-bot';
 import type { WeChatBotConfig } from '@ximo-visagent/shared-types';
+import type { WeChatInboundMessage } from './wechat-types';
+import { parseApprovalReply, routeApprovalReply } from './wechat-approval-inbound';
+import { formatApprovalReplyResult } from './wechat-notify';
 import type { MissionRepo } from './mission-db/mission-repo';
+import type { MissionRunRepo } from './mission-db/run-repo';
+import type { MissionRunner } from './mission-runner';
 
 import { screen } from 'electron';
 import { showSplash, updateSplashStage } from './windows/splash';
@@ -49,6 +54,8 @@ export interface BootstrapDeps {
   scheduler: Scheduler;
   employeeStore: EmployeeStore;
   missionRepo: MissionRepo;
+  missionRunRepo: MissionRunRepo;
+  missionRunner: MissionRunner;
   wechatBot: WeChatBot;
   wechatCfg: WeChatBotConfig;
   uiaClient: { start: () => Promise<void>; stop: () => void };
@@ -64,6 +71,7 @@ export async function bootstrap(deps: BootstrapDeps): Promise<void> {
   const {
     orchestrator, auditDb, experienceStore, configStore,
     memoryStore, conversationStore, scheduler, employeeStore, missionRepo,
+    missionRunRepo, missionRunner,
     wechatBot, wechatCfg, uiaClient, isE2E, isSelfTest,
   } = deps;
 
@@ -107,6 +115,8 @@ export async function bootstrap(deps: BootstrapDeps): Promise<void> {
     experienceStore,
     employeeStore,
     missionRepo,
+    missionRunRepo,
+    missionRunner,
   });
 
   auraSetFullscreenProbe(isForegroundFullscreen);
@@ -133,7 +143,20 @@ export async function bootstrap(deps: BootstrapDeps): Promise<void> {
     }
   }
 
-  wechatBot.on('message', (msg: { content: string }) => {
+  wechatBot.on('message', (msg: WeChatInboundMessage) => {
+    // 审批承接：出站通知让人「回复同意 xxx」，入站先按审批回复路由，未命中再走命令前缀建任务
+    const approvalReply = parseApprovalReply(msg.content);
+    if (approvalReply) {
+      const route = routeApprovalReply(approvalReply, orchestrator.findPendingApprovals(approvalReply.idPrefix));
+      if (route.kind === 'decide') {
+        if (route.decision === 'approve') orchestrator.approve(route.id);
+        else orchestrator.reject(route.id, '微信回复驳回');
+      }
+      const ctxToken = wechatBot.getContextToken(msg.fromWxid);
+      if (ctxToken) void wechatBot.sendText(ctxToken, formatApprovalReplyResult(route));
+      console.log(`[wechat-bot] 审批回复承接: ${route.kind} (编号 ${approvalReply.idPrefix})`);
+      return;
+    }
     if (!wechatBot.isCommand(msg.content)) return;
     const goal = wechatBot.extractCommand(msg.content);
     if (!goal) return;
@@ -170,6 +193,8 @@ export async function bootstrap(deps: BootstrapDeps): Promise<void> {
     } else if (resume.error) {
       console.warn('[main] 自动恢复扫描失败:', resume.error);
     }
+    // Mission 断点：running 态 Mission 重建调度循环；崩溃遗留子任务按审计终态收敛
+    missionRunner.resumeRunningMissions();
   }
 
   if (isE2E) {

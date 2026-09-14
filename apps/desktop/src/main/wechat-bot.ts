@@ -8,7 +8,7 @@
  * 4. POST ilink/bot/sendmessage → 回复消息（需 context_token）
  *
  * 登录态持久化：
- * - bot_token / baseUrl / userId → wechat-bot-credentials.json（权限 0600）
+ * - bot_token / baseUrl / userId → wechat-bot-credentials.json（bot_token 经 safeStorage 加密，旧明文自动迁移）
  * - get_updates_buf → wechat-bot-sync.json
  * - start() 时自动恢复，stop() 保留凭证，logout() 清除凭证
  *
@@ -19,7 +19,9 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
+import { safeStorage } from 'electron';
 import { httpsPost, httpsGet, ILINK_DEFAULT_BASE } from './wechat-http';
+import { createSafeStorageCipher, encodeToken, decodeToken, needsMigration } from './wechat-credential-crypto';
 import type {
   ScanStatus,
   WeChatInboundMessage,
@@ -60,6 +62,10 @@ export class WeChatBot extends EventEmitter {
   private contextTokenCache = new Map<string, string>();
   /** 最近一次通过白名单的来消息联系人：反向通知的默认目标 */
   private lastContactWxid: string | null = null;
+  /** botToken 落盘加解密（safeStorage；不可用时自动降级明文，与 config-store 同策略） */
+  private cipher = createSafeStorageCipher(safeStorage);
+  /** 磁盘上仍是旧明文 botToken：恢复登录后覆写一次密文完成迁移 */
+  private pendingTokenMigration = false;
 
   constructor(private opts: WeChatBotOptions) {
     super();
@@ -79,6 +85,11 @@ export class WeChatBot extends EventEmitter {
       this.getUpdatesBuf = this.loadSyncBuf();
       this.loggedIn = true;
       console.log('[wechat-bot] 已从磁盘恢复登录态，跳过扫码');
+      if (this.pendingTokenMigration) {
+        this.pendingTokenMigration = false;
+        this.saveStoredCredentials({ botToken: stored.botToken, baseUrl: this.baseUrl, userId: stored.userId ?? '' });
+        console.log('[wechat-bot] 旧明文 botToken 已迁移为 safeStorage 密文');
+      }
       this.emit('login', stored.userId || '微信用户');
       this.emit('status', true);
       this.startCallbackPolling();
@@ -418,7 +429,11 @@ export class WeChatBot extends EventEmitter {
       const raw = fs.readFileSync(this.credFilePath, 'utf-8');
       const data = JSON.parse(raw) as StoredCredentials;
       if (!data.botToken?.trim()) return null;
-      return data;
+      this.pendingTokenMigration = needsMigration(data.botToken);
+      const botToken = decodeToken(this.cipher, data.botToken);
+      // 解密失败（换机器/密文损坏）→ 按未登录处理，走重新扫码
+      if (!botToken) return null;
+      return { ...data, botToken };
     } catch {
       return null;
     }
@@ -428,7 +443,7 @@ export class WeChatBot extends EventEmitter {
     try {
       fs.mkdirSync(this.opts.dataDir, { recursive: true });
       const cred: StoredCredentials = {
-        botToken: data.botToken,
+        botToken: encodeToken(this.cipher, data.botToken),
         baseUrl: data.baseUrl,
         userId: data.userId,
         savedAt: new Date().toISOString(),

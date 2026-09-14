@@ -17,6 +17,7 @@ import {
   mouseScroll,
 } from './win32';
 import { keyboardPress, keyboardType } from './win32-keyboard';
+import { verifyTypedInputNote } from './keyboard-verify';
 import { activateWindow, listWindows } from './win32-window';
 /** 双击后等待前台窗口变化（覆盖冷启动 >300ms，防误报未变化） */
 const OPEN_EFFECT_WAIT_MS = 400;
@@ -191,8 +192,10 @@ export class ComputerToolExecutor implements ToolExecutor {
   }
 
   private async keyboardType(args: Record<string, unknown>): Promise<ToolResult> {
-    await keyboardType(String(args.text ?? ''));
-    return { ok: true, summary: `已输入 ${String(args.text ?? '').length} 字符` };
+    const text = String(args.text ?? '');
+    const intervalMs = typeof args.intervalMs === 'number' && Number.isFinite(args.intervalMs) ? args.intervalMs : undefined;
+    await keyboardType(text, intervalMs);
+    return { ok: true, summary: `已输入 ${text.length} 字符${await verifyTypedInputNote(text)}` };
   }
 
   private async keyboardPress(args: Record<string, unknown>): Promise<ToolResult> {
@@ -238,9 +241,10 @@ export class ComputerToolExecutor implements ToolExecutor {
   }
 
   // ---------- UIA 辅助定位（sidecar 只读树 → 按名找元素 → 按真实中心点击） ----------
-  /** 拉起 sidecar（幂等）并取当前 UIA 树 */
+  /** 拉起 sidecar（幂等）并取当前 UIA 树；已降级（重启预算耗尽）时短路，让调用方立即走视觉定位 */
   private async uiTree() {
     const client = getUiaClient();
+    if (client.degraded) throw new Error('UIA 不可用（sidecar 重启预算耗尽），降级视觉定位');
     if (!client.healthy) await client.start();
     return client.getUiTree({ maxDepth: 10, maxNodes: 1500 });
   }

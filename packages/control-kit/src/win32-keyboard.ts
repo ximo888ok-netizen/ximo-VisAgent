@@ -1,8 +1,11 @@
 // koffi FFI 绑定：键盘注入（SendInput），自 win32.ts 拆出（win32.ts 预算只降不升）
 import { kbdInput, sendInputBatch, KEYEVENTF_UNICODE, KEYEVENTF_KEYUP } from './win32';
 
+/** 逐字符注入的默认键间隔（ms）；调用方可传 intervalMs 覆盖（0=不等待） */
+export const DEFAULT_TYPE_INTERVAL_MS = 10;
+
 /** 异步逐字符注入：await sleep 让出事件循环，保证急停/IPC 在长文本输入期间仍可响应 */
-export async function keyboardType(text: string, intervalMs = 10): Promise<void> {
+export async function keyboardType(text: string, intervalMs = DEFAULT_TYPE_INTERVAL_MS): Promise<void> {
   for (const ch of text) {
     const code = ch.codePointAt(0) ?? 0;
     // 每个字符的 down+up 放在一次 SendInput 调用内（原子性）

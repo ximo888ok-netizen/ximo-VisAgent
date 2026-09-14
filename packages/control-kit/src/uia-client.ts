@@ -1,8 +1,10 @@
 // UIA sidecar 客户端：spawn C# 进程 + JSON-RPC over stdio
+import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { ElementRectResult, UiTreeOptions, UiTreeResult } from '@ximo-visagent/shared-types';
+import { shouldRestart, nextBackoffMs } from './uia-restart-policy';
 
 export interface UiaClientOptions {
   executable?: string; // 默认 native/uia-sidecar-cs/bin/uia-sidecar.exe
@@ -44,7 +46,7 @@ function resolveSidecarPath(): string {
   return findSidecarUpwards(__dirname) ?? SIDECAR_REL;
 }
 
-export class UiaClient {
+export class UiaClient extends EventEmitter {
   private proc: ChildProcess | null = null;
   private pending = new Map<number, { resolve: (v: string) => void; reject: (e: Error) => void }>();
   private nextId = 1;
@@ -56,8 +58,12 @@ export class UiaClient {
   private restartCount = 0;
   /** M07 修复：主动停止标志位，替代 restartCount=99 */
   private stopped = false;
+  /** 重启预算耗尽后只发一次 degraded 事件（复位发生在健康响应处） */
+  private degradedFired = false;
 
-  constructor(private opts: UiaClientOptions = {}) {}
+  constructor(private opts: UiaClientOptions = {}) {
+    super();
+  }
 
   private exePath(): string {
     return this.opts.executable ?? process.env.UIA_SIDECAR_EXE ?? resolveSidecarPath();
@@ -91,20 +97,30 @@ export class UiaClient {
       for (const [, p] of this.pending) p.reject(new Error(`sidecar exited: ${code}`));
       this.pending.clear();
       this.buf = '';
-      // F4 守护：异常退出自动重启（指数退避，最多 5 次）
+      // F4 守护：异常退出自动重启（指数退避，最多 5 次，健康后清零预算）
       // M07 修复：用 stopped 标志位判断是否应阻止重启
-      if (code !== 0 && this.restartCount < 5 && !this.restarting && !this.stopped) {
-        this.restarting = true;
-        this.restartCount++;
-        const backoff = Math.min(10_000, 500 * 2 ** (this.restartCount - 1));
-        console.warn(`[uia] sidecar exited (${code}), ${backoff}ms 后自动重启 (第 ${this.restartCount} 次)`);
-        setTimeout(() => {
-          this.restarting = false;
-          this.start().catch((err) => console.error('[uia] 自动重启失败', err));
-        }, backoff);
+      if (code !== 0 && !this.restarting && !this.stopped) {
+        if (shouldRestart(this.restartCount)) {
+          this.restarting = true;
+          this.restartCount++;
+          const backoff = nextBackoffMs(this.restartCount);
+          console.warn(`[uia] sidecar exited (${code}), ${backoff}ms 后自动重启 (第 ${this.restartCount} 次)`);
+          setTimeout(() => {
+            this.restarting = false;
+            this.start().catch((err) => console.error('[uia] 自动重启失败', err));
+          }, backoff);
+        } else if (!this.degradedFired) {
+          // 重启预算耗尽：一次性降级事件，让调用方感知「UIA 不可用，降级视觉定位」
+          this.degradedFired = true;
+          console.error('[uia] sidecar 重启预算耗尽，UIA 不可用（降级视觉定位）');
+          this.emit('degraded');
+        }
       }
     });
     await this.request('health', {});
+    // 健康响应 = sidecar 活着：复位重启预算（历史 bug：只增不减，累计 5 次后永久失联）
+    this.restartCount = 0;
+    this.degradedFired = false;
   }
 
   stop(): void {
@@ -117,6 +133,11 @@ export class UiaClient {
 
   get healthy(): boolean {
     return !!this.proc && this.proc.exitCode === null;
+  }
+
+  /** UIA 已降级（重启预算耗尽）：调用方应短路 UIA，直接走视觉定位降级 */
+  get degraded(): boolean {
+    return this.degradedFired;
   }
 
   private onData(chunk: string): void {
