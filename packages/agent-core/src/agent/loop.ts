@@ -22,9 +22,10 @@ import {
 } from './loop-helpers';
 import { EfficiencyGuard } from './loop-efficiency';
 import { StateTracker } from './state-tracker';
-import { chatWithRetry, pollApproval, quickHash } from './loop-llm';
+import { chatWithRetry, quickHash } from './loop-llm';
 import { applyMilestoneCheck } from './milestone';
 import { runRequestToolsRound } from './loop-request-tools';
+import { runApprovalGate } from './loop-approval';
 import { onTaskDone } from './acceptance';
 
 // 契约类型集中在 types.ts / recovery.ts；此处转出以保持既有导入路径可用
@@ -32,9 +33,6 @@ export type { RecoveryContext, RecoveryHit } from './recovery';
 import { createRecoveryAdvisor } from './recovery';
 import type { AgentLoopOptions, AgentEvent, AgentRunResult, StepDetail } from './types';
 export type { AgentLoopOptions, AgentEvent, AgentRunResult, StepDetail } from './types';
-
-/** 审批拒绝的连续终止阈值 */
-const MAX_CONSECUTIVE_REJECTIONS = 3;
 
 export class AgentLoop {
   private cancelled = false;
@@ -76,7 +74,7 @@ export class AgentLoop {
     this.cancelled = false;
     this.stopped = false;
     this.paused = false;
-    // R3: 连续被拒计数器（阈值见文件头 MAX_CONSECUTIVE_REJECTIONS）
+    // R3: 连续被拒计数器（阈值见 loop-approval.ts MAX_CONSECUTIVE_REJECTIONS）
     let consecutiveRejections = 0;
     // P0-5 修复：LLM 连续失败熔断（避免无 Key/断网时空烧步数）
     let llmFailStreak = 0;
@@ -306,78 +304,23 @@ export class AgentLoop {
           // 5a) 安全分级（P0-1：appName 带类名，domain 来自浏览器通道）
           const classified = classifier.classify(action, appName, snap.domain);
 
-          // 5b) 审批 or 直行 —— 与单动作版语义完全一致，只是批内遇拒/截断时停止后续动作
+          // 5b) 审批 or 直行 —— 审批全流程在 loop-approval.ts，语义与迁移前批内逐分支一致（遇拒/截断停止后续动作）
           let finalArgs = action.args;
           if (classified.level >= 2) {
-            const ap = approval.create({ name: action.name, args: action.args }, classified, taskId);
-            emit({ type: 'approval_pending', approvalId: ap.id, tool: ap.toolCall.name, args: ap.toolCall.args, reason: classified.reason });
-            const decision = requestApproval ? await requestApproval(ap.id, { tool: ap.toolCall.name, args: ap.toolCall.args, reason: classified.reason, level: classified.level, appName }) : null;
-            let approved = true;
-            if (!decision) {
-              const outcome = await pollApproval(ap.id, approval, approvalTimeoutMs, emit, startedAt, maxDurationMs, () => this.cancelled);
-              if (outcome === 'cancelled') {
-                status = this.stopped ? 'EMERGENCY_STOPPED' : 'CANCELLED';
-                batchBroken = true;
-                break;
-              }
-              if (outcome === 'task_timeout') {
-                status = 'FAILED';
-                emit({ type: 'error', message: '任务超时（审批等待期间）' });
-                batchBroken = true;
-                break;
-              }
-              if (outcome === 'rejected') {
-                consecutiveRejections++;
-                if (consecutiveRejections >= MAX_CONSECUTIVE_REJECTIONS) {
-                  status = 'FAILED';
-                  finalAnswer = `连续 ${MAX_CONSECUTIVE_REJECTIONS} 次操作被审批拒绝，任务终止`;
-                  emit({ type: 'error', message: finalAnswer });
-                  batchBroken = true;
-                  break;
-                }
-                memory.addStep({ thought: `操作被审批拒绝: ${approval.get(ap.id)?.reason ?? '用户拒绝'}，请改用其他方案`, actionName: null, actionArgs: null, resultSummary: '拒绝' });
-                emit({ type: 'approval_result', approvalId: ap.id, decision: 'reject', outcome: 'replan' });
-                approved = false;
-                batchBroken = true; // 拒绝后剩余动作不再执行，交给模型重新规划
-              } else if (outcome === 'timeout_hang') {
-                status = 'WAITING_APPROVAL';
-                finalAnswer = `审批超时挂起: ${ap.toolCall.name}（等待人工处理）`;
-                emit({ type: 'approval_result', approvalId: ap.id, decision: 'timeout', outcome: 'timeout_hang' });
-                batchBroken = true;
-                break;
-              } else {
-                finalArgs = approval.finalArgs(ap.id) ?? action.args;
-                emit({ type: 'approval_result', approvalId: ap.id, decision: 'approve', outcome: 'executed' });
-                status = 'RUNNING';
-                emit({ type: 'status', status: 'RUNNING' });
-              }
-            } else if (decision.action === 'reject') {
-              consecutiveRejections++;
-              if (consecutiveRejections >= MAX_CONSECUTIVE_REJECTIONS) {
-                status = 'FAILED';
-                finalAnswer = `连续 ${MAX_CONSECUTIVE_REJECTIONS} 次操作被审批拒绝，任务终止`;
-                emit({ type: 'error', message: finalAnswer });
-                batchBroken = true;
-                break;
-              }
-              memory.addStep({ thought: `任务被审批拒绝: ${decision.reason}，请改用其他方案`, actionName: null, actionArgs: null, resultSummary: '拒绝' });
-              emit({ type: 'approval_result', approvalId: ap.id, decision: 'reject', outcome: 'replan' });
-              approved = false;
+            const gate = await runApprovalGate({
+              action, classified, ai, actionCount: parsed.actions.length, taskId, appName,
+              status, consecutiveRejections, approval, requestApproval, emit,
+              approvalTimeoutMs, startedAt, maxDurationMs,
+              isCancelled: () => this.cancelled, stopped: this.stopped, memory, messages,
+            });
+            if (gate.status) status = gate.status;
+            if (gate.finalAnswer !== undefined) finalAnswer = gate.finalAnswer;
+            consecutiveRejections = gate.consecutiveRejections;
+            if (gate.batchBroken) {
               batchBroken = true;
-            } else if (decision.action === 'edit') {
-              finalArgs = decision.newArgs ?? action.args;
-              emit({ type: 'approval_result', approvalId: ap.id, decision: 'edit', outcome: 'executed' });
-            } else {
-              approval.decide(ap.id, { action: 'approve' });
-              emit({ type: 'approval_result', approvalId: ap.id, decision: 'approve', outcome: 'executed' });
-            }
-            if (approved) consecutiveRejections = 0;
-            if (batchBroken) {
-              if (ai < parsed.actions.length - 1 && status === 'RUNNING') {
-                messages.push({ role: 'system', content: `批动作在 ${action.name} 处被审批拒绝，剩余 ${parsed.actions.length - ai - 1} 个动作未执行。请基于当前画面重新规划。` });
-              }
               break;
             }
+            finalArgs = gate.finalArgs;
           }
 
           // 5c) 执行（停滞硬约束：重复同一个没有界面响应的动作直接拦截，不做真实注入）
