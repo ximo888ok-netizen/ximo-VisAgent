@@ -4,13 +4,25 @@ import type { OperationLevel, TaskStatus, ToolSchema } from '@ximo-visagent/shar
 import type { ApprovalEngine, SafetyClassifier } from '@ximo-visagent/safety';
 import type { PerceptionProvider, ToolExecutor } from '../tools/registry';
 import type { RecoveryContext, RecoveryHit } from './recovery';
+import type { BudgetGuard } from './loop-budget';
 
 /** 机器断言（L1 验收门）：task_done 后由宿主执行确定性校验，替代模型自评。
- *  断言由任务提交方（e2e 计划/SOP/人工）声明，属可信数据，不经模型之手。 */
+ *  断言由任务提交方（e2e 计划/SOP/人工）声明，属可信数据，不经模型之手。
+ *  FR-014/Q9：window_title_contains 宿主进程内直判；ui_element_exists 经宿主注入的
+ *  UIA evaluator（求值通道在 control-kit 注册表，agent-core 只声明契约形态）。 */
 export type TaskAssertion =
   | { kind: 'file_exists'; path: string }
   | { kind: 'file_contains'; path: string; text: string }
-  | { kind: 'excel_cell'; path: string; cell: string; equals: string; sheet?: string };
+  | { kind: 'excel_cell'; path: string; cell: string; equals: string; sheet?: string }
+  | { kind: 'window_title_contains'; text: string }
+  | { kind: 'ui_element_exists'; text: string };
+
+/** A-M5 三闸收口（FR-006）：任务终态由哪一闸收口。
+ *  budget-* = 预算闸；stall = 停滞闸（EfficiencyGuard 止损）；assertion = 断言闸全过完成；
+ *  task_done = 模型完成（评审兜底）；error = 宿主侧异常收口（launch 崩溃路径填充）。 */
+export type TaskEndGate =
+  | 'budget-steps' | 'budget-duration' | 'budget-tokens'
+  | 'stall' | 'assertion' | 'task_done' | 'error';
 
 /** 断言求值结果：passed=false 时 detail 必须给出可读的缺口说明 */
 export interface AssertionResult {
@@ -26,7 +38,9 @@ export interface AgentLoopOptions {
   classifier?: SafetyClassifier;
   approval?: ApprovalEngine;
   maxSteps?: number; // 默认 60，防死循环
-  maxDurationMs?: number; // 单任务超时，默认 30min
+  maxDurationMs?: number; // 单任务超时，默认 30min（仅未注入 budgetGuard 时的缺省硬顶）
+  /** A-M5 预算闸：注入后时长/步数/token 三判定委托 BudgetGuard（含看门狗暂停时段冻结） */
+  budgetGuard?: BudgetGuard;
   approvalTimeoutMs?: number; // 审批超时，默认 60s（超时挂起等人工）
   llmMaxRetries?: number; // LLM 失败退避重试次数，默认 2
   onEvent?: (event: AgentEvent) => void;
@@ -93,4 +107,6 @@ export interface AgentRunResult {
   stepsDetail: StepDetail[];
   /** 自动验收结论：true=通过 | false=连续未通过带保留完成 | null=评审不可用跳过；未启用时缺省 */
   acceptance?: { passed: boolean | null; attempts: number };
+  /** A-M5 三闸收口报告：终态由哪一闸触发（取消/审批挂起等非闸路径缺省） */
+  gate?: TaskEndGate;
 }

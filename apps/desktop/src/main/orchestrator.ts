@@ -17,6 +17,7 @@ import { pushTaskFinished } from './orchestrator-notify';
 import { decideApproval } from './orchestrator-approval';
 import { auraApprovalResolved, auraHalted } from './aura-state';
 import { launchQueuedTask, type LaunchHost } from './orchestrator-launch';
+import type { LongTaskOptions, TargetApp } from '../shared/schemas/longtask';
 import path from 'node:path';
 
 export interface QueuedTask {
@@ -33,6 +34,10 @@ export interface QueuedTask {
   interactive?: boolean;
   /** L1 机器断言：task_done 后由宿主做确定性校验（e2e 计划/任务提交方声明，非模型生成） */
   assertions?: TaskAssertion[];
+  /** A-M2 锚位（规划 §2.1）：chip 绑定的目标应用；缺省 = 旧链路逐字节一致（零回归红线） */
+  targetApp?: TargetApp;
+  /** A-M5 预算档位（Q4 任务级参数化）：maxDurationMs/maxSteps/maxTokens 可配 */
+  longTask?: LongTaskOptions;
 }
 
 export interface OrchestratorDeps {
@@ -89,11 +94,15 @@ export class Orchestrator {
   async startTask(
     goal: string,
     sopSteps?: string[],
-    meta?: { sopId?: string; interactive?: boolean; assertions?: TaskAssertion[] },
+    meta?: { sopId?: string; interactive?: boolean; assertions?: TaskAssertion[]; targetApp?: TargetApp; longTask?: LongTaskOptions },
   ): Promise<{ taskId: string; queued: boolean; queuedIndex: number }> {
     if (!goal.trim()) throw new Error('任务目标为空');
     const taskId = crypto.randomUUID();
-    const task: QueuedTask = { taskId, goal, sopSteps, interactive: meta?.interactive === true, assertions: meta?.assertions };
+    const task: QueuedTask = {
+      taskId, goal, sopSteps, interactive: meta?.interactive === true, assertions: meta?.assertions,
+      ...(meta?.targetApp ? { targetApp: meta.targetApp } : {}),
+      ...(meta?.longTask ? { longTask: meta.longTask } : {}),
+    };
 
     if (meta?.sopId) {
       task.sopId = meta.sopId;

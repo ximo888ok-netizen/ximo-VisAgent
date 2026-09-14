@@ -111,6 +111,8 @@ export interface DoneOutcome {
 export function describeAssertion(a: TaskAssertion): string {
   if (a.kind === 'file_exists') return `file_exists(${a.path})`;
   if (a.kind === 'file_contains') return `file_contains(${a.path}, "${a.text}")`;
+  if (a.kind === 'window_title_contains') return `window_title_contains("${a.text}")`;
+  if (a.kind === 'ui_element_exists') return `ui_element_exists("${a.text}")`;
   const sheet = a.sheet ? `${a.sheet}!` : '';
   return `excel_cell(${a.path}!${sheet}${a.cell} = ${a.equals})`;
 }

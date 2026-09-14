@@ -1,30 +1,57 @@
-// L1 机器断言求值器：fs/ExcelJS 直读（非沙箱——断言是任务提交方声明的可信数据，不经模型之手）。
+// L1 机器断言求值器：注册表按 kind 分发（A-M5/Q9）。fs/Excel 内置求值器在本文件；
+// 窗口/UIA 态断言（window_title_contains、ui_element_exists）由宿主装配时 registerAssertion 注入，
+// agent-core 保持对 control-kit 的既有依赖方向，不新增跨层 import。
 // 相对路径由调用方传 baseDir（工作区沙箱）解析；求值器永不抛错，失败以 { passed, detail } 返回。
 import { promises as fs, existsSync } from 'node:fs';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
 import type { AssertionResult, TaskAssertion } from '@ximo-visagent/agent-core';
 
+type AssertionEvaluator = (a: TaskAssertion, baseDir?: string) => Promise<AssertionResult>;
+
+/** kind → 求值器注册表。宿主注入的 UIA/窗口求值器与内置求值器同表同权（后注册覆写）。 */
+const evaluators = new Map<string, AssertionEvaluator>();
+
+/** 注册一类断言的求值器（宿主装配期调用；type 与 TaskAssertion.kind 对齐）。 */
+export function registerAssertion(type: TaskAssertion['kind'], evaluator: AssertionEvaluator): void {
+  evaluators.set(type, evaluator);
+}
+
 /** 求值一条机器断言。baseDir 用于解析相对路径（绝对路径原样使用）。 */
 export async function evaluateTaskAssertion(a: TaskAssertion, baseDir?: string): Promise<AssertionResult> {
-  const p = resolvePath(a.path, baseDir);
+  const evaluator = evaluators.get(a.kind);
+  if (!evaluator) return { passed: false, detail: `未知断言类型: ${a.kind}` };
   try {
-    if (a.kind === 'file_exists') {
-      if (!existsSync(p)) return { passed: false, detail: `文件不存在: ${p}` };
-      return { passed: true, detail: `文件存在: ${p}` };
-    }
-    if (a.kind === 'file_contains') {
-      if (!existsSync(p)) return { passed: false, detail: `文件不存在: ${p}` };
-      const content = await fs.readFile(p, 'utf8');
-      if (!content.includes(a.text)) return { passed: false, detail: `文件存在但不含「${a.text}」（实际内容前 80 字: ${content.slice(0, 80) || '(空)'}）` };
-      return { passed: true, detail: `文件含「${a.text}」` };
-    }
-    if (a.kind === 'excel_cell') return evalExcelCell(a, p);
-    return { passed: false, detail: `未知断言类型: ${(a as { kind: string }).kind}` };
+    return await evaluator(a, baseDir);
   } catch (err) {
     return { passed: false, detail: `断言执行出错: ${(err as Error).message}` };
   }
 }
+
+async function evalFileExists(a: TaskAssertion, baseDir?: string): Promise<AssertionResult> {
+  if (a.kind !== 'file_exists') return { passed: false, detail: `求值器与断言类型不匹配: ${a.kind}` };
+  const p = resolvePath(a.path, baseDir);
+  if (!existsSync(p)) return { passed: false, detail: `文件不存在: ${p}` };
+  return { passed: true, detail: `文件存在: ${p}` };
+}
+
+async function evalFileContains(a: TaskAssertion, baseDir?: string): Promise<AssertionResult> {
+  if (a.kind !== 'file_contains') return { passed: false, detail: `求值器与断言类型不匹配: ${a.kind}` };
+  const p = resolvePath(a.path, baseDir);
+  if (!existsSync(p)) return { passed: false, detail: `文件不存在: ${p}` };
+  const content = await fs.readFile(p, 'utf8');
+  if (!content.includes(a.text)) return { passed: false, detail: `文件存在但不含「${a.text}」（实际内容前 80 字: ${content.slice(0, 80) || '(空)'}）` };
+  return { passed: true, detail: `文件含「${a.text}」` };
+}
+
+async function evalExcel(a: TaskAssertion, baseDir?: string): Promise<AssertionResult> {
+  if (a.kind !== 'excel_cell') return { passed: false, detail: `求值器与断言类型不匹配: ${a.kind}` };
+  return evalExcelCell(a, resolvePath(a.path, baseDir));
+}
+
+registerAssertion('file_exists', evalFileExists);
+registerAssertion('file_contains', evalFileContains);
+registerAssertion('excel_cell', evalExcel);
 
 /** excel_cell：指定表名严格选表（不存在即失败，绝不静默回退第一张）+ 值归一化 + 数值等值 */
 async function evalExcelCell(a: Extract<TaskAssertion, { kind: 'excel_cell' }>, p: string): Promise<AssertionResult> {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
-import { evaluateTaskAssertion } from '../src/task-assertions';
+import { evaluateTaskAssertion, registerAssertion } from '../src/task-assertions';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'task-assert-'));
 
@@ -57,5 +57,35 @@ describe('evaluateTaskAssertion', () => {
     const err = await evaluateTaskAssertion({ kind: 'file_contains', path: '', text: 'x' }, dir);
     expect(err.passed).toBe(false);
     expect(err.detail).toBeTruthy();
+  });
+});
+
+// A-M5/Q9：注册表分发——宿主注入的求值器与内置求值器同表；未注册 kind（如未注入 UIA 时的窗口断言）给可读失败
+describe('registerAssertion（断言注册表分发）', () => {
+  it('注入自定义求值器后按 kind 分发；求值器抛错仍转为失败结果', async () => {
+    registerAssertion('ui_element_exists', async (a) => {
+      if (a.kind !== 'ui_element_exists') return { passed: false, detail: 'mismatch' };
+      if (a.text === 'boom') throw new Error('sidecar down');
+      return { passed: true, detail: `注入求值器命中 ${a.text}` };
+    });
+    const hit = await evaluateTaskAssertion({ kind: 'ui_element_exists', text: '确定' });
+    expect(hit).toEqual({ passed: true, detail: '注入求值器命中 确定' });
+    const err = await evaluateTaskAssertion({ kind: 'ui_element_exists', text: 'boom' });
+    expect(err.passed).toBe(false);
+    expect(err.detail).toContain('sidecar down');
+  });
+
+  it('未注册类型（window_title_contains 未注入时）返回「未知断言类型」而非抛错', async () => {
+    const res = await evaluateTaskAssertion({ kind: 'window_title_contains', text: '金蝶' });
+    expect(res.passed).toBe(false);
+    expect(res.detail).toContain('未知断言类型');
+  });
+
+  it('内置三型仍走默认求值器（注册表化不改变既有行为）', async () => {
+    const fp = path.join(dir, 'builtin.txt');
+    writeFileSync(fp, 'v', 'utf8');
+    expect((await evaluateTaskAssertion({ kind: 'file_exists', path: fp })).passed).toBe(true);
+    expect((await evaluateTaskAssertion({ kind: 'file_contains', path: fp, text: 'zzz' })).passed).toBe(false);
+    expect((await evaluateTaskAssertion({ kind: 'excel_cell', path: fp, cell: 'A1', equals: '1' })).passed).toBe(false);
   });
 });

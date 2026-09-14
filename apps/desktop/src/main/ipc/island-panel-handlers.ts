@@ -24,6 +24,7 @@ import type {
   ExportCsvResult,
   TaskStartedResult,
 } from "../../shared/island-contracts";
+import type { LongTaskOptions, TargetApp } from "../../shared/schemas/longtask";
 
 /** 配置存储接口（主进程实现） */
 export interface ConfigStore {
@@ -41,7 +42,7 @@ export interface AuditStore {
 
 /** 任务运行器接口（主进程实现，连接 orchestrator） */
 export interface TaskRunner {
-  startTask(goal: string, sopSteps?: string[]): Promise<TaskStartedResult & { queued?: boolean }>;
+  startTask(goal: string, sopSteps?: string[], meta?: { targetApp?: TargetApp; longTask?: LongTaskOptions }): Promise<TaskStartedResult & { queued?: boolean }>;
   cancelTask(taskId: string): Promise<void>;
   pauseTask(taskId: string): boolean;
   resumeTask(taskId: string): boolean;
@@ -82,7 +83,7 @@ export function registerPanelHandlers(deps: PanelDeps): void {
     }
     // A-M2 预检（规划 §4.1-5）：chip 绑定的 exePath 必须存在，失败任务不起跑，
     // 回传 targetAppMissing 供渲染层把 chip 标红重选。无 chip 路径与现状一致（零回归红线）。
-    const { goal, targetApp, grantId } = parsed.data;
+    const { goal, targetApp, longTask, grantId } = parsed.data;
     if (targetApp && !existsSync(targetApp.exePath)) {
       return { ok: false as const, error: "目标应用不存在，请重选", targetAppMissing: true as const };
     }
@@ -94,7 +95,8 @@ export function registerPanelHandlers(deps: PanelDeps): void {
       }
     }
     try {
-      const result = await deps.taskRunner.startTask(goal);
+      // A-M2/A-M5 锚位透传：targetApp/longTask 原样下传编排器（缺省 = 旧链路零回归）
+      const result = await deps.taskRunner.startTask(goal, undefined, { targetApp, longTask });
       if (targetApp) {
         // 最近列表为旁路写入：失败绝不影响已起跑的任务
         try { deps.appRecent?.recordUse({ id: targetApp.id, name: targetApp.name, exePath: targetApp.exePath }); } catch { /* 忽略：app_recent 写失败仅影响推荐组 */ }

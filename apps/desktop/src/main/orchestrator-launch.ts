@@ -6,7 +6,7 @@
  * 需要改写编排器内部状态的四处（审批超时、活动执行器、循环表、排队推进）
  * 通过 LaunchHost 显式注入，公共 API 不变。
  */
-import { AgentLoop, shouldPlan, createGroundingLookup, createSomLookup, type AgentLoopOptions, type StepDetail } from '@ximo-visagent/agent-core';
+import { AgentLoop, BudgetGuard, shouldPlan, createGroundingLookup, createSomLookup, type AgentLoopOptions, type StepDetail } from '@ximo-visagent/agent-core';
 import { supportsWebSearch } from '@ximo-visagent/llm-providers';
 import { ApprovalEngine } from '@ximo-visagent/safety';
 import { ComputerToolExecutor, evaluateTaskAssertion, type FileOfficeExecutor } from '@ximo-visagent/control-kit';
@@ -20,7 +20,9 @@ import { announceApprovalRequest } from './e2e-runner';
 import { finalizeTaskExperience } from './orchestrator-experience';
 import { classifyFailure, toStepSkeleton, persistAgentEvent } from './orchestrator-audit';
 import { pushTaskFinished, notifyTaskStarted, notifyTaskFinished, requestApprovalUI } from './orchestrator-notify';
-import { attachAnchorWatchdog } from './anchor-watchdog-host';
+import { attachAnchorWatchdog, getAnchorWatchdog } from './anchor-watchdog-host';
+import { createCheckpointStore } from './checkpoint-store';
+import { probeArtifact, reconcileCheckpoint } from './longtask-reconcile';
 import { initPerception } from './perception-host';
 import { createHostCapabilities } from './host-capabilities';
 import { CustomToolRuntime } from './custom-tools';
@@ -93,6 +95,14 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
   // F4.1: 同步审批超时配置
   host.setApprovalTimeoutMs(cfg.agent.approvalTimeoutSec * 1000);
 
+  // A-M5 预算档位（Q4 定论「任务级参数化」）：锚定/长任务缺省档 600 步 / 4h / 8M token，
+  // longTask 可逐项显式覆写；无档位任务不注入 guard（loop 保留 30min 缺省硬顶，零回归）
+  const longTaskBudget = t.targetApp || t.longTask ? {
+    maxSteps: t.longTask?.maxSteps ?? 600,
+    maxDurationMs: t.longTask?.maxDurationMs ?? 4 * 60 * 60_000,
+    maxTokens: t.longTask?.maxTokens ?? 8_000_000,
+  } : undefined;
+
   const opts: AgentLoopOptions = {
     textLLM: text,
     visionLLM: vision,
@@ -101,10 +111,20 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     classifier: makeSafetyClassifier(),
     approval: approvals,
     // L6 动态预算：SOP 任务步数可预估（模板步数×1.5+5），避免固定 120 步对短任务过松、长任务过紧
-    maxSteps: autoSopSteps && autoSopSteps.length > 0
+    // A-M5 档位优先：锚定/长任务的步数与时长由 longTaskBudget 决定（Q4 任务级参数化）
+    maxSteps: longTaskBudget?.maxSteps ?? (autoSopSteps && autoSopSteps.length > 0
       ? Math.max(20, Math.min(cfg.agent.maxSteps ?? 120, Math.round(autoSopSteps.length * 1.5) + 5))
-      : (cfg.agent.maxSteps ?? 120),
-    maxDurationMs: cfg.agent.maxTaskMinutes * 60_000,
+      : (cfg.agent.maxSteps ?? 120)),
+    maxDurationMs: longTaskBudget?.maxDurationMs ?? cfg.agent.maxTaskMinutes * 60_000,
+    // 预算闸（含暂停冻结）：pauseProvider 读看门狗句柄累计暂停 ms，被暂停的时段不烧时长预算
+    budgetGuard: longTaskBudget
+      ? new BudgetGuard({
+        maxSteps: longTaskBudget.maxSteps,
+        maxDurationMs: longTaskBudget.maxDurationMs,
+        maxTokens: longTaskBudget.maxTokens,
+        pauseProvider: () => getAnchorWatchdog(t.taskId)?.pausedMs() ?? 0,
+      })
+      : undefined,
     approvalTimeoutMs: cfg.agent.approvalTimeoutSec * 1000,
     llmMaxRetries: cfg.agent.maxRetries,
     onEvent: (ev) => persistAgentEvent(audit, t.taskId, ev),
@@ -175,7 +195,17 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     .then((result) => {
       host.lastSteps.set(t.taskId, result.stepsDetail);
       const failureKind = classifyFailure(result.status, result.finalAnswer);
-      audit.insert(audit.fromAgentEvent(t.taskId, { type: 'task_result', status: result.status, finalAnswer: result.finalAnswer ?? '', steps: result.steps, totalTokens: result.totalTokens }));
+      audit.insert(audit.fromAgentEvent(t.taskId, { type: 'task_result', status: result.status, finalAnswer: result.finalAnswer ?? '', steps: result.steps, totalTokens: result.totalTokens, gate: result.gate }));
+      // A-M5 收口报告（FR-006）：终态由哪一闸触发 + 最新检查点工件对账出的未完成清单（断点保留由 A-M4 纪律兜底）
+      if (result.gate) {
+        audit.insert(audit.fromAgentEvent(t.taskId, {
+          type: 'task_gate_report',
+          gate: result.gate,
+          steps: result.steps,
+          reason: (result.finalAnswer ?? '').slice(0, 160),
+          remaining: checkpointRedoItems(audit, t.taskId),
+        }));
+      }
       audit.finishTask(
         t.taskId, result.status, result.finalAnswer, result.steps, result.totalTokens,
         failureKind ?? undefined,
@@ -220,12 +250,15 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
           sopSteps: sopSteps.length > 0 ? sopSteps : undefined,
           isRetry: true,
           guidance,
+          // A-M5：重试保留锚位与预算档位（否则重试轮退回 30min 硬顶、看门狗失联）
+          targetApp: t.targetApp,
+          longTask: t.longTask,
         });
       }
     })
     .catch((err: Error) => {
       console.error('[orchestrator] task crashed', err);
-      audit.insert(audit.fromAgentEvent(t.taskId, { type: 'error', message: `任务崩溃: ${err.message}` }));
+      audit.insert(audit.fromAgentEvent(t.taskId, { type: 'error', message: `任务崩溃: ${err.message}`, gate: 'error' }));
       audit.finishTask(t.taskId, 'FAILED', `任务崩溃: ${err.message}`, undefined, undefined, 'INTERNAL_ERROR');
       notifyTaskFinished(t.goal, 'FAILED');
       pushTaskFinished(t.taskId, 'FAILED', `任务崩溃: ${err.message}`, 0, 0, t.goal);
@@ -237,7 +270,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
           ? `上次尝试中途崩溃。已完成（核对现场后勿重做）: ${steps.slice(-5).map((s) => `${s.actionName} → ${(s.resultSummary || '').slice(0, 40)}`).join('; ')}。先核对当前屏幕处于哪一步，已完成的部分不要重做；若现场与预期不符，以屏幕实际状态为准。`
           : undefined;
         publishStep(createStepEvent('thinking', '任务崩溃（INTERNAL_ERROR），自动重试（1/1）'));
-        host.relaunch({ taskId: crypto.randomUUID(), goal: t.goal, isRetry: true, guidance });
+        host.relaunch({ taskId: crypto.randomUUID(), goal: t.goal, isRetry: true, guidance, targetApp: t.targetApp, longTask: t.longTask });
       }
     })
     .finally(() => {
@@ -251,6 +284,17 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
       }
       if (!relaunched) host.dequeue();
     });
+}
+
+/** A-M5 收口报告的未完成清单：最新检查点工件对账（复用 A-M4 对账算法）；
+ *  表未建/无检查点/非锚定任务一律空清单，绝不影响终态收敛 */
+function checkpointRedoItems(audit: ZODB, taskId: string): string[] {
+  try {
+    const cp = createCheckpointStore(audit.exposeDb()).latest(taskId);
+    return (reconcileCheckpoint(cp, probeArtifact)?.redoItems ?? []).map((r) => `${r.path}（${r.reason}）`);
+  } catch {
+    return [];
+  }
 }
 
 /** L4 跨尝试记忆：把上次失败压缩成三段清单（已完成/已失败/卡点），作为 guidance 注入重试 */

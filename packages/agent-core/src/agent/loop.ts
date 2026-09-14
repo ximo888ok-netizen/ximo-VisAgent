@@ -21,6 +21,7 @@ import {
   type PerceptionSnap,
 } from './loop-helpers';
 import { EfficiencyGuard } from './loop-efficiency';
+import type { BudgetStop } from './loop-budget';
 import { StateTracker } from './state-tracker';
 import { chatWithRetry, quickHash } from './loop-llm';
 import { applyMilestoneCheck } from './milestone';
@@ -31,7 +32,7 @@ import { onTaskDone } from './acceptance';
 // 契约类型集中在 types.ts / recovery.ts；此处转出以保持既有导入路径可用
 export type { RecoveryContext, RecoveryHit } from './recovery';
 import { createRecoveryAdvisor } from './recovery';
-import type { AgentLoopOptions, AgentEvent, AgentRunResult, StepDetail } from './types';
+import type { AgentLoopOptions, AgentEvent, AgentRunResult, StepDetail, TaskEndGate } from './types';
 export type { AgentLoopOptions, AgentEvent, AgentRunResult, StepDetail } from './types';
 
 export class AgentLoop {
@@ -63,6 +64,7 @@ export class AgentLoop {
       approval = new ApprovalEngine(),
       maxSteps = 60,
       maxDurationMs = 30 * 60_000,
+      budgetGuard,
       approvalTimeoutMs = 60_000,
       llmMaxRetries = 2,
       onEvent, requestApproval, planFirst = false, captureEvidence,
@@ -83,6 +85,12 @@ export class AgentLoop {
     let toolFailStreak = 0;
     const MAX_TOOL_FAIL_STREAK = 3;
     let lastError = '';
+    // A-M5 三闸收口：预算闸注入 BudgetGuard 时委托时长/步数/token 判定（看门狗暂停段不烧预算）；
+    // 未注入逐字保留原墙钟判定（零回归红线）
+    let gate: TaskEndGate | undefined;
+    const budgetStop = (step: number): BudgetStop | null => budgetGuard
+      ? budgetGuard.check(step, Date.now(), totalTokens)
+      : (Date.now() - startedAt > maxDurationMs ? { gate: 'budget-duration', detail: '任务失败：超过单任务时间上限' } : null);
 
     const emit = (e: AgentEvent) => onEvent?.(e);
     const stepsDetail: StepDetail[] = [];
@@ -142,9 +150,11 @@ export class AgentLoop {
         status = 'PAUSED';
         emit({ type: 'status', status: 'PAUSED' });
         while (this.paused && !this.cancelled) {
-          if (Date.now() - startedAt > maxDurationMs) {
+          const ps = budgetStop(index);
+          if (ps) {
             status = 'FAILED';
-            finalAnswer = '任务失败：暂停期间超过单任务时间上限';
+            gate = ps.gate;
+            finalAnswer = budgetGuard ? ps.detail : '任务失败：暂停期间超过单任务时间上限';
             emit({ type: 'error', message: '任务超时（暂停期间）' });
             break;
           }
@@ -155,9 +165,11 @@ export class AgentLoop {
         status = 'RUNNING';
         emit({ type: 'status', status: 'RUNNING' });
       }
-      if (Date.now() - startedAt > maxDurationMs) {
+      const bs = budgetStop(index);
+      if (bs) {
         status = 'FAILED';
-        finalAnswer = '任务失败：超过单任务时间上限';
+        gate = bs.gate;
+        finalAnswer = bs.detail;
         emit({ type: 'error', message: '任务超时' });
         break;
       }
@@ -166,6 +178,7 @@ export class AgentLoop {
       const forcedBailout = efficiency.shouldForceBailout();
       if (forcedBailout) {
         status = 'FAILED';
+        gate = 'stall';
         finalAnswer = forcedBailout;
         emit({ type: 'error', message: '死局止损' });
         break;
@@ -265,6 +278,8 @@ export class AgentLoop {
             continue;
           }
           finalAnswer = outcome.finalAnswer; runAcceptance = outcome.acceptance; status = 'COMPLETED';
+          // A-M5 收口报告：机器断言全过 = 断言闸收口；其余完成走评审/直完（task_done）
+          gate = outcome.verdictNote === '通过（机器断言）' ? 'assertion' : 'task_done';
           const doneStep: StepDetail = { index, thought: parsed.thought, actionName: null, resultSummary: outcome.verdictNote ? `[验收] ${outcome.verdictNote}：${finalAnswer}` : finalAnswer, ok: outcome.acceptance?.passed !== false };
           stepsDetail.push(doneStep);
           emit({ type: 'step', step: doneStep });
@@ -285,7 +300,7 @@ export class AgentLoop {
             stepsDetail.push(chatStep);
             emit({ type: 'step', step: chatStep });
             emit({ type: 'status', status: 'COMPLETED' });
-            return { status: 'COMPLETED', finalAnswer: answer, steps: index, totalTokens, stepsDetail };
+            return { status: 'COMPLETED', finalAnswer: answer, steps: index, totalTokens, stepsDetail, gate: 'task_done' };
           }
         }
 
@@ -413,6 +428,7 @@ export class AgentLoop {
 
     if (status === 'RUNNING' && index >= maxSteps) {
       status = 'FAILED';
+      gate = 'budget-steps';
       finalAnswer = finalAnswer || `任务失败：达到最大步数上限（${maxSteps} 步）`;
       emit({ type: 'error', message: '超过最大步数' });
     }
@@ -420,6 +436,6 @@ export class AgentLoop {
       finalAnswer = lastError ? `任务失败：${lastError}` : '任务失败：未知原因';
     }
     emit({ type: 'status', status });
-    return { status, finalAnswer, steps: index, totalTokens, stepsDetail, acceptance: runAcceptance };
+    return { status, finalAnswer, steps: index, totalTokens, stepsDetail, acceptance: runAcceptance, gate };
   }
 }
