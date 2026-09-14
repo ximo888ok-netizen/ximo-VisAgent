@@ -1,0 +1,90 @@
+/**
+ * screen-scale.test.ts — 多屏混合 DPI 坐标映射的门禁
+ *
+ * 背景：全局单对 scaleX/scaleY 只描述主屏，第二块不同缩放屏的坐标换算必错。
+ * 注册各屏几何后：副屏内的点按所在屏缩放映射且严格互逆；未注册时与旧行为逐位一致。
+ */
+import { describe, it, expect, afterEach } from 'vitest';
+import {
+  setScreenScale,
+  setDisplayGeometries,
+  screenshotToPhysical,
+  physicalToScreenshot,
+  registeredVirtualDesktop,
+  hasSecondaryDisplays,
+  displayScaleAtPhysical,
+  type DisplayGeometry,
+} from '../src/screen-scale';
+
+afterEach(() => {
+  setDisplayGeometries([]);
+  setScreenScale(1, 1);
+});
+
+const primary = (over: Partial<DisplayGeometry> = {}): DisplayGeometry => ({
+  id: 1, isPrimary: true, left: 0, top: 0, width: 2560, height: 1440, scaleX: 2, scaleY: 2, ...over,
+});
+const secondary = (over: Partial<DisplayGeometry> = {}): DisplayGeometry => ({
+  id: 2, isPrimary: false, left: 2560, top: 0, width: 1920, height: 1080, scaleX: 1.25, scaleY: 1.25, ...over,
+});
+
+describe('未注册显示器（单屏）', () => {
+  it('行为与旧全局单对完全一致', () => {
+    setScreenScale(1.5, 2);
+    expect(screenshotToPhysical(100, 100)).toEqual({ x: 150, y: 200 });
+    expect(physicalToScreenshot(150, 200)).toEqual({ x: 100, y: 100 });
+    expect(registeredVirtualDesktop()).toBeNull();
+    expect(hasSecondaryDisplays()).toBe(false);
+  });
+});
+
+describe('混合 DPI 副屏映射', () => {
+  it('副屏物理点 → 截图坐标 → 物理坐标严格互逆', () => {
+    setScreenScale(1, 1);
+    setDisplayGeometries([primary(), secondary()]);
+    const shot = physicalToScreenshot(3000, 500); // 副屏内（主屏 scale 2，副屏 1.25）
+    expect(shot.x).toBeCloseTo(2560 + (3000 - 2560) / 1.25);
+    const back = screenshotToPhysical(shot.x, shot.y);
+    expect(back.x).toBeCloseTo(3000);
+    expect(back.y).toBeCloseTo(500);
+  });
+
+  it('全局单对下该点往返会落在错误物理位置（钉住 bug 场景的修复）', () => {
+    setScreenScale(1, 1);
+    setDisplayGeometries([primary(), secondary()]);
+    // 旧行为：主屏 scale=1 → 副屏点 3000 直进直出；新行为按副屏 1.25 收敛后仍互逆
+    const shot = physicalToScreenshot(4000, 900);
+    const back = screenshotToPhysical(shot.x, shot.y);
+    expect(back).toEqual({ x: 4000, y: 900 });
+  });
+
+  it('主屏区域内的点不受副屏注册影响（截图路径零回归）', () => {
+    setScreenScale(2, 2);
+    setDisplayGeometries([primary({ scaleX: 2, scaleY: 2 }), secondary()]);
+    expect(screenshotToPhysical(640, 360)).toEqual({ x: 1280, y: 720 });
+    expect(physicalToScreenshot(1280, 720)).toEqual({ x: 640, y: 360 });
+  });
+
+  it('左侧负原点副屏同样互逆', () => {
+    setScreenScale(1, 1);
+    setDisplayGeometries([primary({ width: 1920, height: 1080 }), secondary({ left: -1920, width: 1920, height: 1080, scaleX: 1.5, scaleY: 1.5 })]);
+    const shot = physicalToScreenshot(-1000, 200);
+    const back = screenshotToPhysical(shot.x, shot.y);
+    expect(back.x).toBeCloseTo(-1000);
+    expect(back.y).toBeCloseTo(200);
+  });
+
+  it('displayScaleAtPhysical 按屏取缩放（UIA 宽高换算用）', () => {
+    setScreenScale(2, 2);
+    setDisplayGeometries([primary(), secondary()]);
+    expect(displayScaleAtPhysical(100, 100)).toEqual({ x: 2, y: 2 });
+    expect(displayScaleAtPhysical(2600, 100)).toEqual({ x: 1.25, y: 1.25 });
+  });
+});
+
+describe('registeredVirtualDesktop', () => {
+  it('返回全部显示器的物理像素并集（含负原点屏）', () => {
+    setDisplayGeometries([primary(), secondary({ left: -1920 })]);
+    expect(registeredVirtualDesktop()).toEqual({ left: -1920, top: 0, width: 2560 + 1920, height: 1440 });
+  });
+});
