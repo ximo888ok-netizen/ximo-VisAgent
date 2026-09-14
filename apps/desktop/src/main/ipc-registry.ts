@@ -23,9 +23,12 @@ import { registerEvolutionHandlers } from './ipc/island-evolution-handlers';
 import { registerEmployeeHandlers } from './ipc/island-employee-handlers';
 import { registerMissionHandlers } from './ipc/mission-handlers';
 import { registerAppsHandlers } from './ipc/apps-handlers';
+import { registerPreauthHandlers } from './ipc/preauth-handlers';
 import { getAppCatalogService } from './app-catalog-client';
 import { createAppRecentStore } from './app-recent-store';
+import { createPreauthStore } from './preauth-store';
 import { applyLongtaskSchema } from './longtask-db/migrations';
+import { applyLongtaskPreauthSchema } from './longtask-db/preauth-migrations';
 import { app } from 'electron';
 import path from 'node:path';
 import { exportAuditToFile } from './audit-export';
@@ -58,6 +61,9 @@ export function registerIsland(deps: IpcRegistryDeps): void {
   // prepare 在构造期解析 SQL）；面板（chip 绑定成功写入）与 apps:recent 共用同一实例。
   applyLongtaskSchema(auditDb.exposeDb());
   const appRecent = createAppRecentStore(auditDb.exposeDb());
+  // 预授权作用域包（A-M6）：独立版本戳域 longtask-preauth，共库互不踩踏
+  applyLongtaskPreauthSchema(auditDb.exposeDb());
+  const preauthGrants = createPreauthStore(auditDb.exposeDb());
 
   registerIslandHandlers({
     getMainWindow: () => null,
@@ -109,6 +115,7 @@ export function registerIsland(deps: IpcRegistryDeps): void {
         getActiveTasks: () => orchestrator.getActiveTasks(),
       },
       appRecent,
+      preauthGrants,
     },
   });
 
@@ -127,4 +134,8 @@ export function registerIsland(deps: IpcRegistryDeps): void {
     }),
     recent: appRecent,
   });
+
+  // 预授权作用域包（A-M6）：三通道 + 启动期过期清扫（状态迁移可审计，不做定时器）
+  preauthGrants.sweepExpired();
+  registerPreauthHandlers({ grants: preauthGrants });
 }

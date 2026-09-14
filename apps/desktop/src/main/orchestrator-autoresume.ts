@@ -6,7 +6,8 @@
 import type { Orchestrator } from './orchestrator';
 import type { ZODB } from './audit-store';
 
-const RESUME_WINDOW_MS = 24 * 60 * 60_000; // 24 小时内的未完成任务才恢复（更早的视为垃圾）
+/** 24 小时内的未完成任务才恢复（更早的视为垃圾）；A-M4 断点对账沿用同一窗口（规划 §3.6） */
+export const RESUME_WINDOW_MS = 24 * 60 * 60_000;
 const INTERRUPTED_STATUSES = ['RUNNING', 'PAUSED', 'WAITING_APPROVAL', 'QUEUED'];
 
 export interface AutoResumeDeps {

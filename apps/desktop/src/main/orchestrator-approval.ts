@@ -9,6 +9,7 @@ import type { ApprovalDecision, ApprovalEngine } from '@ximo-visagent/safety';
 import type { ApprovalMode, AppConfig } from '@ximo-visagent/shared-types';
 import type { ZODB } from './audit-store';
 import { assertModeChangeAllowed, parseApprovalMode, resolveApprovalDecision } from './approval-policy';
+import { findPreauthHit, type ActiveGrant } from './preauth-scope';
 import { publishStep } from './windows/island';
 import { createStepEvent } from '../shared/island-contracts';
 
@@ -78,6 +79,11 @@ interface ApprovalGateDeps {
     timeoutMs: number,
   ) => Promise<{ action: 'approve' | 'reject' | 'edit'; reason?: string; newArgs?: Record<string, unknown> } | null>;
   islandVisible: () => boolean;
+  /**
+   * A-M6 预授权仓储（可缺省=功能未装配，行为与现状逐字节一致）。
+   * 取数口只返回 acked ∧ active ∧ 未过期的 grant；approval-policy 仍独立复核。
+   */
+  grantRepo?: { listActiveForTask(taskId: string): ActiveGrant[] };
 }
 
 type GateDecision = Awaited<ReturnType<ApprovalGateDeps['requestUI']>>;
@@ -98,6 +104,8 @@ export function createApprovalGate(
     const mode = deps.getConfigMode();
     // 取 loop 分级与规则热更新复查中的较大者：只会更严，不会更松
     const level = Math.max(op.level ?? 2, deps.escalatedLevel(op));
+    const grants = deps.grantRepo?.listActiveForTask(task.taskId);
+    const grantCtx = matchContextOf(op);
     if (
       resolveApprovalDecision({
         mode,
@@ -107,11 +115,18 @@ export function createApprovalGate(
         islandVisible: deps.islandVisible(),
         usedL2: quota.usedL2,
         usedL3: quota.usedL3,
-      }) === 'auto'
+        grantCtx,
+      }, grants) === 'auto'
     ) {
-      if (level >= 3) quota.usedL3 += 1;
-      else quota.usedL2 += 1;
-      recordPolicyApproval(deps.audit, task.taskId, approvalId, op, level, parseApprovalMode(mode));
+      // 区分放行来源（审计口径 + FR-007）：preauth 命中不消耗配额，policy 路径照旧
+      const preauth = grants?.length
+        ? findPreauthHit(grants, { tool: op.tool, level, ...grantCtx })
+        : null;
+      if (!preauth) {
+        if (level >= 3) quota.usedL3 += 1;
+        else quota.usedL2 += 1;
+      }
+      recordPolicyApproval(deps.audit, task.taskId, approvalId, op, level, parseApprovalMode(mode), preauth?.id);
       return { action: 'approve' };
     }
     deps.auraRequest(approvalId);
@@ -119,7 +134,17 @@ export function createApprovalGate(
   };
 }
 
-/** 策略放行的留痕：持久记录在 approval_decided（decidedBy:'policy'），日志行只是实时 UI */
+/** grant 匹配上下文：写入/导出取参数中的路径，窗口文本用审批已知的 appName */
+function matchContextOf(op: ApprovalGateOp): { targetPath?: string; windowText?: string } {
+  const keys = ['path', 'file_path', 'filePath', 'file', 'dest', 'destination'] as const;
+  for (const k of keys) {
+    const v = op.args[k];
+    if (typeof v === 'string' && v) return { targetPath: v, windowText: op.appName };
+  }
+  return { windowText: op.appName };
+}
+
+/** 策略放行的留痕：持久记录在 approval_decided（decidedBy:'policy'|'preauth'），日志行只是实时 UI */
 function recordPolicyApproval(
   audit: ZODB,
   taskId: string,
@@ -127,6 +152,7 @@ function recordPolicyApproval(
   op: ApprovalGateOp,
   level: number,
   mode: ApprovalMode,
+  preauthGrantId?: string,
 ): void {
   try {
     audit.insert(
@@ -135,7 +161,8 @@ function recordPolicyApproval(
         approvalId,
         tool: op.tool,
         decision: { action: 'approve' },
-        decidedBy: 'policy',
+        decidedBy: preauthGrantId ? 'preauth' : 'policy',
+        ...(preauthGrantId ? { grantId: preauthGrantId } : {}),
         mode,
         level,
         irreversible: level >= 3,
@@ -147,7 +174,9 @@ function recordPolicyApproval(
   publishStep(
     createStepEvent(
       'thinking',
-      `${level >= 3 ? '⚠ ' : ''}已自动放行 · ${op.tool}（L${level}，${mode === 'autonomous' ? '完全自主' : '自动审批'}）`,
+      preauthGrantId
+        ? `预授权放行 · ${op.tool}（作用域包 ${preauthGrantId}）`
+        : `${level >= 3 ? '⚠ ' : ''}已自动放行 · ${op.tool}（L${level}，${mode === 'autonomous' ? '完全自主' : '自动审批'}）`,
     ),
   );
 }

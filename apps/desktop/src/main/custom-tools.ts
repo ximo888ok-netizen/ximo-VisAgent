@@ -37,7 +37,11 @@ export interface CustomToolOutcome {
   summary: string;
 }
 
-type ToolScript = (args: Record<string, unknown>, invoke: ToolInvoke, log: (msg: string) => void) => Promise<unknown>;
+/** 工具脚本/内置实现统一的执行签名 */
+export type ToolScript = (args: Record<string, unknown>, invoke: ToolInvoke, log: (msg: string) => void) => Promise<unknown>;
+
+/** 宿主内置工具：无脚本文件，run 由装配方直接注入（区别于经宪法门批准的脚本工具） */
+export type BuiltinToolDefinition = Omit<CustomToolDefinition, 'scriptPath'>;
 
 /** 用一次 async 字面量取出真正的 AsyncFunction 构造器（同步 Function 无法编译顶层 await） */
 type AsyncFunctionConstructor = new (...args: string[]) => ToolScript;
@@ -46,6 +50,7 @@ const AsyncFunction = (async function noop() {}).constructor as AsyncFunctionCon
 export class CustomToolRuntime {
   private loaded = new Map<string, { def: CustomToolDefinition; run: ToolScript }>();
   private failures = new Map<string, string>();
+  private builtins = new Map<string, { def: CustomToolDefinition; run: ToolScript }>();
 
   constructor(
     private toolsDir: string,
@@ -83,16 +88,27 @@ export class CustomToolRuntime {
     }
   }
 
+  /** 注册宿主内置工具（无脚本、不走路径校验；如 A-M4 checkpoint 进度检查点） */
+  registerBuiltin(def: BuiltinToolDefinition, run: ToolScript): boolean {
+    const entry = { def: { ...def, scriptPath: '' }, run };
+    this.builtins.set(def.id, entry);
+    this.loaded.set(def.id, entry);
+    this.failures.delete(def.id);
+    return true;
+  }
+
   unregister(id: string): void {
     this.loaded.delete(id);
+    this.builtins.delete(id);
     this.failures.delete(id);
   }
 
-  /** 启动时从 DB 重建注册表，返回未能加载的工具 id（供 UI 显示禁用原因） */
+  /** 启动时从 DB 重建注册表，返回未能加载的工具 id（供 UI 显示禁用原因）；内置工具恒定保留 */
   reload(defs: CustomToolDefinition[]): { loaded: string[]; failed: string[] } {
     this.loaded.clear();
     this.failures.clear();
-    const loaded: string[] = [];
+    for (const builtin of this.builtins.values()) this.loaded.set(builtin.def.id, builtin);
+    const loaded: string[] = [...this.builtins.values()].map((v) => v.def.id);
     const failed: string[] = [];
     for (const def of defs) {
       (this.register(def) ? loaded : failed).push(def.id);
@@ -199,4 +215,46 @@ export function writeToolScript(toolsDir: string, id: string, body: string): str
   const file = path.join(toolsDir, `${id}.js`);
   fs.writeFileSync(file, body, 'utf8');
   return file;
+}
+
+/* ---------------------------------------------------------------------------
+ * A-M4 checkpoint 模型工具（Q5-C 双写之"模型显式"一路）
+ * 执行体由 longtask-runner 注入（→ longtask-reconcile.runCheckpointTool），
+ * 与宿主自动登记共用 task_checkpoints：同工件指纹在仓储层去重合流。
+ * ------------------------------------------------------------------------- */
+
+export const CHECKPOINT_TOOL_ID = 'builtin:checkpoint';
+
+/** level 1（L0/L1 自动档）：只写检查点元数据，不触碰外部环境，无需审批 */
+export const CHECKPOINT_TOOL_DEF: BuiltinToolDefinition = {
+  id: CHECKPOINT_TOOL_ID,
+  name: 'checkpoint',
+  description:
+    '记录长任务进度检查点：把业务进度（如"已录入 17/30 张发票"）与关键产出文件路径登记为断点。' +
+    '宿主已在文件写入成功后自动登记工件指纹，本工具用于补充结构化语义；同一工件重复登记会自动合流不产生重复。' +
+    '在批量处理每完成一项后调用一次，中断恢复时读自工件核对。',
+  level: 1,
+  parameters: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string', description: '恢复文案素材，如"已录入 17/30 张发票"' },
+      done: { type: 'integer', description: '已完成项数（缺省沿用宿主自动登记的游标基数）' },
+      total: { type: 'integer', description: '总项数（可选）' },
+      unit: { type: 'string', description: '计量单位，如"张发票"（缺省沿用宿主游标）' },
+      lastItem: { type: 'string', description: '最后一项业务标识（可选）' },
+      artifacts: { type: 'array', items: { type: 'string' }, description: '关联产出文件的绝对路径（可选）' },
+    },
+    required: ['summary'],
+  },
+};
+
+export function registerCheckpointTool(
+  runtime: CustomToolRuntime,
+  onCheckpoint: (args: Record<string, unknown>) => CustomToolOutcome,
+): void {
+  runtime.registerBuiltin(CHECKPOINT_TOOL_DEF, async (args) => {
+    const outcome = onCheckpoint(args);
+    if (!outcome.ok) throw new Error(outcome.summary);
+    return outcome.summary;
+  });
 }

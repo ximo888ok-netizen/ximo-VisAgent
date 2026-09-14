@@ -91,6 +91,9 @@ import type {
   AppIconPayload,
   AppsIconsRequest,
   AppsListRequest,
+  GrantAckRequest,
+  GrantCreateRequest,
+  GrantIdRequest,
 } from "./schemas/longtask";
 
 /** 统一 IPC 返回 */
@@ -238,6 +241,14 @@ export interface IslandApi {
   getAppIcons(req: AppsIconsRequest): Promise<IpcResult<AppIconPayload[]>>;
   /** 最近使用应用（app_recent 近 20 条） */
   listRecentApps(): Promise<IpcResult<AppEntry[]>>;
+
+  // ---- 预授权作用域包（A-M6）----
+  /** 授权卡打开即建 grant（active, acked 0；未 ack 永不生效） */
+  grantCreate(req: GrantCreateRequest): Promise<IpcResult<{ grantId: string }>>;
+  /** 显式确认（放行前提）；携带 scope 时定格授权卡上的最终编辑 */
+  grantAck(req: GrantAckRequest): Promise<IpcResult<{ acked: boolean }>>;
+  /** 撤销（关闭未 ack 的授权卡 / B 期面板） */
+  grantRevoke(req: GrantIdRequest): Promise<IpcResult<{ revoked: boolean }>>;
 
   // ---- 员工域（M1 数据底座）----
   employeeListPositions(): Promise<IpcResult<PositionRowPayload[]>>;

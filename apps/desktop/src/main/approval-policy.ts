@@ -10,6 +10,9 @@
  *   B5 档位/等级来自不受信来源（preload 不校验、配置可被手改），非法值一律 fail-closed。
  */
 import type { ApprovalMode } from '@ximo-visagent/shared-types';
+import { findPreauthHit, type ActiveGrant } from './preauth-scope';
+
+export type { ActiveGrant } from './preauth-scope';
 
 export const APPROVAL_MODES = ['manual', 'auto', 'autonomous'] as const;
 
@@ -25,9 +28,11 @@ export interface ApprovalPolicyInput {
   interactive: boolean;
   /** 岛窗口是否在场（B3） */
   islandVisible: boolean;
-  /** 本任务已自动放行的 L2 / L3 次数（B4） */
+  /** 本任务已自动放行的 L2 / L3 次数（B4）。preauth 命中不计数、不受配额约束（FR-007） */
   usedL2: number;
   usedL3: number;
+  /** A-M6：预授权匹配上下文（仅随 grants 生效；缺省即无 grant 可命中） */
+  grantCtx?: { targetPath?: string; windowText?: string; now?: number };
 }
 
 export function isApprovalMode(value: unknown): value is ApprovalMode {
@@ -39,9 +44,30 @@ export function isApprovalMode(value: unknown): value is ApprovalMode {
  *   manual      → 全部 ask
  *   auto        → L2 auto；custom_*（合成工具，实为跑脚本）与 L3 ask
  *   autonomous  → L2 / custom_* / L3 全 auto，L3 受配额约束
+ *   + grants（A-M6）→ L2 ∧ 用户已 ack 的有效 grant 命中 → auto(preauth)：
+ *     可越过 B1/B3（作用域包就是用户为这条任务签的字），不占 B4 配额；
+ *     manual 档 / L3 / 敏感排除 / 超范围一律回落到上方既有判定。
  */
-export function resolveApprovalDecision(input: ApprovalPolicyInput): 'ask' | 'auto' {
+export function resolveApprovalDecision(
+  input: ApprovalPolicyInput,
+  grants?: ActiveGrant[],
+): 'ask' | 'auto' {
   if (!isApprovalMode(input.mode) || input.mode === 'manual') return 'ask';
+  // 预授权命中即放行（仅 L2；非法等级先被挡，B5 fail-closed 不因 grant 旁落）：
+  // 三生效条件与敏感排除的 fail-closed 复核全在 findPreauthHit 内
+  if (
+    grants?.length &&
+    input.level === 2 &&
+    findPreauthHit(grants, {
+      tool: input.tool,
+      level: 2,
+      targetPath: input.grantCtx?.targetPath,
+      windowText: input.grantCtx?.windowText,
+      now: input.grantCtx?.now,
+    })
+  ) {
+    return 'auto';
+  }
   if (!input.interactive) return 'ask';
   if (!input.islandVisible) return 'ask';
   if (input.level !== 2 && input.level !== 3) return 'ask';

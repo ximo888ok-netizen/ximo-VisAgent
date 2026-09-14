@@ -2,7 +2,7 @@
  * 任务域 schema：任务提交/排队/终态推送/步骤详情/用量/暂停恢复/断点续跑
  */
 import { z } from "zod";
-import { LongTaskOptionsSchema, TargetAppSchema } from "./longtask";
+import { CheckpointPreviewSchema, LongTaskOptionsSchema, TargetAppSchema } from "./longtask";
 
 /**
  * 规划 §2.1/§4.4：targetApp/longTask 均为可选扩展——不带 chip 的请求
@@ -12,6 +12,8 @@ export const StartTaskSchema = z.object({
   goal: z.string().min(1, "任务描述不能为空").max(2000, "任务描述过长（上限 2000 字符）"),
   targetApp: TargetAppSchema.optional(),
   longTask: LongTaskOptionsSchema.optional(),
+  /** A-M6：授权卡已 ack 的 grant；主进程复校三生效条件后才绑任务 */
+  grantId: z.string().regex(/^g_[0-9a-f]{12}$/, "grantId 形态非法").optional(),
 });
 export type StartTaskRequest = z.infer<typeof StartTaskSchema>;
 
@@ -102,11 +104,12 @@ export const ResumeTaskSchema = z.object({ taskId: z.string().min(1) });
 export const ResumeInterruptedSchema = z.object({ taskId: z.string().min(1) });
 export type ResumeInterruptedRequest = z.infer<typeof ResumeInterruptedSchema>;
 
-/** 可续跑的中断任务（listInterrupted 返回项） */
+/** 可续跑的中断任务（listInterrupted 返回项；checkpoint=A-M4 工件对账预览，仅长任务有） */
 export const InterruptedTaskSchema = z.object({
   taskId: z.string(),
   goal: z.string(),
   steps: z.number().int(),
   status: z.string(),
+  checkpoint: CheckpointPreviewSchema.optional(),
 });
 export type InterruptedTaskInfo = z.infer<typeof InterruptedTaskSchema>;

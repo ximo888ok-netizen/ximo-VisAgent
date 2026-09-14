@@ -5,7 +5,7 @@
  * A-M2：目标应用选择器 + chip（视觉内嵌于文本区头部，Q7-A）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AppEntry } from "@shared/island-contracts";
+import type { AppEntry, StartTaskRequest, TargetApp } from "@shared/island-contracts";
 import { useIslandStore } from "../../../store/islandStore";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import { ThinkingModeSelect } from "./ThinkingModeSelect";
@@ -15,6 +15,7 @@ import { AppChip } from "./AppChip";
 import { AppPickerButton } from "./AppPicker/AppPickerButton";
 import { AppPickerPanel } from "./AppPicker/AppPickerPanel";
 import { buildStartPayload, isChipReplacement, toTargetApp } from "./AppPicker/lib";
+import { PreAuthDialog } from "./PreAuthDialog";
 
 export function TaskComposer({
   hasContent,
@@ -25,6 +26,8 @@ export function TaskComposer({
 }) {
   const [goal, setGoal] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  /** A-M6：带 chip 的提交先过授权卡（未 ack 关闭 = 任务不启动） */
+  const [preAuth, setPreAuth] = useState<{ goal: string; app: TargetApp } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const taskRunning = useIslandStore((s) => s.taskRunning);
@@ -83,13 +86,11 @@ export function TaskComposer({
     [setTargetApp, setAppPickerOpen, pushToast],
   );
 
-  const handleSubmit = useCallback(async () => {
-    const trimmed = goal.trim();
-    if (!trimmed || submitting || taskRunning) return;
+  const startWith = useCallback(async (payload: StartTaskRequest) => {
     setSubmitting(true);
     onError(null);
     try {
-      const res = await window.islandAPI.startTask(buildStartPayload(trimmed, targetApp));
+      const res = await window.islandAPI.startTask(payload);
       if (res.ok) {
         // P2-14 修复：提交成功后才清空旧对话，失败时保留上一轮结果
         resetRun();
@@ -113,7 +114,18 @@ export function TaskComposer({
     } finally {
       setSubmitting(false);
     }
-  }, [goal, submitting, taskRunning, targetApp, setTaskStarted, resetRun, setTargetApp, setTargetAppInvalid, pushToast, onError]);
+  }, [setTaskStarted, resetRun, setTargetApp, setTargetAppInvalid, pushToast, onError]);
+
+  const handleSubmit = useCallback(async () => {
+    const trimmed = goal.trim();
+    if (!trimmed || submitting || taskRunning) return;
+    // A-M6 授权卡闸：锚定任务先取得用户逐项确认的作用域包，未 ack 关闭 = 不启动
+    if (targetApp) {
+      setPreAuth({ goal: trimmed, app: targetApp });
+      return;
+    }
+    await startWith(buildStartPayload(trimmed, null));
+  }, [goal, submitting, taskRunning, targetApp, startWith]);
 
   // 新对话：清空会话上下文与当前展示
   const handleNewConversation = useCallback(async () => {
@@ -147,6 +159,18 @@ export function TaskComposer({
       <div className="relative">
         {appPickerOpen && (
           <AppPickerPanel onPick={handlePick} onClose={() => setAppPickerOpen(false)} />
+        )}
+        {preAuth && (
+          <PreAuthDialog
+            goal={preAuth.goal}
+            app={preAuth.app}
+            onAcked={(grantId) => {
+              const payload = buildStartPayload(preAuth.goal, preAuth.app);
+              setPreAuth(null);
+              void startWith({ ...payload, grantId });
+            }}
+            onCancel={() => setPreAuth(null)}
+          />
         )}
         {targetApp && (
           <AppChip

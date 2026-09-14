@@ -10,6 +10,7 @@ import type { GroundingLookup, SomLookup, ToolExecutor } from '@ximo-visagent/ag
 import { WebSearchClient } from '@ximo-visagent/llm-providers';
 import type { LLMConfig } from '@ximo-visagent/shared-types';
 import { createHostCapabilities } from './host-capabilities';
+import { notifyWriteToolSuccess } from './longtask-reconcile';
 import type { CustomToolRuntime } from './custom-tools';
 import type { WeChatBot } from './wechat-bot';
 
@@ -43,9 +44,12 @@ export function buildExecutorStack(input: {
   const executor: ToolExecutor = {
     async execute(name: string, args: Record<string, unknown>) {
       if (name.startsWith('file_') || name.startsWith('excel_')) {
-        return files.execute(name, args);
+        const res = await files.execute(name, args);
+        // A-M4 宿主自动登记：写副作用工具成功后记工件指纹（未装配长任务壳时静默跳过）
+        if (res.ok) notifyWriteToolSuccess(name, args, workspaceDir);
+        return res;
       }
-      if (name.startsWith('custom_') && tools.has(name)) {
+      if ((name.startsWith('custom_') || name === 'checkpoint') && tools.has(name)) {
         const outcome = await tools.execute(name, args);
         return { ok: outcome.ok, summary: outcome.summary };
       }

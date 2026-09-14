@@ -12,7 +12,9 @@ import {
   isApprovalMode,
   AUTO_APPROVAL_QUOTA,
 } from '../approval-policy';
+import type { ActiveGrant } from '../preauth-scope';
 import { DEFAULT_TOOL_POLICY, DEFAULT_SAFETY_RULES } from '@ximo-visagent/safety';
+import type { ScopePackage } from '../../shared/schemas/longtask';
 
 const base = {
   mode: 'auto',
@@ -140,5 +142,122 @@ describe('天花板锁：安全分级快照（下调即红）', () => {
       expect(rule?.levelOverride).toBe(3);
       expect(rule?.enabled).toBe(true);
     }
+  });
+});
+
+/* ===========================================================================
+ * A-M6 预授权 grant（规划 §3.3 真值表新增行，先跑红后改码）
+ *
+ * 铁律：grant 只是将「用户已逐项确认过的作用域包」代入既有判定；
+ * 五道刹车任何一条不被触碰——三生效条件缺一、超范围、敏感排除、
+ * manual/L3/非法档位，全部回落 ask（= 超范围必挂起，永不静默执行）。
+ * ========================================================================= */
+
+const NOW = 1_700_000_000_000;
+
+function grantScope(over: Partial<ScopePackage> = {}): ScopePackage {
+  return {
+    appId: 'app-target',
+    dirs: ['C:/发票/**'],
+    opClasses: ['type_text', 'click', 'scroll', 'read_only', 'file_write'],
+    sensitiveExcludes: ['删除', 'uninstall'],
+    budget: { maxDurationMs: 3_600_000, maxSteps: 600, maxTokens: 8_000_000 },
+    ...over,
+  };
+}
+
+function activeGrant(over: Partial<ActiveGrant> = {}): ActiveGrant {
+  return { id: 'g_0123456789ab', acked: true, status: 'active', expiresAt: NOW + 86_400_000, scope: grantScope(), ...over };
+}
+
+/** 命中 grant 的最小输入：file_write 在授权目录内 */
+const hitInput = { ...base, tool: 'file_write', grantCtx: { targetPath: 'C:/发票/1.pdf', now: NOW } };
+const missOut = { ...base, tool: 'file_write', grantCtx: { targetPath: 'D:/其他/1.pdf', now: NOW } };
+
+describe('预授权 B1 行：非交互来源 + 有效 grant 命中', () => {
+  it('B1 非交互 ∧ grant 命中 → auto（预授权直通，仍经审计 decidedBy:preauth）', () => {
+    expect(resolveApprovalDecision({ ...hitInput, interactive: false }, [activeGrant()])).toBe('auto');
+  });
+
+  it('B1 非交互 ∧ 无 grant / grant 未命中 → ask（现状零削弱）', () => {
+    expect(resolveApprovalDecision({ ...hitInput, interactive: false })).toBe('ask');
+    expect(resolveApprovalDecision({ ...hitInput, interactive: false }, [])).toBe('ask');
+    expect(resolveApprovalDecision({ ...missOut, interactive: false }, [activeGrant()])).toBe('ask');
+  });
+});
+
+describe('预授权 B3 行（同构修正）：岛不在场 + 有效 grant 命中', () => {
+  it('B3 岛不在场 ∧ grant 命中 → auto', () => {
+    expect(resolveApprovalDecision({ ...hitInput, islandVisible: false }, [activeGrant()])).toBe('auto');
+  });
+
+  it('B3 岛不在场 ∧ grant 未命中 → ask', () => {
+    expect(resolveApprovalDecision({ ...missOut, islandVisible: false }, [activeGrant()])).toBe('ask');
+  });
+});
+
+describe('grant 三生效条件：acked ∧ active ∧ 未过期，缺一回落 ask', () => {
+  it('未 ack / 已撤销 / 已过期 → ask（即便作用域完全命中）', () => {
+    const unattended = { ...hitInput, interactive: false };
+    expect(resolveApprovalDecision(unattended, [activeGrant({ acked: false })])).toBe('ask');
+    expect(resolveApprovalDecision(unattended, [activeGrant({ status: 'revoked' })])).toBe('ask');
+    expect(resolveApprovalDecision(unattended, [activeGrant({ status: 'expired' })])).toBe('ask');
+    expect(resolveApprovalDecision(unattended, [activeGrant({ expiresAt: NOW - 1 })])).toBe('ask');
+    expect(resolveApprovalDecision(unattended, [activeGrant({ expiresAt: NOW })])).toBe('ask');
+  });
+
+  it('条件齐备 → auto', () => {
+    expect(resolveApprovalDecision(hitInput, [activeGrant()])).toBe('auto');
+    expect(resolveApprovalDecision({ ...hitInput, interactive: false }, [activeGrant()])).toBe('auto');
+  });
+});
+
+describe('sensitiveExcludes：强制 ask，不可被作用域覆盖', () => {
+  it('目录在白名单内但路径/窗口文本命中敏感词 → ask（无人值守下也不放行）', () => {
+    expect(
+      resolveApprovalDecision(
+        { ...base, interactive: false, grantCtx: { targetPath: 'C:/发票/删除.pdf', now: NOW } },
+        [activeGrant()],
+      ),
+    ).toBe('ask');
+    expect(
+      resolveApprovalDecision(
+        { ...base, tool: 'mouse_click', interactive: false, grantCtx: { windowText: 'Uninstall', now: NOW } },
+        [activeGrant({ scope: grantScope({ opClasses: ['click'] }) })]),
+    ).toBe('ask');
+  });
+});
+
+describe('预授权边界负向用例：超范围必挂起（ask），永不静默执行', () => {
+  it('manual 档不被 grant 覆盖（用户要求全部人审）', () => {
+    expect(resolveApprovalDecision({ ...hitInput, mode: 'manual' }, [activeGrant()])).toBe('ask');
+  });
+
+  it('L3 永不可预授权（grant 只覆盖 L2 操作类别）', () => {
+    expect(
+      resolveApprovalDecision({ ...base, mode: 'autonomous', level: 3, interactive: false, grantCtx: { targetPath: 'C:/发票/1.pdf', now: NOW } }, [activeGrant()]),
+    ).toBe('ask');
+  });
+
+  it('opClass 未勾选（hotkey）/ 未映射工具（custom_*）→ ask', () => {
+    expect(
+      resolveApprovalDecision({ ...base, tool: 'keyboard_press', interactive: false, grantCtx: { now: NOW } }, [activeGrant()]),
+    ).toBe('ask');
+    expect(resolveApprovalDecision({ ...base, tool: 'custom_clean' }, [activeGrant()])).toBe('ask');
+  });
+
+  it('file_write 无路径信息 → ask（fail-closed，不放行不可核对的写）', () => {
+    expect(resolveApprovalDecision({ ...base, interactive: false, tool: 'file_write' }, [activeGrant()])).toBe('ask');
+  });
+
+  it('B5 非法档位/非法等级带 grant 仍 fail-closed', () => {
+    expect(resolveApprovalDecision({ ...hitInput, mode: 'weird' }, [activeGrant()])).toBe('ask');
+    expect(resolveApprovalDecision({ ...hitInput, level: 9 }, [activeGrant()])).toBe('ask');
+  });
+
+  it('grant 不消耗也不受 B4 配额约束（FR-007：preauth 放行不占 AUTO_APPROVAL_QUOTA）', () => {
+    expect(resolveApprovalDecision({ ...hitInput, usedL2: AUTO_APPROVAL_QUOTA.l2 }, [activeGrant()])).toBe('auto');
+    // 配额耗尽本身仍须约束既有 policy 自动路径（无 grant）
+    expect(resolveApprovalDecision({ ...hitInput, usedL2: AUTO_APPROVAL_QUOTA.l2 })).toBe('ask');
   });
 });

@@ -225,6 +225,14 @@ export const ISLAND_CHANNELS = {
   /** renderer -> main (invoke)：最近使用应用（近 20 条） */
   appsRecent: "apps:recent",
 
+  // ---- 预授权作用域包（A-M6，锚定长任务的起跑前授权卡）----
+  /** renderer -> main (invoke)：授权卡打开即建 grant（active, acked 0） */
+  grantCreate: "grant:create",
+  /** renderer -> main (invoke)：显式确认（ack 是放行前提） */
+  grantAck: "grant:ack",
+  /** renderer -> main (invoke)：撤销（未 ack 关闭授权卡 / B 期面板） */
+  grantRevoke: "grant:revoke",
+
   // ---- Agent 在场指示（极光边框）----
   /** main -> aura 窗口：状态变更 */
   auraState: "aura:state",

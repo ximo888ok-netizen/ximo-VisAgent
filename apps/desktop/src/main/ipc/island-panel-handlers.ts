@@ -57,6 +57,15 @@ export interface PanelDeps {
    * 带 targetApp 的 startTask 成功 = 一次“使用”，记一条最近应用。缺省不记。
    */
   appRecent?: { recordUse(entry: { id: string; name: string; exePath: string }): void };
+  /**
+   * preauth_grants 仓储（A-M6）：task:start 携带 grantId 时主进程复校三生效条件
+   * （acked ∧ active ∧ 未过期），不满足任务不起跑；起跑成功后补绑 task_id。
+   * 缺省 = 未装配：任何带 grantId 的请求直接拒绝（fail-closed）。
+   */
+  preauthGrants?: {
+    get(grantId: string): { acked: boolean; status: string; expiresAt: number } | null;
+    bindTask(grantId: string, taskId: string): boolean;
+  };
 }
 
 let panelRegistered = false;
@@ -73,15 +82,28 @@ export function registerPanelHandlers(deps: PanelDeps): void {
     }
     // A-M2 预检（规划 §4.1-5）：chip 绑定的 exePath 必须存在，失败任务不起跑，
     // 回传 targetAppMissing 供渲染层把 chip 标红重选。无 chip 路径与现状一致（零回归红线）。
-    const { goal, targetApp } = parsed.data;
+    const { goal, targetApp, grantId } = parsed.data;
     if (targetApp && !existsSync(targetApp.exePath)) {
       return { ok: false as const, error: "目标应用不存在，请重选", targetAppMissing: true as const };
+    }
+    // A-M6 边界复校（绝不相信渲染层）：带 grantId 起跑的三生效条件缺一即拒起任务
+    if (grantId) {
+      const grant = deps.preauthGrants?.get(grantId);
+      if (!grant || !grant.acked || grant.status !== "active" || grant.expiresAt <= Date.now()) {
+        return { ok: false as const, error: "预授权未确认或已失效，任务未起跑" };
+      }
     }
     try {
       const result = await deps.taskRunner.startTask(goal);
       if (targetApp) {
         // 最近列表为旁路写入：失败绝不影响已起跑的任务
         try { deps.appRecent?.recordUse({ id: targetApp.id, name: targetApp.name, exePath: targetApp.exePath }); } catch { /* 忽略：app_recent 写失败仅影响推荐组 */ }
+      }
+      if (grantId) {
+        // 绑定同为旁路：绑不上则任务照跑但审批门取不到该 grant（回落逐次询问），必须留痕
+        if (!deps.preauthGrants?.bindTask(grantId, result.taskId)) {
+          console.warn(`[preauth] grant ${grantId} 未能绑定任务 ${result.taskId}（已绑或不存在），预授权不生效`);
+        }
       }
       return { ok: true as const, data: result };
     } catch (err) {

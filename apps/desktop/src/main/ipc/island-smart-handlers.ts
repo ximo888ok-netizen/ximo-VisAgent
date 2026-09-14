@@ -33,6 +33,7 @@ import type { MemoryStore } from "../memory-store";
 import type { ConversationStore } from "../conversation-store";
 import type { Scheduler } from "../scheduler";
 import { computeStats, recommendSop } from "../task-insights";
+import { attachCheckpointPreviews } from "../longtask-reconcile";
 import { parseRecordedStep, safeParseVariables, type SopExportFormat } from "../sop-format";
 
 export interface SmartDeps {
@@ -193,12 +194,16 @@ export function registerSmartHandlers(deps: SmartDeps): void {
           !active.has(t.taskId) &&
           ["RUNNING", "QUEUED", "PAUSED", "WAITING_APPROVAL"].includes(t.status),
       );
-      const data = rows.map((t) => ({
+      const enriched = rows.map((t) => ({
         taskId: t.taskId,
         goal: t.goal,
         steps: deps.audit.getTaskSteps(t.taskId).length,
         status: t.status,
+        createdAt: t.createdAt,
       }));
+      // A-M4 工件对账预览（InterruptedBanner 锚定分支）：无检查点/超 24h 窗口的行与现状一致
+      attachCheckpointPreviews(deps.audit.exposeDb(), enriched);
+      const data = enriched.map(({ createdAt: _createdAt, ...rest }) => rest);
       return { ok: true as const, data };
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : "query failed" };
