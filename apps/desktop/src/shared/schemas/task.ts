@@ -2,9 +2,16 @@
  * 任务域 schema：任务提交/排队/终态推送/步骤详情/用量/暂停恢复/断点续跑
  */
 import { z } from "zod";
+import { LongTaskOptionsSchema, TargetAppSchema } from "./longtask";
 
+/**
+ * 规划 §2.1/§4.4：targetApp/longTask 均为可选扩展——不带 chip 的请求
+ * 解析结果与现状逐字段一致（旧 e2e 零回归红线）。主进程按此 schema 复校。
+ */
 export const StartTaskSchema = z.object({
   goal: z.string().min(1, "任务描述不能为空").max(2000, "任务描述过长（上限 2000 字符）"),
+  targetApp: TargetAppSchema.optional(),
+  longTask: LongTaskOptionsSchema.optional(),
 });
 export type StartTaskRequest = z.infer<typeof StartTaskSchema>;
 
@@ -17,6 +24,14 @@ export const TaskStartedSchema = z.object({
   queuedIndex: z.number().int().min(0).optional(),
 });
 export type TaskStartedResult = z.infer<typeof TaskStartedSchema>;
+
+/**
+ * startTask 应答（规划 §4.1-5）：失败分支可带 targetAppMissing=true，
+ * 表示主进程 existsSync(exePath) 预检不通过 → 任务未起跑，渲染层把 chip 标红。
+ */
+export type StartTaskResult =
+  | { ok: true; data: TaskStartedResult }
+  | { ok: false; error: string; targetAppMissing?: boolean };
 
 export const CancelTaskSchema = z.object({
   taskId: z.string().min(1),

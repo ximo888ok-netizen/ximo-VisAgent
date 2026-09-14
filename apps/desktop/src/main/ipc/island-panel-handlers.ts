@@ -5,6 +5,7 @@
  * 镜像/SOP/规则模拟等扩展通道 → island-extended-handlers.ts
  */
 import { ipcMain } from "electron";
+import { existsSync } from "node:fs";
 import {
   ISLAND_CHANNELS,
   StartTaskSchema,
@@ -51,6 +52,11 @@ export interface PanelDeps {
   configStore: ConfigStore;
   auditStore: AuditStore;
   taskRunner: TaskRunner;
+  /**
+   * app_recent 仓储（规划 §2.5，A-M1 注释指定的 A-M2 接线）：
+   * 带 targetApp 的 startTask 成功 = 一次“使用”，记一条最近应用。缺省不记。
+   */
+  appRecent?: { recordUse(entry: { id: string; name: string; exePath: string }): void };
 }
 
 let panelRegistered = false;
@@ -65,8 +71,18 @@ export function registerPanelHandlers(deps: PanelDeps): void {
     if (!parsed.success) {
       return { ok: false as const, error: parsed.error.issues[0]?.message ?? "invalid task payload" };
     }
+    // A-M2 预检（规划 §4.1-5）：chip 绑定的 exePath 必须存在，失败任务不起跑，
+    // 回传 targetAppMissing 供渲染层把 chip 标红重选。无 chip 路径与现状一致（零回归红线）。
+    const { goal, targetApp } = parsed.data;
+    if (targetApp && !existsSync(targetApp.exePath)) {
+      return { ok: false as const, error: "目标应用不存在，请重选", targetAppMissing: true as const };
+    }
     try {
-      const result = await deps.taskRunner.startTask(parsed.data.goal);
+      const result = await deps.taskRunner.startTask(goal);
+      if (targetApp) {
+        // 最近列表为旁路写入：失败绝不影响已起跑的任务
+        try { deps.appRecent?.recordUse({ id: targetApp.id, name: targetApp.name, exePath: targetApp.exePath }); } catch { /* 忽略：app_recent 写失败仅影响推荐组 */ }
+      }
       return { ok: true as const, data: result };
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : "start failed" };

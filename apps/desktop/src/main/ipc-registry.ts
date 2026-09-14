@@ -54,6 +54,11 @@ export function registerIsland(deps: IpcRegistryDeps): void {
     missionRunRepo, missionRunner,
   } = deps;
 
+  // 应用目录服务（A-M1）：建表必须先于任何 app_recent store 创建（better-sqlite3
+  // prepare 在构造期解析 SQL）；面板（chip 绑定成功写入）与 apps:recent 共用同一实例。
+  applyLongtaskSchema(auditDb.exposeDb());
+  const appRecent = createAppRecentStore(auditDb.exposeDb());
+
   registerIslandHandlers({
     getMainWindow: () => null,
     safety: {
@@ -103,6 +108,7 @@ export function registerIsland(deps: IpcRegistryDeps): void {
         resumeTask: (taskId) => orchestrator.resumeTask(taskId),
         getActiveTasks: () => orchestrator.getActiveTasks(),
       },
+      appRecent,
     },
   });
 
@@ -113,13 +119,12 @@ export function registerIsland(deps: IpcRegistryDeps): void {
   registerEmployeeHandlers({ employee: employeeStore, audit: auditDb, store: configStore });
   registerMissionHandlers({ repo: missionRepo, runRepo: missionRunRepo, runner: missionRunner, audit: auditDb, experience: experienceStore });
 
-  // 应用目录服务（A-M1）：专属侧车枚举+图标（低频批量走侧车，规划 §3.4）；app_recent 唯一持久化表
-  applyLongtaskSchema(auditDb.exposeDb());
+  // 应用目录服务（A-M1）：专属侧车枚举+图标（低频批量走侧车，规划 §3.4）
   registerAppsHandlers({
     catalog: getAppCatalogService({
       exePath: app.isPackaged ? path.join(process.resourcesPath, 'uia-sidecar.exe') : undefined,
       iconCacheDir: path.join(app.getPath('userData'), 'icon-cache'),
     }),
-    recent: createAppRecentStore(auditDb.exposeDb()),
+    recent: appRecent,
   });
 }

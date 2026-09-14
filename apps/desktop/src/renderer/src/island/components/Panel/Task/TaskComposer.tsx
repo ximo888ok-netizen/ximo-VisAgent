@@ -2,13 +2,19 @@
  * TaskComposer.tsx — 任务输入区（草稿输入 + 提交 + 推荐条 + 会话/档位工具条）
  *
  * 无内容时由父层居中摆放（hasContent=false），有内容时沉到底部。
+ * A-M2：目标应用选择器 + chip（视觉内嵌于文本区头部，Q7-A）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { AppEntry } from "@shared/island-contracts";
 import { useIslandStore } from "../../../store/islandStore";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import { ThinkingModeSelect } from "./ThinkingModeSelect";
 import { RecommendBar } from "./RecommendBar";
 import { useSopRecommendation } from "./useSopRecommendation";
+import { AppChip } from "./AppChip";
+import { AppPickerButton } from "./AppPicker/AppPickerButton";
+import { AppPickerPanel } from "./AppPicker/AppPickerPanel";
+import { buildStartPayload, isChipReplacement, toTargetApp } from "./AppPicker/lib";
 
 export function TaskComposer({
   hasContent,
@@ -28,6 +34,13 @@ export function TaskComposer({
   const pushToast = useIslandStore((s) => s.pushToast);
   const conversationTurns = useIslandStore((s) => s.conversationTurns);
   const clearConversation = useIslandStore((s) => s.clearConversation);
+  const targetApp = useIslandStore((s) => s.targetApp);
+  const targetAppInvalid = useIslandStore((s) => s.targetAppInvalid);
+  const appPickerOpen = useIslandStore((s) => s.appPickerOpen);
+  const setTargetApp = useIslandStore((s) => s.setTargetApp);
+  const setTargetAppInvalid = useIslandStore((s) => s.setTargetAppInvalid);
+  const setAppPickerOpen = useIslandStore((s) => s.setAppPickerOpen);
+  const setRecentApps = useIslandStore((s) => s.setRecentApps);
 
   useSopRecommendation(goal);
 
@@ -45,23 +58,53 @@ export function TaskComposer({
     return () => window.removeEventListener("island:focus-quick-input", onFocus);
   }, []);
 
+  // 冷启动空闲预热（规划 §4.1-1）：延后触发 apps:list 建立主进程枚举缓存 +
+  // 缓存最近列表（面板打开即用；前台推荐随 A-M3 看门狗通道升级）
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void window.islandAPI.listApps({});
+      void window.islandAPI.listRecentApps().then((res) => {
+        if (res.ok) setRecentApps(res.data);
+      });
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [setRecentApps]);
+
+  // 选择 → 单实例替换 + toast（规划 §4.1-3：任何时刻至多 1 chip）
+  const handlePick = useCallback(
+    (entry: AppEntry) => {
+      const app = toTargetApp(entry);
+      const replaced = isChipReplacement(useIslandStore.getState().targetApp, app);
+      setTargetApp(app);
+      setAppPickerOpen(false);
+      if (replaced) pushToast("info", "已替换目标应用");
+      inputRef.current?.focus();
+    },
+    [setTargetApp, setAppPickerOpen, pushToast],
+  );
+
   const handleSubmit = useCallback(async () => {
     const trimmed = goal.trim();
     if (!trimmed || submitting || taskRunning) return;
     setSubmitting(true);
     onError(null);
     try {
-      const res = await window.islandAPI.startTask({ goal: trimmed });
+      const res = await window.islandAPI.startTask(buildStartPayload(trimmed, targetApp));
       if (res.ok) {
         // P2-14 修复：提交成功后才清空旧对话，失败时保留上一轮结果
         resetRun();
         setTaskStarted(res.data.taskId, res.data.goal, res.data.queuedIndex);
         setGoal("");
+        setTargetApp(null); // 发送即绑定：chip 生命周期移交任务卡（规划 §4.1-6）
         if (res.data.queued) {
           pushToast("info", `任务已加入队列（前方 ${res.data.queuedIndex ?? 1} 个），将自动依次执行`);
         } else {
           pushToast("success", "任务已启动");
         }
+      } else if (res.targetAppMissing) {
+        // 失败占位（规划 §4.1-5）：任务未起跑，chip 标红保留 + 行内错误
+        setTargetAppInvalid(true);
+        pushToast("error", "目标应用不存在，请重选");
       } else {
         onError(res.error);
       }
@@ -70,7 +113,7 @@ export function TaskComposer({
     } finally {
       setSubmitting(false);
     }
-  }, [goal, submitting, taskRunning, setTaskStarted, resetRun, pushToast, onError]);
+  }, [goal, submitting, taskRunning, targetApp, setTaskStarted, resetRun, setTargetApp, setTargetAppInvalid, pushToast, onError]);
 
   // 新对话：清空会话上下文与当前展示
   const handleNewConversation = useCallback(async () => {
@@ -102,6 +145,17 @@ export function TaskComposer({
         </div>
       )}
       <div className="relative">
+        {appPickerOpen && (
+          <AppPickerPanel onPick={handlePick} onClose={() => setAppPickerOpen(false)} />
+        )}
+        {targetApp && (
+          <AppChip
+            app={targetApp}
+            invalid={targetAppInvalid}
+            onRemove={() => setTargetApp(null)}
+            onRebind={() => setAppPickerOpen(true)}
+          />
+        )}
         <textarea
           ref={inputRef}
           value={goal}
@@ -114,6 +168,9 @@ export function TaskComposer({
           style={{ fontSize: "13px", lineHeight: "1.5", minHeight: hasContent ? 36 : 56 }}
           data-interactive
         />
+        {targetAppInvalid && (
+          <div className="mt-1 text-[12px] ig-fg-danger">目标应用不存在，请重选</div>
+        )}
       </div>
       <div className="mt-2 flex items-center justify-between">
         {conversationTurns > 0 ? (
@@ -125,6 +182,7 @@ export function TaskComposer({
           </div>
         ) : (
           <div className="flex items-center gap-2" data-interactive>
+            <AppPickerButton />
             <ApprovalModeSelect />
             <ThinkingModeSelect />
             <span className="text-[12px] t-faint">Enter 提交 · Shift+Enter 换行</span>

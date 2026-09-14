@@ -10,6 +10,7 @@ import type {
 } from "./island-contracts";
 import type {
   StartTaskRequest,
+  StartTaskResult,
   TaskStartedResult,
   TaskFinishedPayload,
   TaskStartedEvent,
@@ -121,9 +122,10 @@ export interface IslandApi {
   setKeyboardInput(active: boolean): void;
 
   // ---- 任务管理 ----
+  /** 失败分支可带 targetAppMissing（chip 预检失败，渲染层标红；任务未起跑） */
   startTask(
     req: StartTaskRequest,
-  ): Promise<IpcResult<TaskStartedResult>>;
+  ): Promise<StartTaskResult>;
   cancelTask(taskId: string): Promise<{ ok: boolean; error?: string }>;
   pauseTask(taskId: string): Promise<{ ok: boolean; error?: string }>;
   resumeTask(taskId: string): Promise<{ ok: boolean; error?: string }>;

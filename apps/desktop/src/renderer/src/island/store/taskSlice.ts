@@ -1,7 +1,7 @@
 /**
- * taskSlice.ts — 任务管理状态 slice
+ * taskSlice.ts — 任务管理状态 slice（含 A-M2 目标应用 chip / 选择器状态）
  */
-import type { TaskFinishedPayload } from "@shared/island-contracts";
+import type { AppEntry, TargetApp, TaskFinishedPayload } from "@shared/island-contracts";
 
 export interface TaskSliceState {
   currentTaskId: string | null;
@@ -10,9 +10,25 @@ export interface TaskSliceState {
   /** A5：排队中（含位次，启动那一刻快照） */
   taskQueuedIndex: number | null;
   taskFinished: TaskFinishedPayload | null;
+
+  // ---- A-M2 目标应用绑定（规划 §4.1，单实例：任何时刻至多 1 chip）----
+  /** 待发送任务的锚定应用；null = 无锚态。chip 生命周期归 composer，发送成功即清空 */
+  targetApp: TargetApp | null;
+  /** 主进程 existsSync 预检失败 → chip 标红占位态（点击重开面板替换） */
+  targetAppInvalid: boolean;
+  /** 应用选择器弹层开关 */
+  appPickerOpen: boolean;
+  /** apps:recent 缓存（冷启动空闲预热写入；面板打开时刷新，推荐组数据源） */
+  recentApps: AppEntry[];
+
   setTaskStarted(taskId: string, goal: string, queuedIndex?: number): void;
   setTaskFinished(payload: TaskFinishedPayload): void;
   clearTask(): void;
+  /** 绑定/替换/移除（null）chip；任何写入都清除标红态 */
+  setTargetApp(app: TargetApp | null): void;
+  setTargetAppInvalid(invalid: boolean): void;
+  setAppPickerOpen(open: boolean): void;
+  setRecentApps(apps: AppEntry[]): void;
 }
 
 export function createTaskSlice(
@@ -25,6 +41,10 @@ export function createTaskSlice(
     taskRunning: false,
     taskQueuedIndex: null,
     taskFinished: null,
+    targetApp: null,
+    targetAppInvalid: false,
+    appPickerOpen: false,
+    recentApps: [],
 
     setTaskStarted(taskId, goal, queuedIndex) {
       set({
@@ -43,6 +63,22 @@ export function createTaskSlice(
 
     clearTask() {
       set({ currentTaskId: null, currentTaskGoal: "", taskRunning: false, taskQueuedIndex: null, taskFinished: null });
+    },
+
+    setTargetApp(app) {
+      set({ targetApp: app, targetAppInvalid: false });
+    },
+
+    setTargetAppInvalid(invalid) {
+      set({ targetAppInvalid: invalid });
+    },
+
+    setAppPickerOpen(open) {
+      set({ appPickerOpen: open });
+    },
+
+    setRecentApps(apps) {
+      set({ recentApps: apps });
     },
   };
 }
