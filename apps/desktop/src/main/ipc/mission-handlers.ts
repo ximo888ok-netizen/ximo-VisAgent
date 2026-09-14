@@ -16,14 +16,22 @@ import {
   MissionCreateSchema,
   SubtaskStatusUpdateSchema,
   ArtifactCreateSchema,
+  MissionPlanSchema,
+  MissionPlanSaveSchema,
+  MissionConfirmSchema,
+  MissionResolveSchema,
 } from '../../shared/island-contracts';
 import type { CapabilityProposeResult } from '../../shared/island-contracts';
 import type { MissionRepo } from '../mission-db/mission-repo';
+import type { MissionRunRepo } from '../mission-db/run-repo';
+import type { MissionRunner } from '../mission-runner';
 import { getLastViolation, metaGuard } from '../meta-gate';
 import type { MetaActionType, MetaAudit, MetaStore } from '../meta-gate';
 
 export interface MissionHandlerDeps {
   repo: MissionRepo;
+  runRepo: MissionRunRepo;
+  runner: MissionRunner;
   audit: MetaAudit;
   experience: MetaStore;
 }
@@ -170,6 +178,47 @@ export function registerMissionHandlers(deps: MissionHandlerDeps): void {
       return { ok: true as const, data: result };
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : 'get failed' };
+    }
+  });
+
+  // ---- 编排：规划入库 → 计划确认闸 → 失败人工处置（mission 计划 §4.3/§8 不变量 2） ----
+  ipcMain.handle(ISLAND_CHANNELS.missionPlan, (_e, raw: unknown) => {
+    const parsed = MissionPlanSaveSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false as const, error: 'invalid payload' };
+    try {
+      // JSON 列入库前 zod 校验（工程契约 §10）：planJson 必须是合法 MissionPlan
+      const plan = MissionPlanSchema.safeParse(JSON.parse(parsed.data.planJson));
+      if (!plan.success) return { ok: false as const, error: 'invalid plan json' };
+      const moved = deps.runRepo.savePlanAwaitConfirm(parsed.data.missionId, parsed.data.planJson);
+      if (!moved) return { ok: false as const, error: 'mission 不处于可规划态（draft/planning/queued）' };
+      return { ok: true as const, data: { status: 'awaiting_confirm' } };
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : 'plan failed' };
+    }
+  });
+
+  ipcMain.handle(ISLAND_CHANNELS.missionConfirm, (_e, raw: unknown) => {
+    const parsed = MissionConfirmSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false as const, error: 'invalid payload' };
+    try {
+      // 确认闸不过（不是 awaiting_confirm）直接失败——调度循环只在闸后才可能启动
+      const started = deps.runner.confirmAndStart(parsed.data.missionId);
+      if (!started) return { ok: false as const, error: 'mission 不处于 awaiting_confirm，未确认不执行' };
+      return { ok: true as const, data: { started } };
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : 'confirm failed' };
+    }
+  });
+
+  ipcMain.handle(ISLAND_CHANNELS.missionResolve, (_e, raw: unknown) => {
+    const parsed = MissionResolveSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false as const, error: 'invalid payload' };
+    try {
+      const resolved = deps.runner.resolveMission(parsed.data.missionId, parsed.data.decision);
+      if (!resolved) return { ok: false as const, error: 'mission 不处于 paused 或无失败子任务可处置' };
+      return { ok: true as const, data: { resolved } };
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : 'resolve failed' };
     }
   });
 

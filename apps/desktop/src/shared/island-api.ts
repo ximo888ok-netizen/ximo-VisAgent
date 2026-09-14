@@ -75,6 +75,9 @@ import type {
   MissionCreateRequest,
   SubtaskStatusUpdateRequest,
   ArtifactCreateRequest,
+  MissionPlanSaveRequest,
+  MissionConfirmRequest,
+  MissionResolveRequest,
 } from "./island-contracts";
 
 import type {
@@ -212,6 +215,12 @@ export interface IslandApi {
   subtaskUpdateStatus(req: SubtaskStatusUpdateRequest): Promise<IpcResult<Record<string, never>>>;
   /** 登记子任务产物 */
   artifactCreate(req: ArtifactCreateRequest): Promise<IpcResult<{ id: string }>>;
+  /** 保存规划产物：planJson 入库并进入 awaiting_confirm（计划确认闸，确认前绝不执行） */
+  missionPlan(req: MissionPlanSaveRequest): Promise<IpcResult<{ status: string }>>;
+  /** 人工确认计划：awaiting_confirm → running 并开始依赖驱动串行调度 */
+  missionConfirm(req: MissionConfirmRequest): Promise<IpcResult<{ started: boolean }>>;
+  /** 暂停 Mission 的人工处置：retry 重开失败子任务 / skip 跳过放行下游 / abort 终止 */
+  missionResolve(req: MissionResolveRequest): Promise<IpcResult<{ resolved: boolean }>>;
 
   // ---- 员工域（M1 数据底座）----
   employeeListPositions(): Promise<IpcResult<PositionRowPayload[]>>;

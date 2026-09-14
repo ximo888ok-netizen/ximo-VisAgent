@@ -162,6 +162,12 @@ export const ISLAND_CHANNELS = {
   subtaskUpdateStatus: "island:subtask-update-status",
   /** renderer -> main (invoke)：登记子任务产物 */
   artifactCreate: "island:artifact-create",
+  /** renderer -> main (invoke)：保存规划产物（planJson 入库，进入 awaiting_confirm 待确认） */
+  missionPlan: "island:mission-plan",
+  /** renderer -> main (invoke)：人工确认计划（awaiting_confirm → running，确认前绝不派发） */
+  missionConfirm: "island:mission-confirm",
+  /** renderer -> main (invoke)：暂停 Mission 的人工处置（retry 重试 / skip 跳过 / abort 终止） */
+  missionResolve: "island:mission-resolve",
 
   // ---- 员工域（M1 数据底座）----
   /** renderer -> main (invoke)：岗位列表 */

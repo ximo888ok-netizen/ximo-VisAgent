@@ -12,6 +12,8 @@ import type { ConversationStore } from './conversation-store';
 import type { Scheduler } from './scheduler';
 import type { EmployeeStore } from './stores/employee-store';
 import type { MissionRepo } from './mission-db/mission-repo';
+import type { MissionRunRepo } from './mission-db/run-repo';
+import type { MissionRunner } from './mission-runner';
 
 import { registerIslandHandlers } from './ipc/island.handlers';
 import { registerExtendedHandlers } from './ipc/island-extended-handlers';
@@ -34,6 +36,8 @@ export interface IpcRegistryDeps {
   experienceStore: ExperienceStore;
   employeeStore: EmployeeStore;
   missionRepo: MissionRepo;
+  missionRunRepo: MissionRunRepo;
+  missionRunner: MissionRunner;
 }
 
 /** 全量 IPC 注册（岛核心 + 面板 + 扩展通道） */
@@ -41,6 +45,7 @@ export function registerIsland(deps: IpcRegistryDeps): void {
   const {
     orchestrator, configStore, auditDb, memoryStore,
     conversationStore, scheduler, experienceStore, employeeStore, missionRepo,
+    missionRunRepo, missionRunner,
   } = deps;
 
   registerIslandHandlers({
@@ -100,5 +105,5 @@ export function registerIsland(deps: IpcRegistryDeps): void {
   registerExperienceHandlers({ experience: experienceStore, audit: auditDb, orchestrator, store: configStore });
   registerEvolutionHandlers({ experience: experienceStore, audit: auditDb, orchestrator, tools: orchestrator.customTools, toolsDir: orchestrator.toolsDir, employee: employeeStore, mission: missionRepo, missionDb: auditDb.exposeDb() });
   registerEmployeeHandlers({ employee: employeeStore, audit: auditDb, store: configStore });
-  registerMissionHandlers({ repo: missionRepo, audit: auditDb, experience: experienceStore });
+  registerMissionHandlers({ repo: missionRepo, runRepo: missionRunRepo, runner: missionRunner, audit: auditDb, experience: experienceStore });
 }

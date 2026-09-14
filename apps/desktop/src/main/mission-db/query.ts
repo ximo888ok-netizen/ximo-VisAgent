@@ -23,3 +23,13 @@ export function selectRow<T>(
 ): T | null {
   return db.prepare<unknown[], T>(sql).get(...params) ?? null;
 }
+
+/** JSON 列 → string[]；非法/非数组一律兜底为空数组（仓储边界的容错） */
+export function parseJsonStringArray(json: string): string[] {
+  try {
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) ? arr.map(String) : [];
+  } catch {
+    return [];
+  }
+}

@@ -3,8 +3,10 @@
  *
  * 三张表都由本模块拥有：应用必须能直接打开上一版本的数据文件，
  * 因此所有 DDL 幂等，历史列只 ADD 不改不删。
+ * 版本戳与补列机制统一在 ../db-migrations.ts（audit-db 与 mission-db 共库共用）。
  */
-import type Database from 'better-sqlite3';
+import type { AddedColumn, MigrationDb } from '../db-migrations';
+import { applyAddedColumns, migrateSchema } from '../db-migrations';
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS audit (
@@ -50,7 +52,7 @@ const SCHEMA = `
 `;
 
 /** 旧库迁移：补列（幂等） */
-const ADDED_COLUMNS: Array<[table: string, column: string, type: string]> = [
+const ADDED_COLUMNS: AddedColumn[] = [
   ['tasks', 'steps', 'INTEGER'],
   ['tasks', 'tokens', 'INTEGER'],
   ['tasks', 'failureKind', 'TEXT'],
@@ -63,18 +65,17 @@ const ADDED_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ['sops', 'promotedAt', 'INTEGER'],
 ];
 
-export function applyAuditSchema(db: Database.Database): void {
-  db.exec(SCHEMA);
-  for (const [table, column, type] of ADDED_COLUMNS) migrateColumn(db, table, column, type);
-}
+/** 审计库当前期望版本：v1 = 三张表 + 全部历史补列 */
+export const AUDIT_SCHEMA_VERSION = 1;
 
-function migrateColumn(db: Database.Database, table: string, column: string, type: string): void {
-  const cols = selectColumnNames(db, table);
-  if (!cols.includes(column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-  }
-}
-
-function selectColumnNames(db: Database.Database, table: string): string[] {
-  return db.prepare<unknown[], { name: string }>(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+export function applyAuditSchema(db: MigrationDb): void {
+  migrateSchema(db, 'audit', [
+    {
+      version: AUDIT_SCHEMA_VERSION,
+      apply: (d) => {
+        d.exec(SCHEMA);
+        applyAddedColumns(d, ADDED_COLUMNS);
+      },
+    },
+  ]);
 }

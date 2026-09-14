@@ -2,11 +2,12 @@
  * mission-repo.ts — 任务知识库仓储
  *
  * 管理 capabilities / missions / subtasks / mission_artifacts 四张表。
- * FTS5 搜索仅用于能力卡。
- * JSON 列（toolsJson / visualAnchorsJson）在仓储边界序列化/反序列化。
+ * FTS5 搜索仅用于能力卡（trigram tokenizer，中文 3 字滑窗召回）。
+ * JSON 列（toolsJson / visualAnchorsJson / dependsOn）在仓储边界序列化/反序列化。
  */
 import type Database from 'better-sqlite3';
 import type { CapabilityRow, MissionRow, SubtaskRow, MissionArtifactRow } from './rows';
+import { parseJsonStringArray } from './query';
 import type {
   CapabilityCardPayload,
   CapabilityCreateRequest,
@@ -22,7 +23,7 @@ import type {
   SubtaskStatusUpdateRequest,
   ArtifactCreateRequest,
 } from '../../shared/schemas/mission';
-import type { CapabilityStatus, CapabilitySource, MissionOrigin, MissionPriority, MissionStatus, SubtaskStatus, ArtifactKind } from '@ximo-visagent/shared-types';
+import type { CapabilityStatus, CapabilitySource, MissionOrigin, MissionPriority, MissionStatus, SubtaskStatus, SubtaskRisk, ArtifactKind } from '@ximo-visagent/shared-types';
 
 // ---------------------------------------------------------------------------
 // 行 → Payload 转换
@@ -33,10 +34,10 @@ function capRowToPayload(row: CapabilityRow): CapabilityCardPayload {
     id: row.id,
     title: row.title,
     description: row.description,
-    tools: parseJsonArray(row.toolsJson),
+    tools: parseJsonStringArray(row.toolsJson),
     precondition: row.precondition,
     acceptance: row.acceptance,
-    visualAnchors: parseJsonArray(row.visualAnchorsJson),
+    visualAnchors: parseJsonStringArray(row.visualAnchorsJson),
     status: row.status as CapabilityStatus,
     source: row.source as CapabilitySource,
     usageCount: row.usageCount,
@@ -46,20 +47,21 @@ function capRowToPayload(row: CapabilityRow): CapabilityCardPayload {
   };
 }
 
-function missionRowToPayload(row: MissionRow): MissionRowPayload {
+export function missionRowToPayload(row: MissionRow): MissionRowPayload {
   return {
     id: row.id,
     goal: row.goal,
     origin: row.origin as MissionOrigin,
     priority: row.priority as MissionPriority,
     status: row.status as MissionStatus,
+    planJson: row.planJson,
     createdAt: row.createdAt,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
   };
 }
 
-function subtaskRowToPayload(row: SubtaskRow): SubtaskRowPayload {
+export function subtaskRowToPayload(row: SubtaskRow): SubtaskRowPayload {
   return {
     id: row.id,
     missionId: row.missionId,
@@ -68,6 +70,10 @@ function subtaskRowToPayload(row: SubtaskRow): SubtaskRowPayload {
     instruction: row.instruction,
     status: row.status as SubtaskStatus,
     order: row.order,
+    dependsOn: parseJsonStringArray(row.dependsOn),
+    risk: row.risk as SubtaskRisk | null,
+    attempts: row.attempts,
+    taskId: row.taskId,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
     reviewNote: row.reviewNote,
@@ -81,17 +87,32 @@ function artifactRowToPayload(row: MissionArtifactRow): MissionArtifactRowPayloa
     kind: row.kind as ArtifactKind,
     path: row.path,
     label: row.label,
+    contentHash: row.contentHash,
+    stale: row.stale !== 0,
     createdAt: row.createdAt,
   };
 }
 
-function parseJsonArray(json: string): string[] {
-  try {
-    const arr = JSON.parse(json);
-    return Array.isArray(arr) ? arr.map(String) : [];
-  } catch {
-    return [];
+/**
+ * trigram FTS5 查询构造（capability_fts 用 trigram tokenizer，中文按 3 字滑窗召回）：
+ * CJK 连续段拆为 3 字滑窗短语，拉丁/数字段做前缀匹配，OR 合并保召回；
+ * 短于 3 字的片段在 trigram 下无索引可命中，直接丢弃。
+ */
+function buildTrigramFtsQuery(raw: string): string | null {
+  const text = raw.replace(/["*]/g, ' ').trim();
+  if (!text) return null;
+  const phrases: string[] = [];
+  for (const run of text.match(/[一-鿿]+|[A-Za-z0-9_]+/g) ?? []) {
+    if (/^[一-鿿]/.test(run)) {
+      if (run.length < 3) continue;
+      for (let i = 0; i + 3 <= run.length && phrases.length < 16; i++) {
+        phrases.push(`"${run.slice(i, i + 3)}"`);
+      }
+    } else if (run.length >= 3) {
+      phrases.push(`"${run.toLowerCase()}"*`);
+    }
   }
+  return phrases.length > 0 ? phrases.join(' OR ') : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,8 +204,8 @@ export function createMissionRepo(db: Database.Database): MissionRepo {
   const missionList = db.prepare<unknown[], MissionRow>('SELECT * FROM missions ORDER BY createdAt DESC LIMIT 100');
   const missionGet = db.prepare<unknown[], MissionRow>('SELECT * FROM missions WHERE id = ?');
   const subtaskInsert = db.prepare(
-    `INSERT INTO subtasks (id, missionId, capabilityId, title, instruction, status, "order", startedAt, finishedAt, reviewNote)
-     VALUES (@id, @missionId, @capabilityId, @title, @instruction, @status, @order, NULL, NULL, '')`,
+    `INSERT INTO subtasks (id, missionId, capabilityId, title, instruction, status, "order", dependsOn, risk, attempts, taskId, startedAt, finishedAt, reviewNote)
+     VALUES (@id, @missionId, @capabilityId, @title, @instruction, @status, @order, '[]', NULL, 0, NULL, NULL, NULL, '')`,
   );
   const subtaskListByMission = db.prepare<unknown[], SubtaskRow>('SELECT * FROM subtasks WHERE missionId = ? ORDER BY "order" ASC');
   const subtaskUpdateStatus = db.prepare(
@@ -196,8 +217,8 @@ export function createMissionRepo(db: Database.Database): MissionRepo {
 
   // ---- 产物 prepared statements ----
   const artifactInsert = db.prepare(
-    `INSERT INTO mission_artifacts (id, subtaskId, kind, path, label, createdAt)
-     VALUES (@id, @subtaskId, @kind, @path, @label, @createdAt)`,
+    `INSERT INTO mission_artifacts (id, subtaskId, kind, path, label, contentHash, stale, createdAt)
+     VALUES (@id, @subtaskId, @kind, @path, @label, @contentHash, 0, @createdAt)`,
   );
   const artifactList = db.prepare<unknown[], MissionArtifactRow>('SELECT * FROM mission_artifacts WHERE subtaskId = ? ORDER BY createdAt ASC');
 
@@ -253,10 +274,10 @@ export function createMissionRepo(db: Database.Database): MissionRepo {
     const now = Date.now();
     const title = req.title ?? existing.title;
     const description = req.description ?? existing.description;
-    const tools = req.tools ?? parseJsonArray(existing.toolsJson);
+    const tools = req.tools ?? parseJsonStringArray(existing.toolsJson);
     const precondition = req.precondition ?? existing.precondition;
     const acceptance = req.acceptance ?? existing.acceptance;
-    const visualAnchors = req.visualAnchors ?? parseJsonArray(existing.visualAnchorsJson);
+    const visualAnchors = req.visualAnchors ?? parseJsonStringArray(existing.visualAnchorsJson);
     const status = req.status ?? (existing.status as CapabilityStatus);
 
     if (req.title || req.description || req.precondition || req.acceptance) {
@@ -288,16 +309,14 @@ export function createMissionRepo(db: Database.Database): MissionRepo {
   }
 
   function searchCapabilitiesFTS(query: string): CapabilityCardPayload[] {
-    const sanitized = query.replace(/["*]/g, ' ').trim();
-    if (!sanitized) return [];
-    const ftsQuery = sanitized.split(/\s+/).map((w) => `"${w}"*`).join(' ');
+    const ftsQuery = buildTrigramFtsQuery(query);
+    if (!ftsQuery) return [];
     return capFtsSearch.all(ftsQuery).map(capRowToPayload);
   }
 
   function matchCapabilities(missionGoal: string): CapabilityMatchResultPayload {
-    const sanitized = missionGoal.replace(/["*]/g, ' ').trim();
-    if (!sanitized) return { items: [] };
-    const ftsQuery = sanitized.split(/\s+/).map((w) => `"${w}"*`).join(' ');
+    const ftsQuery = buildTrigramFtsQuery(missionGoal);
+    if (!ftsQuery) return { items: [] };
     const rows = capMatchSearch.all(ftsQuery);
     return {
       items: rows.map((r) => ({
@@ -380,6 +399,7 @@ export function createMissionRepo(db: Database.Database): MissionRepo {
       kind: req.kind,
       path: req.path,
       label: req.label,
+      contentHash: req.contentHash ?? null,
       createdAt: Date.now(),
     });
     return { id };

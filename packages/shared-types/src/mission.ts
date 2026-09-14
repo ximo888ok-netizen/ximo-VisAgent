@@ -19,12 +19,17 @@ export type SubtaskStatus =
 /** 子任务产物类型 */
 export type ArtifactKind = 'file' | 'screenshot' | 'data' | 'text';
 
+/** 子任务风险预估（规划侧标注，执行侧以 SafetyClassifier 为准） */
+export type SubtaskRisk = 'L0' | 'L1' | 'L2' | 'L3';
+
 /** 任务整体状态 */
 export type MissionStatus =
   | 'draft'          // 任务编辑中，尚未入队
+  | 'planning'       // 规划中（能力匹配/子任务分解进行）
   | 'queued'         // 已入队等待执行
+  | 'awaiting_confirm' // 计划已入库，等待人工确认（确认闸，不可跳过）
   | 'running'        // 正在执行（有子任务在 running）
-  | 'paused'         // 用户暂停
+  | 'paused'         // 用户暂停 / 子任务失败等待人工决定
   | 'completed'      // 全部子任务 done
   | 'failed'         // 有子任务 failed 且无法继续
   | 'cancelled';     // 用户取消
@@ -36,6 +41,8 @@ export interface MissionArtifact {
   kind: ArtifactKind;
   path: string;               // 文件路径或标识
   label: string;              // 人类可读标签
+  contentHash?: string | null; // file 类产物的内容指纹（下游消费前复核）
+  stale?: boolean;            // hash 不匹配（文件被外部改动）时标 stale
   createdAt: number;
 }
 
@@ -48,6 +55,10 @@ export interface Subtask {
   instruction: string;         // 给 Agent 的自然语言指令
   status: SubtaskStatus;
   order: number;               // 执行序号
+  dependsOn?: string[];        // DAG 依赖（兄弟子任务 id）
+  risk?: SubtaskRisk | null;   // 规划侧风险预估
+  attempts?: number;           // 已派发次数（人工重试计数）
+  taskId?: string | null;      // 最近一次派发的审计库任务 id
   startedAt: number | null;
   finishedAt: number | null;
   reviewNote: string;          // 审核备注
@@ -62,6 +73,7 @@ export interface Mission {
   origin: MissionOrigin;
   priority: MissionPriority;
   status: MissionStatus;
+  planJson?: string | null;    // 规划产物快照（zod 校验后入库）
   createdAt: number;
   startedAt: number | null;
   finishedAt: number | null;

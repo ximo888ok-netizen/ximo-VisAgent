@@ -26,6 +26,9 @@ export type MissionPanelApi = Pick<
   | "missionCreate"
   | "missionList"
   | "missionGet"
+  | "missionPlan"
+  | "missionConfirm"
+  | "missionResolve"
   | "subtaskUpdateStatus"
   | "artifactCreate"
 >;
@@ -58,6 +61,15 @@ export function registerMissionApi(safeInvoke: SafeInvoke): MissionPanelApi {
         mission: MissionRowPayload;
         subtasks: Array<SubtaskRowPayload & { artifacts?: MissionArtifactRowPayload[] }>;
       }>(ISLAND_CHANNELS.missionGet, id);
+    },
+    async missionPlan(req) {
+      return safeInvoke<{ status: string }>(ISLAND_CHANNELS.missionPlan, req);
+    },
+    async missionConfirm(req) {
+      return safeInvoke<{ started: boolean }>(ISLAND_CHANNELS.missionConfirm, req);
+    },
+    async missionResolve(req) {
+      return safeInvoke<{ resolved: boolean }>(ISLAND_CHANNELS.missionResolve, req);
     },
     async subtaskUpdateStatus(req) {
       return safeInvoke<Record<string, never>>(ISLAND_CHANNELS.subtaskUpdateStatus, req);

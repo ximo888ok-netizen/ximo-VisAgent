@@ -273,6 +273,15 @@ export class Orchestrator {
     return a?.toolCall.args ?? {};
   }
 
+  /** 按 id 前缀查待人工审批（微信入站承接用）：只读候选集，路由/回写在调用方 */
+  findPendingApprovals(idPrefix: string): { id: string; timedOut: boolean }[] {
+    const p = idPrefix.toLowerCase();
+    return this.approvals
+      .listPending()
+      .filter((a) => a.id.toLowerCase().startsWith(p))
+      .map((a) => ({ id: a.id, timedOut: a.status === 'TIMEOUT' }));
+  }
+
   editAndApprove(id: string, newArgs: Record<string, unknown>): void {
     auraApprovalResolved(id);
     decideApproval(this.approvals, this.audit, id, { action: 'edit', newArgs });

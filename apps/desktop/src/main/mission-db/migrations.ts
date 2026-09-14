@@ -3,15 +3,29 @@
  *
  * 5 张表 + 1 个 FTS5 虚拟表：
  *   capabilities        能力卡（技能表示）
- *   missions            任务（用户目标）
- *   subtasks            子任务（任务分解）
- *   mission_artifacts   子任务产物
- *   capability_fts      能力卡全文索引（FTS5）
+ *   missions            任务（用户目标，planJson 存规划产物）
+ *   subtasks            子任务（任务分解，dependsOn 为 DAG 边）
+ *   mission_artifacts   子任务产物（contentHash 供下游消费前复核）
+ *   capability_fts      能力卡全文索引（FTS5，trigram tokenizer 保中文召回）
  *
  * 所有 DDL 幂等：CREATE TABLE IF NOT EXISTS、ALTER TABLE ADD COLUMN 前先检查。
- * 历史列只 ADD 不改不删——与 audit-db/migrations.ts 同一纪律。
+ * 历史列只 ADD 不改不删——与 audit-db/migrations.ts 同一纪律；
+ * 版本戳与补列机制统一在 ../db-migrations.ts（共库、可探测漂移）。
+ * 版本线：v1 基础五表；v2 编排列（dependsOn/risk/attempts/taskId/planJson/
+ * contentHash/stale）+ capability_fts 重建为 trigram（保留既有数据回填）。
  */
-import type Database from 'better-sqlite3';
+import type { AddedColumn, MigrationDb } from '../db-migrations';
+import { applyAddedColumns, migrateSchema } from '../db-migrations';
+
+/** trigram 全文索引 DDL（建表与旧库重建共用同一字符串源） */
+const FTS_TRIGRAM_DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS capability_fts USING fts5(
+    capabilityId UNINDEXED,
+    title,
+    description,
+    precondition,
+    acceptance,
+    tokenize='trigram'
+  )`;
 
 const SCHEMA = `
   -- 能力卡
@@ -40,6 +54,7 @@ const SCHEMA = `
     origin TEXT NOT NULL DEFAULT 'manual',
     priority TEXT NOT NULL DEFAULT 'normal',
     status TEXT NOT NULL DEFAULT 'draft',
+    planJson TEXT,
     createdAt INTEGER NOT NULL,
     startedAt INTEGER,
     finishedAt INTEGER
@@ -56,6 +71,10 @@ const SCHEMA = `
     instruction TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending',
     "order" INTEGER NOT NULL DEFAULT 0,
+    dependsOn TEXT NOT NULL DEFAULT '[]',
+    risk TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    taskId TEXT,
     startedAt INTEGER,
     finishedAt INTEGER,
     reviewNote TEXT NOT NULL DEFAULT '',
@@ -71,40 +90,55 @@ const SCHEMA = `
     kind TEXT NOT NULL DEFAULT 'file',
     path TEXT NOT NULL,
     label TEXT NOT NULL DEFAULT '',
+    contentHash TEXT,
+    stale INTEGER NOT NULL DEFAULT 0,
     createdAt INTEGER NOT NULL,
     FOREIGN KEY (subtaskId) REFERENCES subtasks(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_artifact_subtask ON mission_artifacts(subtaskId);
 
-  -- 能力卡全文索引（FTS5）
-  CREATE VIRTUAL TABLE IF NOT EXISTS capability_fts USING fts5(
-    capabilityId UNINDEXED,
-    title,
-    description,
-    precondition,
-    acceptance
-  );
+  -- 能力卡全文索引（FTS5，trigram：中文子串可召回，见 mission 计划 §3.3）
+  ${FTS_TRIGRAM_DDL}
 `;
 
 /** 旧库迁移：补列（幂等） */
-const ADDED_COLUMNS: Array<[table: string, column: string, type: string]> = [
-  // 未来版本如果有加列，在这里追加
+const ADDED_COLUMNS: AddedColumn[] = [
+  ['missions', 'planJson', 'TEXT'],
+  ['subtasks', 'dependsOn', "TEXT NOT NULL DEFAULT '[]'"],
+  ['subtasks', 'risk', 'TEXT'],
+  ['subtasks', 'attempts', 'INTEGER NOT NULL DEFAULT 0'],
+  ['subtasks', 'taskId', 'TEXT'],
+  ['mission_artifacts', 'contentHash', 'TEXT'],
+  ['mission_artifacts', 'stale', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
-export function applyMissionSchema(db: Database.Database): void {
-  db.exec(SCHEMA);
-  for (const [table, column, type] of ADDED_COLUMNS) migrateColumn(db, table, column, type);
-  // 确保外键级联生效
+export function applyMissionSchema(db: MigrationDb): void {
+  migrateSchema(db, 'mission', [
+    { version: 1, apply: (d) => d.exec(SCHEMA) },
+    {
+      version: 2,
+      apply: (d) => {
+        applyAddedColumns(d, ADDED_COLUMNS);
+        ensureTrigramFts(d);
+      },
+    },
+  ]);
+  // 连接级 PRAGMA，与版本戳无关，每次启动都设
   db.exec('PRAGMA foreign_keys = ON');
 }
 
-function migrateColumn(db: Database.Database, table: string, column: string, type: string): void {
-  const cols = selectColumnNames(db, table);
-  if (!cols.includes(column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-  }
-}
-
-function selectColumnNames(db: Database.Database, table: string): string[] {
-  return db.prepare<unknown[], { name: string }>(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+/**
+ * capability_fts 收敛为 trigram tokenizer：
+ * 旧库以默认 tokenizer 建过表的，DROP → 按新 DDL 重建 → 从 capabilities 回填。
+ * 新库 SCHEMA 已直接建 trigram 表，这里探测后不动（幂等）。
+ */
+function ensureTrigramFts(db: MigrationDb): void {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'capability_fts'")
+    .get() as { sql: string | null } | undefined;
+  if (!row || /trigram/i.test(row.sql ?? '')) return;
+  db.exec('DROP TABLE capability_fts');
+  db.exec(FTS_TRIGRAM_DDL);
+  db.exec(`INSERT INTO capability_fts (capabilityId, title, description, precondition, acceptance)
+            SELECT id, title, description, precondition, acceptance FROM capabilities`);
 }

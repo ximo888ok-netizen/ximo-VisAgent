@@ -11,6 +11,7 @@ import type {
   MissionPriority,
   MissionStatus,
   SubtaskStatus,
+  SubtaskRisk,
   ArtifactKind,
 } from '@ximo-visagent/shared-types';
 
@@ -38,6 +39,7 @@ export interface MissionRow {
   origin: MissionOrigin;
   priority: MissionPriority;
   status: MissionStatus;
+  planJson: string | null;
   createdAt: number;
   startedAt: number | null;
   finishedAt: number | null;
@@ -52,6 +54,10 @@ export interface SubtaskRow {
   instruction: string;
   status: SubtaskStatus;
   order: number;
+  dependsOn: string;   // string[] 序列化（DAG 边）
+  risk: SubtaskRisk | null;
+  attempts: number;
+  taskId: string | null;
   startedAt: number | null;
   finishedAt: number | null;
   reviewNote: string;
@@ -64,5 +70,7 @@ export interface MissionArtifactRow {
   kind: ArtifactKind;
   path: string;
   label: string;
+  contentHash: string | null;
+  stale: number; // 0 | 1（INTEGER 列；payload 边界转 boolean）
   createdAt: number;
 }

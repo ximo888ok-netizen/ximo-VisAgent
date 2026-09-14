@@ -26,6 +26,9 @@ import { getIslandWindow } from './windows/island';
 import { applyMissionSchema } from './mission-db/migrations';
 import { seedCapabilities } from './mission-db/seed-capabilities';
 import { createMissionRepo } from './mission-db/mission-repo';
+import { createMissionRunRepo } from './mission-db/run-repo';
+import { createMissionRunner } from './mission-runner';
+import { logInfo, notifyTaskFinished } from './orchestrator-notify';
 import { EmployeeStore } from './stores/employee-store';
 import { WeChatBot } from './wechat-bot';
 import { installProcessGuards } from './process-guards';
@@ -72,6 +75,7 @@ experienceStore.seedInitialPromptVersion();
 applyMissionSchema(auditDb.exposeDb());
 seedCapabilities(auditDb.exposeDb());
 const missionRepo = createMissionRepo(auditDb.exposeDb());
+const missionRunRepo = createMissionRunRepo(auditDb.exposeDb());
 const employeeStore = new EmployeeStore(auditDb.exposeDb());
 const configStore = appConfigStore(path.join(userData(), 'config.json'));
 const memoryStore = new MemoryStore(path.join(userData(), 'memory.json'));
@@ -81,6 +85,23 @@ const orchestrator = new Orchestrator(configStore, auditDb, {
   conversation: conversationStore,
   experience: experienceStore,
   employee: employeeStore,
+});
+
+// Mission 编排器：确认闸后按拓扑序复用 orchestrator.startTask 派发链（排队/审批语义不变），
+// 以审计库任务终态回写子任务；失败停等人工（重试/跳过/终止），不自动重试。
+const missionRunner = createMissionRunner({
+  repo: missionRunRepo,
+  dispatchSubtask: async (subtask) => {
+    const goal = subtask.instruction.trim() || subtask.title;
+    const res = await orchestrator.startTask(goal, undefined, { interactive: true });
+    return { taskId: res.taskId };
+  },
+  getTaskOutcome: (taskId) => orchestrator.getTaskStatus(taskId),
+  // Mission 级出站：岛事件流 + 系统通知（微信出站已随子任务的任务终态覆盖）
+  notify: ({ mission, status, text }) => {
+    logInfo(text);
+    notifyTaskFinished(`Mission：${mission.goal}`, status === 'completed' ? 'COMPLETED' : 'FAILED');
+  },
 });
 
 const wechatCfg = configStore.get().wechatBot ?? defaultWeChatConfig();
@@ -150,6 +171,7 @@ app.whenReady().then(async () => {
   await bootstrap({
     orchestrator, auditDb, experienceStore, configStore,
     memoryStore, conversationStore, scheduler, employeeStore, missionRepo,
+    missionRunRepo, missionRunner,
     wechatBot, wechatCfg, uiaClient, isE2E, isSelfTest,
   });
 });

@@ -15,13 +15,18 @@ export const MissionOriginSchema = z.enum(['manual', 'scheduled', 'sop', 'api'])
 /** 任务状态 */
 export const MissionStatusSchema = z.enum([
   'draft',
+  'planning',
   'queued',
+  'awaiting_confirm',
   'running',
   'paused',
   'completed',
   'failed',
   'cancelled',
 ]);
+
+/** 子任务风险预估（规划侧标注，执行侧以 SafetyClassifier 为准） */
+export const SubtaskRiskSchema = z.enum(['L0', 'L1', 'L2', 'L3']);
 
 /** 子任务状态 */
 export const SubtaskStatusSchema = z.enum([
@@ -33,6 +38,9 @@ export const SubtaskStatusSchema = z.enum([
   'skipped',
 ]);
 
+/** 人工对暂停 Mission 的处置决定（失败不自动重试，只由人裁决） */
+export const MissionResolveDecisionSchema = z.enum(['retry', 'skip', 'abort']);
+
 /** 子任务产物类型 */
 export const ArtifactKindSchema = z.enum(['file', 'screenshot', 'data', 'text']);
 
@@ -43,6 +51,8 @@ export const MissionArtifactRowSchema = z.object({
   kind: ArtifactKindSchema,
   path: z.string(),
   label: z.string(),
+  contentHash: z.string().nullable(),
+  stale: z.boolean(),
   createdAt: z.number().int(),
 });
 
@@ -55,6 +65,10 @@ export const SubtaskRowSchema = z.object({
   instruction: z.string(),
   status: SubtaskStatusSchema,
   order: z.number().int(),
+  dependsOn: z.array(z.string()),
+  risk: SubtaskRiskSchema.nullable(),
+  attempts: z.number().int(),
+  taskId: z.string().nullable(),
   startedAt: z.number().int().nullable(),
   finishedAt: z.number().int().nullable(),
   reviewNote: z.string(),
@@ -67,6 +81,7 @@ export const MissionRowSchema = z.object({
   origin: MissionOriginSchema,
   priority: MissionPrioritySchema,
   status: MissionStatusSchema,
+  planJson: z.string().nullable(),
   createdAt: z.number().int(),
   startedAt: z.number().int().nullable(),
   finishedAt: z.number().int().nullable(),
@@ -97,6 +112,7 @@ export const ArtifactCreateSchema = z.object({
   kind: ArtifactKindSchema,
   path: z.string().min(1).max(500),
   label: z.string().max(200).default(''),
+  contentHash: z.string().max(128).optional(),
 });
 
 /** 能力匹配请求：给定任务目标，返回候选能力卡 */
@@ -113,6 +129,34 @@ export const CapabilityMatchResultSchema = z.object({
   })),
 });
 
+/** 规划产物结构（planJson 入库前的 zod 校验；执行以 subtasks 表为准，plan 是归档快照） */
+export const MissionPlanSchema = z.object({
+  subtasks: z.array(z.object({
+    id: z.string().min(1).max(64),
+    goal: z.string().min(1).max(200),
+    capabilityId: z.string().max(120).nullable().default(null),
+    dependsOn: z.array(z.string()).default([]),
+    risk: SubtaskRiskSchema.optional(),
+  })).min(1).max(8),
+});
+
+/** 保存规划产物请求：入库 planJson 并进入 awaiting_confirm（计划确认闸，§4.3） */
+export const MissionPlanSaveSchema = z.object({
+  missionId: z.string().min(1),
+  planJson: z.string().min(2).max(20_000),
+});
+
+/** 人工确认计划请求：awaiting_confirm → running（确认前绝不派发） */
+export const MissionConfirmSchema = z.object({
+  missionId: z.string().min(1),
+});
+
+/** 暂停 Mission 的人工处置请求（子任务失败后 重试/跳过/终止） */
+export const MissionResolveSchema = z.object({
+  missionId: z.string().min(1),
+  decision: MissionResolveDecisionSchema,
+});
+
 export type MissionRowPayload = z.infer<typeof MissionRowSchema>;
 export type SubtaskRowPayload = z.infer<typeof SubtaskRowSchema>;
 export type MissionArtifactRowPayload = z.infer<typeof MissionArtifactRowSchema>;
@@ -121,3 +165,9 @@ export type SubtaskStatusUpdateRequest = z.infer<typeof SubtaskStatusUpdateSchem
 export type ArtifactCreateRequest = z.infer<typeof ArtifactCreateSchema>;
 export type CapabilityMatchRequest = z.infer<typeof CapabilityMatchSchema>;
 export type CapabilityMatchResultPayload = z.infer<typeof CapabilityMatchResultSchema>;
+export type SubtaskRisk = z.infer<typeof SubtaskRiskSchema>;
+export type MissionPlanPayload = z.infer<typeof MissionPlanSchema>;
+export type MissionPlanSaveRequest = z.infer<typeof MissionPlanSaveSchema>;
+export type MissionConfirmRequest = z.infer<typeof MissionConfirmSchema>;
+export type MissionResolveRequest = z.infer<typeof MissionResolveSchema>;
+export type MissionResolveDecision = z.infer<typeof MissionResolveDecisionSchema>;
