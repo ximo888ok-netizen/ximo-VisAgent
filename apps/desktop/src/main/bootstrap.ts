@@ -17,6 +17,7 @@ import type { ConversationStore } from './conversation-store';
 import type { Scheduler } from './scheduler';
 import type { EmployeeStore } from './stores/employee-store';
 import type { WeChatBot } from './wechat-bot';
+import type { WeChatBotConfig } from '@ximo-visagent/shared-types';
 import type { MissionRepo } from './mission-db/mission-repo';
 
 import { screen } from 'electron';
@@ -34,6 +35,9 @@ import { scheduleStartupDiagnostics } from './diagnostics';
 import { scheduleE2ERun } from './e2e-runner';
 import { registerWeChatHandlers } from './ipc/wechat-handlers';
 import { setWeChatNotifier } from './orchestrator-notify';
+import { autoResumeInterrupted } from './orchestrator-autoresume';
+import { publishStep } from './windows/island';
+import { createStepEvent } from '../shared/island-contracts';
 
 export interface BootstrapDeps {
   orchestrator: Orchestrator;
@@ -46,7 +50,7 @@ export interface BootstrapDeps {
   employeeStore: EmployeeStore;
   missionRepo: MissionRepo;
   wechatBot: WeChatBot;
-  wechatCfg: { enabled: boolean; allowedWxids: string[]; commandPrefix: string; notifyOnFinish: boolean; notifyOnApproval: boolean };
+  wechatCfg: WeChatBotConfig;
   uiaClient: { start: () => Promise<void>; stop: () => void };
   isE2E: boolean;
   isSelfTest: boolean;
@@ -149,7 +153,24 @@ export async function bootstrap(deps: BootstrapDeps): Promise<void> {
   setWeChatNotifier(wechatBot, {
     notifyOnFinish: wechatCfg.notifyOnFinish,
     notifyOnApproval: wechatCfg.notifyOnApproval,
+    // 老配置（load 对 wechatBot 不做深合并）可能没有该字段，回退空串 = 用最近联系人
+    notifyContact: wechatCfg.notifyContact ?? '',
   });
+
+  // 条目3.B：重启后自动恢复最近的未完成任务（e2e/selftest 下不恢复，避免污染基准）
+  if (!isE2E && !isSelfTest) {
+    const resume = autoResumeInterrupted({
+      audit: auditDb,
+      orchestrator,
+      enabled: configStore.get().agent.autoResumeInterrupted !== false,
+    });
+    if (resume.resumed) {
+      console.log(`[main] 已自动恢复上次未完成任务: ${resume.goal?.slice(0, 60)}`);
+      publishStep(createStepEvent('thinking', `已自动恢复上次未完成任务: ${resume.goal?.slice(0, 40)}`));
+    } else if (resume.error) {
+      console.warn('[main] 自动恢复扫描失败:', resume.error);
+    }
+  }
 
   if (isE2E) {
     scheduleE2ERun(orchestrator, auditDb);

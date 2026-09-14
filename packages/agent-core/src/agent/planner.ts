@@ -5,6 +5,16 @@ export interface PlannerResult {
   tasks: string[];
 }
 
+/** 条目4 启发式开关：命中任一判据才值得花一次规划调用；纯对话/单动作任务规划是纯浪费 */
+export function shouldPlan(goal: string): boolean {
+  const g = goal.trim();
+  if (g.length >= 20) return true;
+  if (/[然后再之后接着并且以及，]/.test(g)) return true;
+  const verbs = ['打开', '输入', '点击', '复制', '粘贴', '保存', '发送', '汇总', '计算', '导出'];
+  const hits = verbs.filter((v) => g.includes(v)).length;
+  return hits >= 2;
+}
+
 const PLANNER_PROMPT = `你是任务规划器。像一个人坐到电脑前准备完成任务一样，将用户目标分解为最少的关键操作步骤。
 
 规则：

@@ -16,6 +16,8 @@ export interface GroundingMatch {
   h: number;
   /** 原始返回框（可观测性：归一化/绝对像素判错时一眼可见） */
   rawBox: number[];
+  /** 多视图投票的中心散布（px）：散布越大模型定位越不稳定，调用方可据此放大复核范围（zoom 精修） */
+  spread?: number;
 }
 
 export type GroundingLookup = (screenshot: Buffer, query: string) => Promise<GroundingMatch[] | null>;
@@ -25,8 +27,13 @@ const GROUNDING_SYSTEM = `你是屏幕元素定位器。用户给出目标描述
 框必须紧贴目标的可见边缘：x1/y1 是目标最左/最上像素，x2/y2 是最右/最下像素，四个坐标必须精确到像素，不留空白边距。
 找不到时只输出 {"found": false}。不要输出任何其他内容。`;
 
+/** 解析结果三分态：found=false 是合法答案（不该触发重试）；null = 输出不可解析（可修复重试） */
+export type ParsedGrounding =
+  | { found: false }
+  | { found: true; box: [number, number, number, number]; space: 'norm' | 'abs' };
+
 /** 解析 grounding 返回：提取 JSON（本格式或 Qwen 原生 bbox_2d）；任何分量 >1000 判为绝对像素，否则按 0-1000 千分比 */
-export function parseGroundingBox(content: string | null | undefined): { box: [number, number, number, number]; space: 'norm' | 'abs' } | null {
+export function parseGroundingBox(content: string | null | undefined): ParsedGrounding | null {
   const text = (content ?? '').trim();
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return null;
@@ -38,11 +45,34 @@ export function parseGroundingBox(content: string | null | undefined): { box: [n
       : Array.isArray(obj.bbox_2d)
         ? obj.bbox_2d
         : null;
-    if (obj.found === false || !Array.isArray(rawBox) || rawBox.length < 4) return null;
+    if (obj.found === false) return { found: false };
+    if (!Array.isArray(rawBox) || rawBox.length < 4) return null;
     const raw = rawBox.slice(0, 4).map((v) => Number(v));
     if (!raw.every((v) => Number.isFinite(v) && v >= 0)) return null;
     const box: [number, number, number, number] = [raw[0]!, raw[1]!, raw[2]!, raw[3]!];
-    return { box, space: box.some((v) => v > 1000) ? 'abs' : 'norm' };
+    return { found: true, box, space: box.some((v) => v > 1000) ? 'abs' : 'norm' };
+  } catch {
+    return null;
+  }
+}
+
+/** 一次格式修复重试：输出不可解析时带上原始输出要求纠正（只有格式坏才值得多花一次调用；仍坏由调用方降级） */
+async function repairGroundingFormat(
+  client: ILLMClient,
+  parts: ContentPart[],
+  badOutput: string,
+): Promise<ParsedGrounding | null> {
+  try {
+    const res = await client.chat(
+      [
+        { role: 'system', content: GROUNDING_SYSTEM },
+        { role: 'user', content: parts },
+        { role: 'assistant', content: badOutput.slice(0, 2000) },
+        { role: 'user', content: '你上面的输出无法解析为要求的 JSON。重新输出：{"found": true, "box": [[x1,y1,x2,y2]]}（千分比 0-1000）或 {"found": false}。只输出 JSON，不要任何其他文字。' },
+      ],
+      [],
+    );
+    return parseGroundingBox(res.content);
   } catch {
     return null;
   }
@@ -102,7 +132,7 @@ async function groundingWithVote(
     client.chat([sysMsg, { role: 'user', content: buildParts() }], []).then((r) => parseGroundingBox(r.content)).catch(() => null),
   );
   const results = await Promise.all(promises);
-  const valid = results.filter((r): r is { box: [number, number, number, number]; space: 'norm' | 'abs' } => r !== null);
+  const valid = results.filter((r): r is { found: true; box: [number, number, number, number]; space: 'norm' | 'abs' } => r !== null && r.found === true);
   if (valid.length === 0) return null;
   const matches = valid.map((r) => boxToMatch(query, r.box, r.space, dims));
   const centers = matches.map(centerOf);
@@ -122,6 +152,8 @@ async function groundingWithVote(
     w: Math.max(1, Math.round(minW)),
     h: Math.max(1, Math.round(minH)),
     rawBox: matches[0]!.rawBox,
+    // 散布暴露给调用方：zoom 精修据此扩大复核范围（散布大时中位数本身可能偏出目标）
+    spread: Math.round(spread),
   };
   console.log(`[grounding] 投票 ${valid.length}/${VOTE_ROUNDS} 有效，中心中位数 (${Math.round(cxMed)},${Math.round(cyMed)})，散布 ${Math.round(spread)}px${unstable ? '（超阈值，取中位数）' : ''} → 框 ${voted.w}x${voted.h}`);
   return [voted];
@@ -141,8 +173,12 @@ export function createGroundingLookup(client: ILLMClient): GroundingLookup {
         { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${screenshot.toString('base64')}`, detail } },
       ];
       const res = await client.chat([{ role: 'system', content: GROUNDING_SYSTEM }, { role: 'user', content: parts }], []);
-      const parsed = parseGroundingBox(res.content);
-      if (!parsed) return null;
+      let parsed = parseGroundingBox(res.content);
+      if (parsed === null) {
+        // 输出不可解析 → 一次格式修复（found=false 是合法答案，不进这里）
+        parsed = await repairGroundingFormat(client, parts, res.content ?? '');
+      }
+      if (!parsed || parsed.found === false) return null;
       const match = boxToMatch(q, parsed.box, parsed.space, dims);
       console.log(`[grounding] "${q}" raw=${JSON.stringify(parsed.box)} space=${parsed.space} → center (${match.x + Math.round(match.w / 2)},${match.y + Math.round(match.h / 2)}) size ${match.w}x${match.h}`);
       // 方向2：小目标触发多视图投票，收敛坐标误差

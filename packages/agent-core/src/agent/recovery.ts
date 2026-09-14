@@ -18,6 +18,8 @@ export interface RecoveryHit {
   action?: string;
   args?: Record<string, unknown>;
   reason: string;
+  /** 命中的规则 id（宿主用于成功/失败记账闭环；可选，向后兼容） */
+  ruleId?: string;
 }
 
 import { SafetyClassifier } from '@ximo-visagent/safety';
@@ -39,4 +41,48 @@ export function resolveAutoRecovery(
     const classified = classifier.classify(candidate, appName, snap.domain);
     return classified.level <= 1 ? candidate : null;
   }
+
+/** 一次执行结果的记账输入（loop 每步执行后调用） */
+export interface RecoveryExecution {
+  stepIndex: number;
+  tool: string;
+  ok: boolean;
+  /** ok=false 时的错误摘要（宿主据此匹配 detect 规则） */
+  error?: string;
+  windowTitle?: string;
+}
+
+export interface RecoveryAdvisor {
+  /**
+   * 每步执行后调用：先结算上一次命中规则的成败（成功/失败计数回写），
+   * 再为本次失败匹配历史经验。返回命中（无匹配、非 hint、或该规则本任务已提示过则 null）。
+   */
+  afterExecution(exec: RecoveryExecution): RecoveryHit | null;
+}
+
+/**
+ * 恢复顾问：把"去重 + 待记账规则"两处状态收在一处，loop 侧只留一次调用。
+ * 只产出 hint——auto 动作替换缺现场校验（屏幕是否仍适用），不在此实现。
+ */
+export function createRecoveryAdvisor(deps: {
+  matcher?: (ctx: RecoveryContext) => RecoveryHit | null;
+  onResult?: (ruleId: string, success: boolean) => void;
+}): RecoveryAdvisor {
+  const nudged = new Set<string>();
+  let pendingRuleId: string | null = null;
+  return {
+    afterExecution(exec: RecoveryExecution): RecoveryHit | null {
+      if (pendingRuleId) {
+        deps.onResult?.(pendingRuleId, exec.ok);
+        pendingRuleId = null;
+      }
+      if (exec.ok) return null;
+      const hit = deps.matcher?.({ stepIndex: exec.stepIndex, lastTool: exec.tool, lastResult: exec.error, lastOk: false, windowTitle: exec.windowTitle }) ?? null;
+      if (hit?.mode !== 'hint') return null;
+      if (hit.ruleId && nudged.has(hit.ruleId)) return null;
+      if (hit.ruleId) { nudged.add(hit.ruleId); pendingRuleId = hit.ruleId; }
+      return hit;
+    },
+  };
+}
 

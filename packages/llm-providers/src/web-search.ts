@@ -34,6 +34,11 @@ function pickSearchStrategy(model: string): string | undefined {
   return 'turbo';
 }
 
+/** 条目2：provider 是否支持联网搜索（与 WebSearchClient.search 的 provider 判断同口径，单一事实来源） */
+export function supportsWebSearch(provider: string): boolean {
+  return provider === 'qwen';
+}
+
 /**
  * Qwen 联网搜索客户端。
  *

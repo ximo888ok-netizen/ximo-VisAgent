@@ -72,6 +72,23 @@ export function collectCandidates(root: UiNode | undefined, limit = 120): UiMatc
   return flattenTree(root, limit, true);
 }
 
+/** SoM 候选限定前台窗口：候选来自全桌面 UIA 树，后台窗口元素画到截图上不可见，
+ *  模型按编号选择时会选中屏幕上不存在的元素（实测连续 5 次选中同一后台窗口元素，点击全部落空）。
+ *  前台窗口无候选时回退全量（宁可多候选，不可零候选）。 */
+export function filterForegroundCandidates(all: UiMatch[], fgTitle: string | null): UiMatch[] {
+  if (!fgTitle) return all;
+  const b = fgTitle.trim().toLowerCase();
+  if (!b) return all;
+  const fg = all.filter((m) => sameWindow(m.window, b));
+  return fg.length > 0 ? fg : all;
+}
+
+/** 窗口归属判定：UIA 顶层窗口名与 Win32 前台标题可能存在前后缀差异，双向包含判定 */
+function sameWindow(win: string, fgLower: string): boolean {
+  const a = win.trim().toLowerCase();
+  return a !== '' && (a === fgLower || a.includes(fgLower) || fgLower.includes(a));
+}
+
 /** 放大图定位框映射回截图坐标（origin/zoom 来自 host.captureZoom：截图坐标 = origin + 放大图像素 / zoom） */
 export function zoomedBoxToScreen(
   box: { x: number; y: number; w: number; h: number },

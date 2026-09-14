@@ -43,6 +43,7 @@ fs.writeFileSync(planFile, JSON.stringify({
     goal: t.goal,
     expectStatus: t.expectStatus ?? 'COMPLETED',
     mustHitTools: t.mustHitTools ?? [],
+    assertions: t.assertions,
     timeoutMs: t.timeoutMs,
   })),
 }), 'utf8');

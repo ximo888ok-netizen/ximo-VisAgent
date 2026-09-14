@@ -40,13 +40,31 @@ export class ContextManager {
     return this.steps.length >= COMPRESS_THRESHOLD;
   }
 
-  /** 触发压缩：窗口外旧步骤摘要化 */
+  /** 触发压缩：窗口外旧步骤摘要化。
+   *  L5 锚点保护：写文件/改状态的成功动作与审批决策点不参与摘要、原样保留——
+   *  压缩丢掉"已写过什么"会导致长任务重做（重复写文件）或重试已拒绝的方案。 */
   async compressNow(): Promise<void> {
     if (this.steps.length <= WINDOW) return;
     const compressible = this.steps.slice(0, this.steps.length - WINDOW);
     const keep = this.steps.slice(this.steps.length - WINDOW);
-    const summary = await this.compress(compressible);
-    this.summaryBlocks.push(summary);
+    // 锚点：成功的关键状态动作 + 审批拒绝记录（thought 含"被审批拒绝"）
+    const isAnchor = (s: StepRecord): boolean => {
+      if (s.thought.includes('被审批拒绝')) return true;
+      if (!s.actionName) return false;
+      return (
+        s.resultSummary.includes('已写入') ||
+        s.resultSummary.startsWith('写入 ') ||
+        /^(file_write|excel_write_cell|set_clipboard|wechat_send)/.test(s.actionName)
+      ) && s.resultSummary !== `失败`;
+    };
+    const anchors = compressible.filter(isAnchor);
+    const toCompress = compressible.filter((s) => !isAnchor(s));
+    if (toCompress.length > 0) {
+      const summary = await this.compress(toCompress);
+      this.summaryBlocks.push(anchors.length > 0 ? `${summary}\n[锚点·已完成不可重做] ${anchors.map((a) => `${a.actionName}(${briefArgs(a.actionArgs ?? {})}): ${(a.resultSummary || '(成功)').slice(0, 50)}`).join('; ')}` : summary);
+    } else if (anchors.length > 0) {
+      this.summaryBlocks.push(`[锚点·已完成不可重做] ${anchors.map((a) => `${a.actionName}(${briefArgs(a.actionArgs ?? {})}): ${(a.resultSummary || '(成功)').slice(0, 50)}`).join('; ')}`);
+    }
     this.steps = keep;
   }
 

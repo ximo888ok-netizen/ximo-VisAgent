@@ -11,6 +11,7 @@ import type { UpdateWeChatConfigRequest, WeChatLoginResult } from "../../shared/
 import type { WeChatBot } from "../wechat-bot";
 import type { Store } from "../config-store";
 import { defaultWeChatConfig } from "../config-sync";
+import { setWeChatNotifier } from "../orchestrator-notify";
 
 export interface WeChatHandlerDeps {
   getIslandWindow: () => BrowserWindow | null;
@@ -21,12 +22,20 @@ export interface WeChatHandlerDeps {
 export function registerWeChatHandlers(deps: WeChatHandlerDeps): void {
   const { getIslandWindow, wechatBot, store } = deps;
 
-  // 更新配置 → 落库 + 重启 Bot（如已运行）
+  // 更新配置 → 落库 + 反向通知目标即时刷新（关掉开关时停掉 Bot）
   ipcMain.handle(ISLAND_CHANNELS.wechatUpdateConfig, async (_evt, req: UpdateWeChatConfigRequest) => {
     const cur = store.get();
     const curWc = cur.wechatBot ?? defaultWeChatConfig();
     const merged = { ...curWc, ...req };
     store.set({ wechatBot: merged });
+    // setWeChatNotifier 幂等：重复调用即刷新开关与通知目标，无需重启应用
+    setWeChatNotifier(wechatBot, {
+      notifyOnFinish: merged.notifyOnFinish,
+      notifyOnApproval: merged.notifyOnApproval,
+      notifyContact: merged.notifyContact ?? '',
+    });
+    // 关闭渠道时停掉长轮询（凭证保留，下次启动可直接恢复；重新登录走 wechatLogin）
+    if (merged.enabled === false && wechatBot.isConnected) wechatBot.stop();
     return { ok: true };
   });
 
@@ -52,6 +61,11 @@ export function registerWeChatHandlers(deps: WeChatHandlerDeps): void {
   ipcMain.handle(ISLAND_CHANNELS.wechatLogout, async () => {
     wechatBot.logout();
     return { ok: true };
+  });
+
+  // 查询当前登录状态（组件重新挂载时主动拉取，不依赖事件推送）
+  ipcMain.handle(ISLAND_CHANNELS.wechatGetStatus, async () => {
+    return { ok: true, data: { connected: wechatBot.isConnected } };
   });
 
   // ---- Bot 事件 → 推送到渲染层 ----

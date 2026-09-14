@@ -69,3 +69,28 @@ describe('ClickGuard 直点提示', () => {
     expect(new ClickGuard().hintAt(100, 100)).toBeNull();
   });
 });
+
+describe('ClickGuard 重复查询检测（场景复刻自同 query 27 次返回同一过期元素的事故）', () => {
+  it('首次查询不提示，重复且结果相同 → 轻提示，第 3 次起升级为禁止再查', () => {
+    const g = new ClickGuard();
+    const sig = '2072887594@798,243';
+    expect(g.locateRepeatNote('小答AI客服', sig)).toBeNull();
+    expect(g.locateRepeatNote('小答AI客服', sig)).toContain('已第 2 次');
+    const strong = g.locateRepeatNote('小答AI客服', sig);
+    expect(strong).toContain('禁止再 ui_locate');
+    expect(g.locateRepeatNote('小答AI客服', sig)).toContain('4 次');
+  });
+
+  it('结果签名变化（界面真的变了）→ 计数重置，合法重查不受影响', () => {
+    const g = new ClickGuard();
+    expect(g.locateRepeatNote('卸载', '1@100,100')).toBeNull();
+    expect(g.locateRepeatNote('卸载', '1@100,100')).toContain('已第 2 次');
+    expect(g.locateRepeatNote('卸载', '2@300,300')).toBeNull();
+  });
+
+  it('不同 query 互不影响', () => {
+    const g = new ClickGuard();
+    expect(g.locateRepeatNote('保存', '1@1,1')).toBeNull();
+    expect(g.locateRepeatNote('取消', '1@1,1')).toBeNull();
+  });
+});

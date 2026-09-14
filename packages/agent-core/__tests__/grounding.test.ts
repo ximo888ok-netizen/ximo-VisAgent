@@ -15,20 +15,20 @@ function stub(content: string | null): ILLMClient {
 
 describe('parseGroundingBox', () => {
   it('0-1000 千分比归一化 → space=norm', () => {
-    expect(parseGroundingBox('{"found":true,"box":[[418,950,436,962]]}')).toEqual({ box: [418, 950, 436, 962], space: 'norm' });
+    expect(parseGroundingBox('{"found":true,"box":[[418,950,436,962]]}')).toEqual({ found: true, box: [418, 950, 436, 962], space: 'norm' });
   });
 
   it('分量恰为 1000（Qwen 满格）仍为 norm；任何分量 >1000 → space=abs（绝对像素容错）', () => {
-    expect(parseGroundingBox('{"found":true,"box":[[1000,0,1000,500]]}')).toEqual({ box: [1000, 0, 1000, 500], space: 'norm' });
-    expect(parseGroundingBox('{"found":true,"box":[[1400,30,1500,80]]}')).toEqual({ box: [1400, 30, 1500, 80], space: 'abs' });
+    expect(parseGroundingBox('{"found":true,"box":[[1000,0,1000,500]]}')).toEqual({ found: true, box: [1000, 0, 1000, 500], space: 'norm' });
+    expect(parseGroundingBox('{"found":true,"box":[[1400,30,1500,80]]}')).toEqual({ found: true, box: [1400, 30, 1500, 80], space: 'abs' });
   });
 
   it('Qwen 原生 bbox_2d 格式（无 found 字段）容错解析', () => {
-    expect(parseGroundingBox('{"bbox_2d":[323,118,444,825],"label":"watch"}')).toEqual({ box: [323, 118, 444, 825], space: 'norm' });
+    expect(parseGroundingBox('{"bbox_2d":[323,118,444,825],"label":"watch"}')).toEqual({ found: true, box: [323, 118, 444, 825], space: 'norm' });
   });
 
-  it('found=false / 非 JSON / 缺字段 / 负数 → null', () => {
-    expect(parseGroundingBox('{"found":false}')).toBeNull();
+  it('found=false 是合法答案；非 JSON / 缺字段 / 负数 → null（不可解析）', () => {
+    expect(parseGroundingBox('{"found":false}')).toEqual({ found: false });
     expect(parseGroundingBox('我看不见目标')).toBeNull();
     expect(parseGroundingBox('{"found":true,"box":[[1,2,3]]}')).toBeNull();
     expect(parseGroundingBox('{"found":true}')).toBeNull();
@@ -74,6 +74,41 @@ describe('createGroundingLookup', () => {
     };
     expect(await createGroundingLookup(counting)(Buffer.from('x'), '  ')).toBeNull();
     expect(called).toBe(0);
+  });
+
+  it('输出不可解析 → 一次格式修复重试（带上原始输出纠正），修复成功返回框', async () => {
+    const contents = ['目标在屏幕左上角（我认为）', '{"found":true,"box":[[400,100,600,300]]}'];
+    let i = 0;
+    const scripted: ILLMClient = {
+      config: defaultAgentConfig().textLLM,
+      async chat(): Promise<ChatResult> {
+        const content = contents[Math.min(i, contents.length - 1)]!;
+        i++;
+        return { content, toolCalls: [], usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, model: 'fake' };
+      },
+    };
+    const matches = await createGroundingLookup(scripted)(Buffer.from('x'), '大图标');
+    expect(matches).not.toBeNull();
+    expect(i).toBe(2); // 首次 + 修复重试各一次（框大于小目标阈值，不再触发投票）
+    expect(matches![0]!.x).toBe(Math.round((400 / 1000) * 1920));
+  });
+
+  it('两次输出都不可解析 → null（调用方降级下一档）', async () => {
+    const lookup = createGroundingLookup(stub('我觉得在这里附近'));
+    expect(await lookup(Buffer.from('x'), '目标')).toBeNull();
+  });
+
+  it('found=false 不触发修复重试（合法答案，只调一次模型）', async () => {
+    let called = 0;
+    const counting: ILLMClient = {
+      config: defaultAgentConfig().textLLM,
+      async chat(): Promise<ChatResult> {
+        called++;
+        return { content: '{"found":false}', toolCalls: [], usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, model: 'fake' };
+      },
+    };
+    expect(await createGroundingLookup(counting)(Buffer.from('x'), '不存在的目标')).toBeNull();
+    expect(called).toBe(1);
   });
 });
 
@@ -147,7 +182,7 @@ describe('grounding 多视图投票', () => {
     };
   }
 
-  it('散布超阈值时取中心中位数，而不是回退首结果', async () => {
+  it('散布超阈值时取中心中位数，而不是回退首结果；散布暴露给调用方做放大复核', async () => {
     const lookup = createGroundingLookup(scripted([
       '{"found":true,"box":[[1000,500,1040,520]]}', // 首推理：40x20 小目标 → 触发投票
       '{"found":true,"box":[[1000,500,1040,520]]}', // 投票 1：中心 1020
@@ -158,6 +193,8 @@ describe('grounding 多视图投票', () => {
     // 中位数中心 1520（首结果中心是 1020，回退首结果会点偏 500px）
     expect(m.x + m.w / 2).toBeCloseTo(1520, 0);
     expect(m.w).toBe(40);
+    // 散布暴露：zoom 精修据此扩大复核范围（否则放大图里根本没有目标）
+    expect(m.spread).toBeGreaterThanOrEqual(500);
   });
 
   it('大目标单次推理即返回，不触发投票', async () => {

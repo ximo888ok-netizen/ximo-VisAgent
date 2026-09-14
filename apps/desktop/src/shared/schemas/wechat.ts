@@ -9,6 +9,8 @@ export const WeChatBotConfigSchema = z.object({
   commandPrefix: z.string(),
   notifyOnFinish: z.boolean(),
   notifyOnApproval: z.boolean(),
+  /** 反向通知目标 wxid；留空 = 最近一次给 Bot 发消息的联系人 */
+  notifyContact: z.string(),
 });
 export type WeChatBotConfigPayload = z.infer<typeof WeChatBotConfigSchema>;
 

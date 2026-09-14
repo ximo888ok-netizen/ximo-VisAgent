@@ -12,17 +12,39 @@ import { createStepEvent } from '../shared/island-contracts';
 import { pushApprovalRequest } from './island-bridge';
 import type { WeChatBot } from './wechat-bot';
 import { formatTaskNotification, formatApprovalNotification } from './wechat-notify';
+import { resolveNotifyTarget } from './wechat-notify-target';
 
 /** 微信 Bot 通知器（可选，启动后注入） */
-let wechatNotifier: { bot: WeChatBot; notifyOnFinish: boolean; notifyOnApproval: boolean; defaultContact: string } | null = null;
+let wechatNotifier: { bot: WeChatBot; notifyOnFinish: boolean; notifyOnApproval: boolean; notifyContact: string } | null = null;
 
-/** 注入微信 Bot 通知器（index.ts 启动后调用） */
-export function setWeChatNotifier(bot: WeChatBot | null, opts: { notifyOnFinish: boolean; notifyOnApproval: boolean; defaultContact?: string }): void {
+/** 注入微信 Bot 通知器（bootstrap 启动后 / 配置更新后调用；幂等，重复调用即刷新目标与开关） */
+export function setWeChatNotifier(bot: WeChatBot | null, opts: { notifyOnFinish: boolean; notifyOnApproval: boolean; notifyContact?: string }): void {
   if (!bot || (!opts.notifyOnFinish && !opts.notifyOnApproval)) {
     wechatNotifier = null;
     return;
   }
-  wechatNotifier = { bot, notifyOnFinish: opts.notifyOnFinish, notifyOnApproval: opts.notifyOnApproval, defaultContact: opts.defaultContact ?? '' };
+  wechatNotifier = { bot, notifyOnFinish: opts.notifyOnFinish, notifyOnApproval: opts.notifyOnApproval, notifyContact: opts.notifyContact ?? '' };
+}
+
+/**
+ * 出站推送统一入口：无可用会话时可见降级（E1 不静默吞），任何失败都不得影响任务本身。
+ * 目标解析见 wechat-notify-target.ts（配置优先，退回最近会话来消息的联系人）。
+ */
+function sendWeChat(text: string): void {
+  const n = wechatNotifier;
+  if (!n || !n.bot.isConnected) return;
+  const target = resolveNotifyTarget(n.notifyContact, n.bot.getLastContact(), (w) => n.bot.getContextToken(w));
+  if (!target) {
+    console.warn('[wechat] 通知未发送：没有可用会话（请先给 Bot 发一条消息以建立会话）');
+    publishStep(createStepEvent('thinking', '微信通知未发送：没有可用会话（先给 Bot 发一条消息）'));
+    return;
+  }
+  void n.bot.sendText(target.ctxToken, text).then((r) => {
+    if (!r.ok) {
+      console.warn('[wechat] 通知发送失败:', r.error);
+      publishStep(createStepEvent('thinking', `微信通知发送失败：${r.error ?? '未知原因'}`));
+    }
+  });
 }
 
 export interface ApprovalOperation {
@@ -32,30 +54,21 @@ export interface ApprovalOperation {
   level?: number;
 }
 
-/** 推送任务终态到岛 + stdout（E2E 归集用） */
+/** 推送任务终态到岛 + stdout（E2E 归集用）+ 微信反向通知 */
 export function pushTaskFinished(
   taskId: string,
   status: string,
   finalAnswer: string,
   steps: number,
   totalTokens: number,
+  goal: string,
 ): void {
   const win = getIslandWindow();
   if (win && !win.webContents.isDestroyed()) {
     win.webContents.send(ISLAND_CHANNELS.taskFinished, { taskId, status, finalAnswer, steps, totalTokens });
   }
-  // 微信 Bot outbound：任务终态推送
-  if (wechatNotifier && wechatNotifier.notifyOnFinish && wechatNotifier.bot.isConnected) {
-    const goal = win?.webContents.getTitle() ?? taskId.slice(0, 8); // 退化用 taskId
-    // iLink 协议：Bot 只能回复用户先发来的消息，使用最近联系人 context_token
-    const ctxToken = wechatNotifier.bot.getContextToken(wechatNotifier.defaultContact) ?? wechatNotifier.defaultContact;
-    if (ctxToken) {
-      void wechatNotifier.bot.sendText(
-        ctxToken,
-        formatTaskNotification(goal, status, finalAnswer),
-      ).catch(() => {});
-    }
-  }
+  // 微信 Bot outbound：正文用任务目标（历史 bug：取的是岛窗口标题，恒为 "ximo-VisAgent Island"）
+  if (wechatNotifier?.notifyOnFinish) sendWeChat(formatTaskNotification(goal, status, finalAnswer));
 }
 
 /** 排队任务真正开始执行时通知 UI（排队态 → 运行态） */
@@ -98,17 +111,8 @@ export async function requestApprovalUI(
   if (!island.isVisible()) {
     notify('ximo-VisAgent 需要审批', `Agent 请求执行「${op.tool}」，点击此处打开灵动岛处理`);
   }
-  // 微信 Bot outbound：审批请求推送
-  if (wechatNotifier && wechatNotifier.notifyOnApproval && wechatNotifier.bot.isConnected) {
-    // iLink 协议：Bot 只能回复用户先发来的消息，使用最近联系人 context_token
-    const ctxToken = wechatNotifier.bot.getContextToken(wechatNotifier.defaultContact) ?? wechatNotifier.defaultContact;
-    if (ctxToken) {
-      void wechatNotifier.bot.sendText(
-        ctxToken,
-        formatApprovalNotification(op.tool, op.reason, approvalId),
-      ).catch(() => {});
-    }
-  }
+  // 微信 Bot outbound：审批请求推送（无可用会话时 sendWeChat 会给出可见降级）
+  if (wechatNotifier?.notifyOnApproval) sendWeChat(formatApprovalNotification(op.tool, op.reason, approvalId));
   return null;
 }
 

@@ -6,14 +6,16 @@
  * 需要改写编排器内部状态的四处（审批超时、活动执行器、循环表、排队推进）
  * 通过 LaunchHost 显式注入，公共 API 不变。
  */
-import { AgentLoop, createGroundingLookup, createSomLookup, type AgentLoopOptions, type StepDetail } from '@ximo-visagent/agent-core';
+import { AgentLoop, shouldPlan, createGroundingLookup, createSomLookup, type AgentLoopOptions, type StepDetail } from '@ximo-visagent/agent-core';
+import { supportsWebSearch } from '@ximo-visagent/llm-providers';
 import { ApprovalEngine } from '@ximo-visagent/safety';
-import { ComputerToolExecutor, type FileOfficeExecutor } from '@ximo-visagent/control-kit';
+import { ComputerToolExecutor, evaluateTaskAssertion, type FileOfficeExecutor } from '@ximo-visagent/control-kit';
 import { makeClassifier, makeClients } from './orchestrator-clients';
 import { withSomMarks } from './som-mark';
 import { buildExecutorStack } from './orchestrator-executors';
 import { buildTaskInjections } from './orchestrator-context';
 import { createApprovalGate } from './orchestrator-approval';
+import { createRecoveryMatcher } from './orchestrator-recovery';
 import { announceApprovalRequest } from './e2e-runner';
 import { finalizeTaskExperience } from './orchestrator-experience';
 import { classifyFailure, toStepSkeleton, persistAgentEvent } from './orchestrator-audit';
@@ -97,7 +99,10 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     perception,
     classifier: makeSafetyClassifier(),
     approval: approvals,
-    maxSteps: cfg.agent.maxSteps ?? 120,
+    // L6 动态预算：SOP 任务步数可预估（模板步数×1.5+5），避免固定 120 步对短任务过松、长任务过紧
+    maxSteps: autoSopSteps && autoSopSteps.length > 0
+      ? Math.max(20, Math.min(cfg.agent.maxSteps ?? 120, Math.round(autoSopSteps.length * 1.5) + 5))
+      : (cfg.agent.maxSteps ?? 120),
     maxDurationMs: cfg.agent.maxTaskMinutes * 60_000,
     approvalTimeoutMs: cfg.agent.approvalTimeoutSec * 1000,
     llmMaxRetries: cfg.agent.maxRetries,
@@ -121,7 +126,20 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
       { taskId: t.taskId, interactive: t.interactive === true },
     ),
     sopSteps: autoSopSteps,
+    // 条目4：多步任务先出计划（启发式判定，简单任务不白烧规划调用；cfg 总开关显式 false = 永不规划）
+    planFirst: cfg.agent.planFirst !== false && shouldPlan(t.goal),
     extraTools,
+    // 条目2：web_search 仅 qwen 支持（复用主大脑 textLLM 的 provider）；其他 provider 从目录剔除，避免提示引导必失败调用
+    disabledOptionalTools: supportsWebSearch(cfg.agent.textLLM.provider) ? undefined : ['web_search'],
+    // 条目6：历史经验恢复（仅 hint 提示）+ 记账闭环
+    recoveryMatcher: deps.experience ? createRecoveryMatcher(deps.experience) : undefined,
+    onRecoveryResult: (ruleId, success) => {
+      if (success) deps.experience?.incrementRecoverySuccess(ruleId);
+      else deps.experience?.incrementRecoveryFail(ruleId);
+    },
+    // L1 机器断言：任务提交方声明（e2e/人工），task_done 后确定性校验优先于模型自评
+    assertions: t.assertions,
+    evaluateAssertion: (a) => evaluateTaskAssertion(a, cfg.workspaceDir),
     memoryFacts: injections.memoryFacts,
     guidance: t.guidance ?? injections.guidance,
     conversationContext: injections.conversationContext,
@@ -158,7 +176,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
         failureKind ?? undefined,
       );
       notifyTaskFinished(t.goal, result.status);
-      pushTaskFinished(t.taskId, result.status, result.finalAnswer, result.steps, result.totalTokens);
+      pushTaskFinished(t.taskId, result.status, result.finalAnswer, result.steps, result.totalTokens, t.goal);
 
       // 会话上下文记录（无论成败，本轮对话已发生）
       deps.conversation?.recordTurn(t.goal, result.finalAnswer);
@@ -187,12 +205,16 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
       ) {
         relaunched = true;
         const sopSteps = toStepSkeleton(result.stepsDetail);
+        // L4 跨尝试记忆：把上次卡点作为附加指导注入，避免重试从零摸索同一坑
+        const lastFailure = summarizeFailure(result);
+        const guidance = [t.guidance, lastFailure].filter(Boolean).join('\n\n') || undefined;
         publishStep(createStepEvent('thinking', `任务失败（${failureKind}），自动重试（1/1）`));
         host.relaunch({
           taskId: crypto.randomUUID(),
           goal: t.goal,
           sopSteps: sopSteps.length > 0 ? sopSteps : undefined,
           isRetry: true,
+          guidance,
         });
       }
     })
@@ -201,7 +223,17 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
       audit.insert(audit.fromAgentEvent(t.taskId, { type: 'error', message: `任务崩溃: ${err.message}` }));
       audit.finishTask(t.taskId, 'FAILED', `任务崩溃: ${err.message}`, undefined, undefined, 'INTERNAL_ERROR');
       notifyTaskFinished(t.goal, 'FAILED');
-      pushTaskFinished(t.taskId, 'FAILED', `任务崩溃: ${err.message}`, 0, 0);
+      pushTaskFinished(t.taskId, 'FAILED', `任务崩溃: ${err.message}`, 0, 0, t.goal);
+      // 条目3.A：崩溃也自动重跑一次（与 .then 的失败重试同纪律：仅一次、可关、带教训 guidance）
+      if (!t.isRetry && cfg.autoRetry !== false) {
+        relaunched = true;
+        const steps = audit.getTaskSteps(t.taskId).filter((s) => s.actionName);
+        const guidance = steps.length > 0
+          ? `上次尝试中途崩溃。已完成（核对现场后勿重做）: ${steps.slice(-5).map((s) => `${s.actionName} → ${(s.resultSummary || '').slice(0, 40)}`).join('; ')}。先核对当前屏幕处于哪一步，已完成的部分不要重做；若现场与预期不符，以屏幕实际状态为准。`
+          : undefined;
+        publishStep(createStepEvent('thinking', '任务崩溃（INTERNAL_ERROR），自动重试（1/1）'));
+        host.relaunch({ taskId: crypto.randomUUID(), goal: t.goal, isRetry: true, guidance });
+      }
     })
     .finally(() => {
       host.loops.delete(t.taskId);
@@ -213,6 +245,21 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
       }
       if (!relaunched) host.dequeue();
     });
+}
+
+/** L4 跨尝试记忆：把上次失败压缩成三段清单（已完成/已失败/卡点），作为 guidance 注入重试 */
+function summarizeFailure(result: { finalAnswer: string; stepsDetail: StepDetail[] }): string | undefined {
+  const steps = result.stepsDetail.filter((s) => s.actionName);
+  if (steps.length === 0) return undefined;
+  const done = steps.filter((s) => s.ok);
+  const failed = steps.filter((s) => s.ok === false);
+  const lines = [
+    '## 上次尝试的教训（避免重蹈覆辙）',
+    `- 已完成（不要重做）: ${done.slice(-5).map((s) => `${s.actionName} → ${(s.resultSummary || '').slice(0, 40)}`).join('; ') || '无'}`,
+    `- 已失败（换方案，勿原样重试）: ${failed.slice(-3).map((s) => `${s.actionName} → ${(s.resultSummary || '').slice(0, 40)}`).join('; ') || '无'}`,
+    `- 终局: ${(result.finalAnswer || '').slice(0, 120)}`,
+  ];
+  return lines.join('\n');
 }
 
 /** 按 goal 关键词匹配 distilled 候选 SOP，返回步骤骨架（无匹配返回 undefined） */

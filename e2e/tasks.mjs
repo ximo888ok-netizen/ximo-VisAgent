@@ -35,6 +35,8 @@ export const E2E_TASKS = [
     expect: '汇总.xlsx C1 = 110',
     keyTag: 'text',
     mustHitTools: ['excel_write_cell'],
+    // L1 机器断言：假完成直接被验收门打回（相对路径按工作区沙箱解析）
+    assertions: [{ kind: 'excel_cell', path: '汇总.xlsx', cell: 'C1', equals: '110' }],
   },
   {
     id: 'E',

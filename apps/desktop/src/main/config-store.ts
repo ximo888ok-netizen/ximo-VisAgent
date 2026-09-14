@@ -91,6 +91,7 @@ const DEFAULT_CONFIG: AppConfig = {
     commandPrefix: 'AI:',
     notifyOnFinish: true,
     notifyOnApproval: false,
+    notifyContact: '',
   },
 };
 

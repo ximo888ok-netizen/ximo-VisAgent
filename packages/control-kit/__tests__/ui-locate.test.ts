@@ -1,6 +1,6 @@
 // ui-locate 纯逻辑单测：展平/搜索/坐标换算/SoM 候选（场景复刻自 2026-09-05 Qoder CN 误点事故）
 import { beforeEach, describe, expect, it } from 'vitest';
-import { collectCandidates, flattenTree, searchMatches, zoomedBoxToScreen, type UiMatch } from '../src/ui-locate';
+import { collectCandidates, filterForegroundCandidates, flattenTree, searchMatches, zoomedBoxToScreen, type UiMatch } from '../src/ui-locate';
 import { setScreenScale } from '../src/screen-scale';
 import type { UiNode } from '@ximo-visagent/shared-types';
 
@@ -134,5 +134,24 @@ describe('zoomedBoxToScreen（zoom 精修坐标映射）', () => {
   it('zoom<=0 防御：原样返回', () => {
     const box = { x: 40, y: 60, w: 100, h: 20 };
     expect(zoomedBoxToScreen(box, { x: 100, y: 200 }, 0)).toEqual(box);
+  });
+});
+
+describe('filterForegroundCandidates（SoM 前台过滤，场景复刻自后台窗口元素误选事故）', () => {
+  it('前台标题命中 → 只保留该窗口候选（后台/桌面图标全部剔除）', () => {
+    const fg = filterForegroundCandidates(all, '记事本');
+    expect(fg.every((m) => m.window === '记事本')).toBe(true);
+    expect(fg.some((m) => m.id === 11)).toBe(true);
+    expect(fg.some((m) => m.id === 4)).toBe(false); // 桌面 Qoder 图标不属于前台窗口
+  });
+
+  it('标题大小写与前后缀差异容忍（UIA 名与 Win32 标题不完全一致）', () => {
+    expect(filterForegroundCandidates(all, '无标题 - 记事本').every((m) => m.window === '记事本')).toBe(true);
+    expect(filterForegroundCandidates(all, 'NOTEPAD')).toHaveLength(all.length); // 无命中回退全量
+  });
+
+  it('前台无候选/无标题 → 回退全量（宁可多候选不可零候选）', () => {
+    expect(filterForegroundCandidates(all, null)).toHaveLength(all.length);
+    expect(filterForegroundCandidates(all, '不存在的窗口')).toHaveLength(all.length);
   });
 });

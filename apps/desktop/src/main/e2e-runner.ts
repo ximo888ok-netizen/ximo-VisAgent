@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import { app } from 'electron';
 import { getIslandWindow } from './windows/island';
 import { ISLAND_CHANNELS } from '../shared/island-channels';
+import type { TaskAssertion } from '@ximo-visagent/agent-core';
 import type { Orchestrator } from './orchestrator';
 import type { ZODB } from './audit-store';
 
@@ -24,6 +25,8 @@ export interface E2ETask {
   mustHitTools?: string[];
   /** 需要人工审批（默认视为需要，直到脚本经 stdin 回答） */
   requiresApproval?: boolean;
+  /** L1 机器断言：任务终态后由验收门做确定性校验（相对路径按工作区沙箱解析） */
+  assertions?: TaskAssertion[];
   timeoutMs?: number;
 }
 
@@ -132,7 +135,7 @@ export async function runE2EPlan(orchestrator: Orchestrator, audit: ZODB): Promi
     const taskId = crypto.randomUUID();
     const goal = task.goal;
     emit({ kind: 'task_started', id: task.id, taskId, goal });
-    await orchestrator.launchTask(taskId, goal);
+    await orchestrator.launchTask(taskId, goal, undefined, task.assertions);
 
     const status = await waitForTerminal(orchestrator, taskId, task.timeoutMs ?? defaultTimeout);
     const steps = audit.getTaskSteps(taskId);

@@ -231,6 +231,8 @@ export interface IslandApi {
   wechatUpdateConfig(req: UpdateWeChatConfigRequest): Promise<{ ok: boolean; error?: string }>;
   /** 发起扫码登录（启动 Bot 生成二维码） */
   wechatLogin(): Promise<IpcResult<WeChatLoginResult>>;
+  /** 查询当前微信 Bot 登录状态 */
+  wechatGetStatus(): Promise<IpcResult<{ connected: boolean }>>;
   /** 登出微信 */
   wechatLogout(): Promise<{ ok: boolean; error?: string }>;
   /** 订阅二维码数据（前端渲染为图片） */

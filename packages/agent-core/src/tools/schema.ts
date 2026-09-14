@@ -95,10 +95,10 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   // 曾降级为可选导致 flash 模型目测直点桌面图标必点飞（±20-50px 误差 > 图标间距），故升回常驻。
   {
     name: 'ui_locate',
-    description: '按名称子串搜索屏幕控件（按钮、菜单项、桌面图标、对话框元素等），返回精确中心坐标与 elementId。桌面图标、系统设置/对话框等原生 UI 首选此工具；纯视觉目标（图片内容/自绘画布）才用看图直点。',
+    description: '按名称子串搜索屏幕控件（按钮、菜单项、桌面图标、对话框元素等），返回精确中心坐标与 elementId。桌面图标、系统设置/对话框等原生 UI 首选此工具；纯视觉目标（图片内容/自绘画布）才用看图直点。click:true 时找到即点（省一步）。',
     level: 0,
     source: 'computer',
-    parameters: { type: 'object', properties: { query: { type: 'string', description: '名称子串（大小写不敏感），如 "360安全卫士"、"保存"' }, limit: { type: 'integer', description: '最多返回几个，默认 8' } }, required: ['query'] },
+    parameters: { type: 'object', properties: { query: { type: 'string', description: '名称子串（大小写不敏感），如 "360安全卫士"、"保存"' }, limit: { type: 'integer', description: '最多返回几个，默认 8' }, click: { type: 'boolean', description: '找到即点首个候选（省一步；目标唯一时用，多个候选时先看列表再 ui_click）' }, button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'click:true 时的鼠标键' }, times: { type: 'integer', description: 'click:true 时的点击次数，2=双击' } }, required: ['query'] },
   },
   {
     name: 'ui_click',

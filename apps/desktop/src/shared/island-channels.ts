@@ -194,6 +194,8 @@ export const ISLAND_CHANNELS = {
   wechatUpdateConfig: "island:wechat-update-config",
   /** renderer -> main (invoke)：发起扫码登录（启动 Bot 生成二维码） */
   wechatLogin: "island:wechat-login",
+  /** renderer -> main (invoke)：查询当前登录状态 */
+  wechatGetStatus: "island:wechat-get-status",
   /** renderer -> main (invoke)：登出微信 */
   wechatLogout: "island:wechat-logout",
   /** main -> renderer (send)：二维码数据（前端渲染为图片） */

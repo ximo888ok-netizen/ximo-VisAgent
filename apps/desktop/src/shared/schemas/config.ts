@@ -34,6 +34,10 @@ export const AgentConfigSchema = z.object({
   thinkingEffort: z.enum(["off", "low", "high", "max"]).optional(),
   /** 思考四档（qwen/glm 生效）：auto=评分制弹性 / daily=恒关 / long=前2步关后恒开 / deep=恒开 */
   thinkingMode: z.enum(["auto", "daily", "long", "deep"]).optional(),
+  /** 任务规划器总开关：缺省=按目标启发式；false=永不规划 */
+  planFirst: z.boolean().optional(),
+  /** 应用重启后自动恢复最近的未完成任务（默认 true） */
+  autoResumeInterrupted: z.boolean().optional(),
 });
 export type AgentConfigPayload = z.infer<typeof AgentConfigSchema>;
 

@@ -41,6 +41,7 @@ export function defaultWeChatConfig(): WeChatBotConfig {
     commandPrefix: 'AI:',
     notifyOnFinish: true,
     notifyOnApproval: false,
+    notifyContact: '',
   };
 }
 

@@ -67,13 +67,27 @@ export default tseslint.config(
   },
 
   // ---- 行数上限（AGENTS.md §6.1，硬性）----
+  //
+  // ⚠ 顺序有意义：扁平配置对同一文件按数组顺序合并，同名规则**后出现的覆盖先出现的**。
+  //   因此「宽泛规则」必须排在「特例规则」之前，否则特例会失效。
+  //   下面的排列恰好满足：renderer/*.ts(300) → renderer/store(500)、shared(300) → schemas(600)。
   {
     files: ['apps/desktop/src/renderer/**/*.tsx'],
     rules: { 'max-lines': ['error', { max: MAX_LINES.component, skipBlankLines: true, skipComments: true }] },
   },
   {
+    // 补覆盖缺口：渲染层的 hooks / common 等非组件非 store 的 .ts 此前不受任何行数约束
+    files: ['apps/desktop/src/renderer/**/*.ts'],
+    rules: { 'max-lines': ['error', { max: MAX_LINES.plain, skipBlankLines: true, skipComments: true }] },
+  },
+  {
     files: ['apps/desktop/src/renderer/**/store/**/*.ts'],
     rules: { 'max-lines': ['error', { max: MAX_LINES.store, skipBlankLines: true, skipComments: true }] },
+  },
+  {
+    // 补覆盖缺口：shared 下除 schema/type 以外的契约文件（通道名、IslandApi、payload 类型）
+    files: ['apps/desktop/src/shared/**/*.ts'],
+    rules: { 'max-lines': ['error', { max: MAX_LINES.plain, skipBlankLines: true, skipComments: true }] },
   },
   {
     files: ['apps/desktop/src/shared/**/*schemas*.ts', '**/types.ts', '**/*-types.ts', '**/types/**/*.ts', '**/schemas/**/*.ts'],

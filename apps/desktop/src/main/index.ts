@@ -17,6 +17,7 @@ import { getUiaClient } from '@ximo-visagent/control-kit';
 import { ZODB } from './audit-store';
 import { ExperienceStore } from './experience-store';
 import { appConfigStore } from './config-store';
+import { defaultWeChatConfig } from './config-sync';
 import { Orchestrator } from './orchestrator';
 import { MemoryStore } from './memory-store';
 import { ConversationStore } from './conversation-store';
@@ -44,6 +45,24 @@ const isCoordCheck = process.argv.includes('--coordcheck');
 const selfTestDir = isSelfTest ? fs.mkdtempSync(path.join(os.tmpdir(), 'ximo-visagent-selftest-')) : null;
 if (selfTestDir) app.setPath('userData', selfTestDir);
 
+// ---- 单实例锁 ----
+// 锁按 userData 目录隔离：selftest 已切到独立临时目录，互不冲突；
+// 生产/开发共享同一 userData，二次启动只唤醒既有岛，避免双岛叠加、
+// 全局热键互抢、GPU 磁盘缓存拒绝访问。
+if (!app.requestSingleInstanceLock()) {
+  console.log('[main] 已有实例在运行：唤醒灵动岛后本次启动退出');
+  app.quit();
+  process.exit(0);
+}
+app.on('second-instance', () => {
+  const island = getIslandWindow();
+  if (island && !island.isDestroyed()) {
+    if (island.isMinimized()) island.restore();
+    island.show();
+    island.focus();
+  }
+});
+
 // ---- 依赖创建 ----
 const uiaClient = getUiaClient();
 const userData = () => app.getPath('userData');
@@ -64,7 +83,7 @@ const orchestrator = new Orchestrator(configStore, auditDb, {
   employee: employeeStore,
 });
 
-const wechatCfg = configStore.get().wechatBot ?? { enabled: false, allowedWxids: [], commandPrefix: 'AI:', notifyOnFinish: true, notifyOnApproval: false };
+const wechatCfg = configStore.get().wechatBot ?? defaultWeChatConfig();
 const wechatBot = new WeChatBot({
   allowedWxids: wechatCfg.allowedWxids,
   commandPrefix: wechatCfg.commandPrefix,

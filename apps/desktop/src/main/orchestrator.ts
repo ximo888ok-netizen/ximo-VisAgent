@@ -1,5 +1,5 @@
 // 任务编排器：单并发 + 排队 / 暂停恢复 / 安全规则注入 / 审批 / 证据截图 / SOP 模板
-import { AgentLoop, type StepDetail } from '@ximo-visagent/agent-core';
+import { AgentLoop, type StepDetail, type TaskAssertion } from '@ximo-visagent/agent-core';
 import { ApprovalEngine } from '@ximo-visagent/safety';
 import type { ToolResult } from '@ximo-visagent/agent-core';
 import { ComputerToolExecutor, type FileOfficeExecutor } from '@ximo-visagent/control-kit';
@@ -31,6 +31,8 @@ export interface QueuedTask {
   guidance?: string;
   /** S11 B1：只有岛上交互发起的任务才允许按档位自动审批；非交互来源一律问人 */
   interactive?: boolean;
+  /** L1 机器断言：task_done 后由宿主做确定性校验（e2e 计划/任务提交方声明，非模型生成） */
+  assertions?: TaskAssertion[];
 }
 
 export interface OrchestratorDeps {
@@ -87,11 +89,11 @@ export class Orchestrator {
   async startTask(
     goal: string,
     sopSteps?: string[],
-    meta?: { sopId?: string; interactive?: boolean },
+    meta?: { sopId?: string; interactive?: boolean; assertions?: TaskAssertion[] },
   ): Promise<{ taskId: string; queued: boolean; queuedIndex: number }> {
     if (!goal.trim()) throw new Error('任务目标为空');
     const taskId = crypto.randomUUID();
-    const task: QueuedTask = { taskId, goal, sopSteps, interactive: meta?.interactive === true };
+    const task: QueuedTask = { taskId, goal, sopSteps, interactive: meta?.interactive === true, assertions: meta?.assertions };
 
     if (meta?.sopId) {
       task.sopId = meta.sopId;
@@ -161,7 +163,7 @@ export class Orchestrator {
       const removed = this.queue.splice(idx, 1)[0];
       if (removed) {
         this.audit.finishTask(removed.taskId, 'CANCELLED', '排队中取消');
-        pushTaskFinished(removed.taskId, 'CANCELLED', '排队中取消', 0, 0);
+        pushTaskFinished(removed.taskId, 'CANCELLED', '排队中取消', 0, 0, removed.goal);
       }
     }
   }
@@ -187,7 +189,7 @@ export class Orchestrator {
     auraHalted();
     for (const q of this.queue) {
       this.audit.finishTask(q.taskId, 'CANCELLED', '急停取消排队任务');
-      pushTaskFinished(q.taskId, 'CANCELLED', '急停取消排队任务', 0, 0);
+      pushTaskFinished(q.taskId, 'CANCELLED', '急停取消排队任务', 0, 0, q.goal);
     }
     this.queue = [];
   }
@@ -208,9 +210,9 @@ export class Orchestrator {
     };
   }
 
-  /** v3: 公共启动入口（基准/prompt A/B 用） */
-  async launchTask(taskId: string, goal: string, guidance?: string): Promise<{ taskId: string }> {
-    await this.launch({ taskId, goal, guidance });
+  /** v3: 公共启动入口（基准/prompt A/B 用）；assertions 由 e2e 计划/基准任务声明 */
+  async launchTask(taskId: string, goal: string, guidance?: string, assertions?: TaskAssertion[]): Promise<{ taskId: string }> {
+    await this.launch({ taskId, goal, guidance, assertions });
     return { taskId };
   }
 

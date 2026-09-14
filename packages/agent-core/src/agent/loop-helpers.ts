@@ -42,7 +42,14 @@ export interface EnvContext {
 export function buildPerceptionText(snap: PerceptionSnap, tasks: string[], step: number, screenChanged: boolean, noChangeCount = 0, recentActions?: { thought: string; actionName: string | null; resultSummary: string }[], maxSteps?: number, stateLines?: string[]): string {
   const lines: string[] = [];
   lines.push(`[步 #${step}${maxSteps ? `/${maxSteps}` : ''}]`);
-  lines.push(`目标: ${tasks.join(' | ') || '(无)'}`);
+  // 条目4：多子任务时展示编号计划（模型知道自己在做第几项）；单任务保持原格式
+  if (tasks.length > 1) {
+    lines.push(`目标: ${tasks[0]}`);
+    lines.push(`计划: ${tasks.map((t, i) => `${i + 1}) ${t}`).join('  ')}`);
+    lines.push('（按计划顺序推进；已完成的不重做；全部完成才 task_done）');
+  } else {
+    lines.push(`目标: ${tasks[0] ?? '(无)'}`);
+  }
   // 步数预算感知：开放式目标（"看一下…"）模型容易一直跑不收尾，从 1/4 处开始持续提醒对照目标
   if (maxSteps && step >= Math.ceil(maxSteps / 4) && step < Math.ceil(maxSteps / 2)) {
     lines.push('提醒：目标中的问题若已能回答，立即 task_done 收尾，不要「再看看/再确认」。');
@@ -270,8 +277,39 @@ export function optionalCatalogLines(optional: { name: string; description: stri
 }
 
 /** 可选目录 = 内置可选 + 宿主自定义（custom_*） */
-export function buildOptionalCatalog(extra?: ToolSchema[]): ToolSchema[] {
-  return [...OPTIONAL_TOOL_SCHEMAS, ...(extra ?? [])];
+export function buildOptionalCatalog(extra?: ToolSchema[], disabled?: string[]): ToolSchema[] {
+  const all = [...OPTIONAL_TOOL_SCHEMAS, ...(extra ?? [])];
+  if (!disabled || disabled.length === 0) return all;
+  const banned = new Set(disabled);
+  return all.filter((t) => !banned.has(t.name));
+}
+
+// ---------- 条目2：拿不准就查证（纯逻辑，可单测） ----------
+
+/** "在猜"关键词表：命中任意一个即认为模型在凭记忆编造 */
+const GUESS_KEYWORDS = ['不确定', '应该是', '大概是', '估计', '可能是', '记不清', '凭记忆', '试试', '随便', '我不确定', '应该在', '大概在', '也许是'] as const;
+
+/** 检测 thought/参数中的不确定信号，返回命中的原始词（供提示语回显） */
+export function detectGuessSignals(text: string): { guessing: boolean; hits: string[] } {
+  const hits = GUESS_KEYWORDS.filter((k) => text.includes(k));
+  return { guessing: hits.length > 0, hits };
+}
+
+/** 创建"先查证"提示注入器：同一关键词组合本任务内只提示一次（Set 去重，避免烧 token） */
+export function createGuessHintInjector(webSearchAvailable: boolean): (thought: string, actions: unknown) => string | null {
+  const nudged = new Set<string>();
+  return (thought: string, actions: unknown): string | null => {
+    const text = `${thought}\n${JSON.stringify(actions ?? '')}`;
+    const { guessing, hits } = detectGuessSignals(text);
+    if (!guessing) return null;
+    const key = hits.join('|');
+    if (nudged.has(key)) return null;
+    nudged.add(key);
+    const basis = webSearchAvailable
+      ? '先 request_tools 加载 web_search 查证再动手，不要凭记忆编造'
+      : '先 ui_locate 核对控件、或 look_close 放大确认，不要凭目测报坐标，也不要编造内容';
+    return `⚠ 你刚才的表达显示出不确定（命中：${hits.join('、')}）。规则：不确定的事实、数值、软件操作路径，${basis}。`;
+  };
 }
 
 /** request_tools 元动作处置（自 loop.ts 拆出）：校验目录、更新激活集，产出步骤与记忆记录 */
@@ -296,3 +334,4 @@ export function applyRequestTools(
 export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
+

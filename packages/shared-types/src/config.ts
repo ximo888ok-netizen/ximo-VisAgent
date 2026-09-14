@@ -49,6 +49,10 @@ export interface AgentConfig {
   emergencyHotkey: string; // 默认 Ctrl+Alt+Q
   thinkingEffort?: ThinkingEffort; // 思考强度（默认 'high'，随审批档位选择器旁的下拉配置）
   thinkingMode?: ThinkingMode; // 思考模式（默认 'daily'）
+  /** 任务规划器总开关：缺省=按目标启发式（shouldPlan）；显式 false=永不规划 */
+  planFirst?: boolean;
+  /** 应用重启后自动恢复最近的未完成任务（默认 true；e2e/selftest 下强制不恢复） */
+  autoResumeInterrupted?: boolean;
 }
 
 export interface SafetyRule {
@@ -80,6 +84,11 @@ export interface WeChatBotConfig {
   notifyOnFinish: boolean;
   /** 审批请求是否推送到微信 */
   notifyOnApproval: boolean;
+  /**
+   * 反向通知的目标联系人 wxid（留空 = 最近一次给 Bot 发过消息的联系人）。
+   * iLink 协议下 Bot 只能回复有过会话的联系人（需其 context_token），故通知目标必须来自入站消息。
+   */
+  notifyContact: string;
 }
 
 export interface AppConfig {

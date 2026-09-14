@@ -35,6 +35,8 @@ import type {
 const CREDENTIAL_FILE = 'wechat-bot-credentials.json';
 /** 持久化游标文件路径 */
 const SYNC_BUF_FILE = 'wechat-bot-sync.json';
+/** 持久化会话联系人文件路径（反向通知目标 + context_token，缺它则重启后无法主动推送） */
+const CONTACTS_FILE = 'wechat-bot-contacts.json';
 
 /**
  * 微信 Bot 客户端：基于 iLink 协议扫码登录。
@@ -56,6 +58,8 @@ export class WeChatBot extends EventEmitter {
   private qrPollTimer: NodeJS.Timeout | null = null;
   private qrcode: string = '';
   private contextTokenCache = new Map<string, string>();
+  /** 最近一次通过白名单的来消息联系人：反向通知的默认目标 */
+  private lastContactWxid: string | null = null;
 
   constructor(private opts: WeChatBotOptions) {
     super();
@@ -65,6 +69,7 @@ export class WeChatBot extends EventEmitter {
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
+    this.loadContacts();
 
     // 尝试从磁盘恢复登录态
     const stored = this.loadStoredCredentials();
@@ -311,6 +316,11 @@ export class WeChatBot extends EventEmitter {
     return this.contextTokenCache.get(wxid);
   }
 
+  /** 最近一次通过白名单的来消息联系人（反向通知的默认目标；无则 null） */
+  getLastContact(): string | null {
+    return this.lastContactWxid;
+  }
+
   // ---- 私有辅助方法 ----
 
   private mapQrStatus(status: string): ScanStatus {
@@ -341,6 +351,8 @@ export class WeChatBot extends EventEmitter {
     if (this.opts.allowedWxids.length > 0 && !this.opts.allowedWxids.includes(fromWxid)) {
       return;
     }
+    // 通知目标只认"通过白名单的来消息联系人"——陌生人不抢占反向通知目标
+    this.lastContactWxid = fromWxid || null;
 
     const inbound: WeChatInboundMessage = {
       msgId: String(msg.message_id ?? ''),
@@ -356,6 +368,7 @@ export class WeChatBot extends EventEmitter {
 
     if (msg.context_token) {
       this.contextTokenCache.set(fromWxid, msg.context_token);
+      this.saveContacts();
     }
   }
 
@@ -367,6 +380,36 @@ export class WeChatBot extends EventEmitter {
 
   private get syncBufPath(): string {
     return path.join(this.opts.dataDir, SYNC_BUF_FILE);
+  }
+
+  private get contactsPath(): string {
+    return path.join(this.opts.dataDir, CONTACTS_FILE);
+  }
+
+  /** 恢复会话联系人：context_token 可能已过期——发送失败由调用方可见处理，不在这里预判 */
+  private loadContacts(): void {
+    try {
+      if (!fs.existsSync(this.contactsPath)) return;
+      const data = JSON.parse(fs.readFileSync(this.contactsPath, 'utf-8')) as { lastContact?: string | null; contextTokens?: Record<string, string> };
+      if (data.lastContact) this.lastContactWxid = data.lastContact;
+      for (const [wxid, token] of Object.entries(data.contextTokens ?? {})) {
+        if (token) this.contextTokenCache.set(wxid, token);
+      }
+    } catch {
+      /* 会话文件损坏不阻塞启动 */
+    }
+  }
+
+  private saveContacts(): void {
+    try {
+      fs.mkdirSync(this.opts.dataDir, { recursive: true });
+      fs.writeFileSync(this.contactsPath, JSON.stringify({
+        lastContact: this.lastContactWxid,
+        contextTokens: Object.fromEntries(this.contextTokenCache),
+      }), 'utf-8');
+    } catch (err) {
+      console.error('[wechat-bot] 会话联系人持久化失败', err);
+    }
   }
 
   private loadStoredCredentials(): StoredCredentials | null {
@@ -398,9 +441,12 @@ export class WeChatBot extends EventEmitter {
   }
 
   private clearStoredCredentials(): void {
-    for (const f of [this.credFilePath, this.syncBufPath]) {
+    for (const f of [this.credFilePath, this.syncBufPath, this.contactsPath]) {
       try { fs.unlinkSync(f); } catch { /* 文件不存在 */ }
     }
+    // 会话 token 属于当前登录身份，登出即失效
+    this.contextTokenCache.clear();
+    this.lastContactWxid = null;
   }
 
   private loadSyncBuf(): string {

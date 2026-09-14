@@ -80,3 +80,4 @@ export * from './win32-keyboard';
 export * from './win32-window';
 export { ComputerToolExecutor } from './executor';
 export { FileOfficeExecutor } from './file-office';
+export { evaluateTaskAssertion } from './task-assertions';

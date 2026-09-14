@@ -2,6 +2,7 @@ export * from './agent/loop';
 export { quickHash } from './agent/loop-llm';
 export { suggestToolName } from './agent/loop-helpers';
 export { createGroundingLookup, parseGroundingBox, type GroundingLookup, type GroundingMatch, createSomLookup, parseSomChoice, type SomLookup, type SomCandidate } from './agent/grounding';
+export type { TaskAssertion, AssertionResult } from './agent/types';
 export * from './agent/memory';
 export { StateTracker, type StateEntry } from './agent/state-tracker';
 export * from './agent/planner';

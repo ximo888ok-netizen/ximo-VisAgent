@@ -1,7 +1,7 @@
 // 自动验收：模型宣布 task_done 后，由独立评审调用（带当前截图+执行轨迹）对照用户目标判定。
 // 设计约束：单次调用不重试——评审故障时 fail-open 放行并显式标注，绝不因验收器挂掉而卡死任务。
 import type { ChatMessage, ContentPart, ILLMClient } from '@ximo-visagent/llm-providers';
-import type { StepDetail } from './types';
+import type { AssertionResult, StepDetail, TaskAssertion } from './types';
 import { buildImagePart } from './loop-helpers';
 
 export interface AcceptanceVerdict {
@@ -20,7 +20,7 @@ export interface AcceptanceGateResult {
 
 /** 组装评审消息：system 验收员角色 + 目标/最终答案/轨迹，附当前截图块（内联 base64，如有） */
 export async function buildAcceptanceMessages(goal: string, finalAnswer: string, stepsLines: string[], imagePart?: ContentPart): Promise<ChatMessage[]> {
-  const system = `你是桌面任务验收员：根据用户目标、执行轨迹和当前屏幕截图（如有），独立判断任务是否真正完成。只有目标中的每个问题都已有证据支撑的回答时才算通过；模型自称"已完成"不构成证据。输出严格 JSON：{"pass": true|false, "reason": "简要理由"}，不通过时 reason 必须指出缺口（哪个目标点未达成/缺什么证据），不要输出其他内容。`;
+  const system = `你是桌面任务验收员：根据用户目标、执行轨迹和当前屏幕截图（如有），独立判断任务是否真正完成。只有目标中的每个问题都已有证据支撑的回答时才算通过；模型自称"已完成"不构成证据。截图可能被其他窗口遮挡，仅作辅助证据；以轨迹中的实际结果为准。输出严格 JSON：{"pass": true|false, "reason": "简要理由"}，不通过时 reason 必须指出缺口（哪个目标点未达成/缺什么证据），不要输出其他内容。`;
   const text = [
     `用户目标: ${goal}`,
     `模型给出的最终答案: ${finalAnswer || '(空)'}`,
@@ -107,7 +107,69 @@ export interface DoneOutcome {
   error?: string;
 }
 
+/** 断言的可读描述（打回消息里让模型知道「哪个断言、查什么」） */
+export function describeAssertion(a: TaskAssertion): string {
+  if (a.kind === 'file_exists') return `file_exists(${a.path})`;
+  if (a.kind === 'file_contains') return `file_contains(${a.path}, "${a.text}")`;
+  const sheet = a.sheet ? `${a.sheet}!` : '';
+  return `excel_cell(${a.path}!${sheet}${a.cell} = ${a.equals})`;
+}
+
+/** 机器断言门（L1）：声明了断言的任务，task_done 后先跑确定性校验——
+ *  全过直接完成（不再调 LLM 评审，省一次调用）；有失败带具体缺口打回（机器判定优先于模型自评）。
+ *  调用方（onTaskDone）保证只在断言与求值器齐备时进入本门。 */
+export async function runAssertionGate(opts: {
+  assertions: TaskAssertion[];
+  evaluateAssertion: (a: TaskAssertion) => Promise<AssertionResult>;
+  maxRetries: number;
+  failsSoFar: number;
+  attempts: number;
+  modelAnswer: string;
+}): Promise<DoneOutcome> {
+  const results: { a: TaskAssertion; passed: boolean; detail: string }[] = [];
+  for (const a of opts.assertions) {
+    try {
+      const r = await opts.evaluateAssertion(a);
+      results.push({ a, passed: r.passed, detail: r.detail });
+    } catch (err) {
+      // 求值器抛错按断言失败处理：机器校验宁可误拦也不放行假完成（与评审 fail-open 语义不同）
+      results.push({ a, passed: false, detail: `断言执行出错: ${(err as Error).message}` });
+    }
+  }
+  const attempts = opts.attempts + 1;
+  const failed = results.filter((r) => !r.passed);
+  if (failed.length === 0) {
+    return { finish: true, finalAnswer: opts.modelAnswer, attempts, verdictNote: '通过（机器断言）', acceptance: { passed: true, attempts }, tokens: 0 };
+  }
+  const gap = failed.map((f) => `${describeAssertion(f.a)} → ${f.detail}`).join('；');
+  if (opts.failsSoFar < opts.maxRetries) {
+    const attemptNo = opts.failsSoFar + 1;
+    return {
+      finish: false,
+      finalAnswer: opts.modelAnswer,
+      attempts,
+      tokens: 0,
+      reject: {
+        memoryThought: `机器断言未通过: ${gap}`,
+        memorySummary: '断言失败，补救后重新 task_done',
+        systemMessage: `⛔ 机器断言未通过（第 ${attemptNo}/${opts.maxRetries} 次）：${gap}\n请完成缺口后再次调用 task_done（finalAnswer 直接回答目标问题）。`,
+        notice: `[断言] 未通过（${attemptNo}/${opts.maxRetries}）：${gap}`,
+        fails: attemptNo,
+      },
+    };
+  }
+  return {
+    finish: true,
+    finalAnswer: `${opts.modelAnswer}\n\n⚠ 机器断言未通过（${gap}），结果带保留，请人工复核。`,
+    attempts,
+    verdictNote: '未通过（机器断言带保留）',
+    acceptance: { passed: false, attempts },
+    tokens: 0,
+  };
+}
+
 /** 模型宣布 task_done 时的验收决策：
+ *  - 声明了机器断言 → 先跑断言门（全过直接完成；失败打回，与 LLM 评审共用打回上限）；
  *  - 未启用 → 直接放行；
  *  - 评审不通过且未达打回上限 → 打回（reject）；
  *  - 评审不通过但已达上限 → 放行但附「带保留」说明（passed=false）；
@@ -123,7 +185,20 @@ export async function onTaskDone(opts: {
   screenshot?: Buffer;
   textLLM: ILLMClient;
   visionLLM?: ILLMClient;
+  assertions?: TaskAssertion[];
+  evaluateAssertion?: (a: TaskAssertion) => Promise<AssertionResult>;
 }): Promise<DoneOutcome> {
+  // 机器断言优先于 enabled 开关：显式声明断言 = 显式要求确定性校验
+  if (opts.assertions && opts.assertions.length > 0 && opts.evaluateAssertion) {
+    return await runAssertionGate({
+      assertions: opts.assertions,
+      evaluateAssertion: opts.evaluateAssertion,
+      maxRetries: opts.maxRetries,
+      failsSoFar: opts.failsSoFar,
+      attempts: opts.attempts,
+      modelAnswer: opts.modelAnswer,
+    });
+  }
   if (!opts.enabled) {
     return { finish: true, finalAnswer: opts.modelAnswer, attempts: opts.attempts, tokens: 0 };
   }

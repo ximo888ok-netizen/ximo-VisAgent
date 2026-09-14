@@ -143,3 +143,67 @@ describe('AgentLoop 自动验收集成', () => {
     expect(llm.calls).toHaveLength(1); // done 前无意图/规划调用，无评审调用
   });
 });
+
+// ---------- L1 机器断言门 ----------
+
+import { runAssertionGate, describeAssertion } from '../src/agent/acceptance';
+import type { AssertionResult, TaskAssertion } from '../src/agent/types';
+
+function evalOk(): (a: TaskAssertion) => Promise<AssertionResult> {
+  return async () => ({ passed: true, detail: 'ok' });
+}
+
+describe('runAssertionGate（L1 机器断言）', () => {
+  it('全部断言通过 → 直接完成（零 LLM 调用），verdictNote 标注机器断言', async () => {
+    const outcome = await runAssertionGate({
+      assertions: [{ kind: 'file_exists', path: 'a.txt' }, { kind: 'excel_cell', path: 'b.xlsx', cell: 'C1', equals: '110' }],
+      evaluateAssertion: evalOk(),
+      maxRetries: 1, failsSoFar: 0, attempts: 0, modelAnswer: 'done',
+    });
+    expect(outcome.finish).toBe(true);
+    expect(outcome.acceptance).toEqual({ passed: true, attempts: 1 });
+    expect(outcome.verdictNote).toContain('机器断言');
+  });
+
+  it('断言失败且未达上限 → 打回，消息带具体缺口（哪个断言、实际值 vs 期望值）', async () => {
+    const outcome = await runAssertionGate({
+      assertions: [{ kind: 'excel_cell', path: '汇总.xlsx', cell: 'C1', equals: '110' }],
+      evaluateAssertion: async () => ({ passed: false, detail: 'C1 实际值「220」≠ 期望「110」' }),
+      maxRetries: 1, failsSoFar: 0, attempts: 0, modelAnswer: '完成了',
+    });
+    expect(outcome.finish).toBe(false);
+    expect(outcome.reject).toBeDefined();
+    expect(outcome.reject!.systemMessage).toContain('excel_cell(汇总.xlsx!C1 = 110)');
+    expect(outcome.reject!.systemMessage).toContain('220');
+    expect(outcome.reject!.fails).toBe(1);
+  });
+
+  it('断言连续失败达上限 → 带保留完成（passed=false，提示人工复核），不放行假完成', async () => {
+    const outcome = await runAssertionGate({
+      assertions: [{ kind: 'file_contains', path: 'r.txt', text: '8192' }],
+      evaluateAssertion: async () => ({ passed: false, detail: '不含「8192」' }),
+      maxRetries: 1, failsSoFar: 1, attempts: 2, modelAnswer: '好了',
+    });
+    expect(outcome.finish).toBe(true);
+    expect(outcome.acceptance).toEqual({ passed: false, attempts: 3 });
+    expect(outcome.finalAnswer).toContain('请人工复核');
+    expect(outcome.finalAnswer).toContain('8192');
+  });
+
+  it('求值器抛错按断言失败处理（机器校验宁可误拦不放行假完成）', async () => {
+    const outcome = await runAssertionGate({
+      assertions: [{ kind: 'file_exists', path: 'x.txt' }],
+      evaluateAssertion: async () => { throw new Error('disk error'); },
+      maxRetries: 1, failsSoFar: 0, attempts: 0, modelAnswer: 'done',
+    });
+    expect(outcome.finish).toBe(false);
+    expect(outcome.reject!.systemMessage).toContain('断言执行出错');
+    expect(outcome.reject!.systemMessage).toContain('disk error');
+  });
+
+  it('describeAssertion 三种断言的可读格式', () => {
+    expect(describeAssertion({ kind: 'file_exists', path: 'a.txt' })).toBe('file_exists(a.txt)');
+    expect(describeAssertion({ kind: 'file_contains', path: 'a.txt', text: 'hi' })).toBe('file_contains(a.txt, "hi")');
+    expect(describeAssertion({ kind: 'excel_cell', path: 'b.xlsx', cell: 'C1', equals: '110' })).toBe('excel_cell(b.xlsx!C1 = 110)');
+  });
+});

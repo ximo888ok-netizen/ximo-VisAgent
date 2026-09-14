@@ -162,6 +162,9 @@ const islandApi: IslandApi = {
   async wechatLogin() {
     return safeInvoke<WeChatLoginResult>(ISLAND_CHANNELS.wechatLogin);
   },
+  async wechatGetStatus() {
+    return safeInvoke<{ connected: boolean }>(ISLAND_CHANNELS.wechatGetStatus);
+  },
   async wechatLogout() {
     return safeInvoke(ISLAND_CHANNELS.wechatLogout);
   },

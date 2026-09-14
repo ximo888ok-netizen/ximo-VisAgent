@@ -3,7 +3,7 @@ import type { SomCandidate, ToolExecutor, ToolResult } from '@ximo-visagent/agen
 import { suggestToolName, TOOL_SCHEMA_MAP } from '@ximo-visagent/agent-core';
 import { getHost } from './host';
 import { getUiaClient } from './uia-client';
-import { collectCandidates, flattenTree, searchMatches, zoomedBoxToScreen } from './ui-locate';
+import { collectCandidates, filterForegroundCandidates, flattenTree, searchMatches, zoomedBoxToScreen } from './ui-locate';
 import { captureBaseline, postClickVerify } from './click-verify';
 import { ClickGuard } from './click-guard';
 import { clickWithSelfPassthrough, ensureTargetForeground } from './click-focus';
@@ -27,7 +27,7 @@ const SOM_LABEL_MAX = 24;
 
 /** 视觉定位钩子：UIA 找不到目标时由宿主注入（SoM 编号选择 / DeepSeek grounding，见 agent-core/grounding.ts） */
 export interface ExecutorDeps {
-  grounding?: (screenshot: Buffer, query: string) => Promise<{ name: string; x: number; y: number; w: number; h: number }[] | null>;
+  grounding?: (screenshot: Buffer, query: string) => Promise<{ name: string; x: number; y: number; w: number; h: number; spread?: number }[] | null>;
   somLookup?: (screenshot: Buffer, query: string, candidates: SomCandidate[]) => Promise<{ name: string; x: number; y: number; w: number; h: number } | null>;
 }
 
@@ -178,6 +178,14 @@ export class ComputerToolExecutor implements ToolExecutor {
     const delta = Number(args.delta ?? 0);
     const x = args.x !== undefined ? Number(args.x) : undefined;
     const y = args.y !== undefined ? Number(args.y) : undefined;
+    // 数组/字符串坐标会被静默转成 NaN 传进 win32（实测点出 @(NaN,NaN)），这里显式拒绝
+    if ((x !== undefined && !Number.isFinite(x)) || (y !== undefined && !Number.isFinite(y)) || !Number.isFinite(delta)) {
+      return {
+        ok: false,
+        summary: '',
+        error: `mouse_scroll 参数非法（delta=${String(args.delta)}, x=${String(args.x)}, y=${String(args.y)}）。delta 为格数、x/y 为坐标，必须是数字`,
+      };
+    }
     await mouseScroll(delta, x, y);
     return { ok: true, summary: `滚轮 ${delta > 0 ? '向上' : '向下'} ${Math.abs(delta)} 格${x !== undefined ? ` @(${Math.round(x)},${Math.round(y ?? 0)})` : ''}` };
   }
@@ -240,6 +248,8 @@ export class ComputerToolExecutor implements ToolExecutor {
   private async uiLocate(args: Record<string, unknown>): Promise<ToolResult> {
     const query = String(args.query ?? '').trim();
     if (!query) return { ok: false, summary: '', error: 'ui_locate 需要 query（控件/图标名称的子串，如 "Qoder"、"保存"）' };
+    // B1 找到即点：locate+click 合一（省一整个迭代），仅首个候选；守卫/穿透/验证沿用既有链
+    const click = args.click === true;
     try {
       const tree = await this.uiTree();
       const all = flattenTree(tree.tree);
@@ -247,7 +257,7 @@ export class ComputerToolExecutor implements ToolExecutor {
       if (matches.length === 0) {
         // UIA 未命中 → grounding 降级链（DeepSeek 视觉定位，坐标由代码反归一化）
         const g = await this.groundingLookup(query);
-        if (g) return g;
+        if (g) return click ? this.clickAfterLocate(g, args) : g;
         return { ok: false, summary: '', error: `未找到名称含「${query}」的元素（扫描 ${all.length} 个节点）。换更短的关键词，或回退为看图点击` };
       }
       const detail = matches
@@ -255,17 +265,37 @@ export class ComputerToolExecutor implements ToolExecutor {
         .join('；');
       // 登记给点击守卫：模型若拿坐标直点，会被提示改用 ui_click（UIA 中心无目测误差）
       this.guard.remember(matches.map((m) => ({ id: m.id, name: m.name, x: m.x, y: m.y, w: m.w, h: m.h })));
+      // 重复查询检测：同 query 短时间内返回同一结果时升级警告，打断"locate→click→locate"空转
+      const repeat = this.guard.locateRepeatNote(query, `${matches[0]!.id}@${Math.round(matches[0]!.center.x)},${Math.round(matches[0]!.center.y)}`);
+      if (click) {
+        const clicked = await this.uiClick({ ...args, elementId: matches[0]!.id });
+        const summary = `找到${matches.length}个: ${detail}；已点击首个 #${matches[0]!.id} "${matches[0]!.name}"${repeat ?? ''}`;
+        return clicked.ok ? { ok: true, summary: `${summary} → ${clicked.summary}`, data: { matches } } : { ...clicked, error: `${summary}；点击失败: ${clicked.error}` };
+      }
       return {
         ok: true,
-        summary: `找到${matches.length}个: ${detail}。点击请用 ui_click(elementId)——按 UIA 真实中心点击，无目测误差`,
+        summary: `找到${matches.length}个: ${detail}。点击请用 ui_click(elementId)，或 ui_locate(click:true) 找到即点${repeat ?? ''}`,
         data: { matches },
       };
     } catch (err) {
       // UIA 整体不可用时也走 grounding 兜底
       const g = await this.groundingLookup(query).catch(() => null);
-      if (g) return g;
+      if (g) return click ? this.clickAfterLocate(g, args) : g;
       return { ok: false, summary: '', error: `UIA 不可用(${(err as Error).message})，请回退为看图点击` };
     }
+  }
+
+  /** B1：视觉定位结果（无 UIA id）的找到即点——按中心坐标直点，沿用 mouseClick 的守卫/穿透/验证链 */
+  private async clickAfterLocate(g: ToolResult, args: Record<string, unknown>): Promise<ToolResult> {
+    const hit = (g.data?.matches as Array<{ x: number; y: number; w: number; h: number }> | undefined)?.[0];
+    if (!hit) return g;
+    const cx = Math.round(hit.x + hit.w / 2);
+    const cy = Math.round(hit.y + hit.h / 2);
+    const clicked = await this.mouseClick({ x: cx, y: cy, button: args.button ?? 'left', times: Number(args.times ?? 1) });
+    const located = (g.summary ?? '').slice(0, 120);
+    return clicked.ok
+      ? { ok: true, summary: `${located}；已点击中心 (${cx},${cy}) → ${clicked.summary}` }
+      : { ...clicked, error: `${located}；点击失败: ${clicked.error}` };
   }
 
   /** grounding 降级：拿干净截图（无网格）→ SoM 编号选择（首选）→ 自由 bbox（兜底）→ OCR 文字定位（最终兜底） */
@@ -318,14 +348,19 @@ export class ComputerToolExecutor implements ToolExecutor {
 
   /** 自由 grounding 粗框的二次精修：局部放大再定位一次，误差从全屏尺度收敛到局部尺度 */
   private async zoomRefine(
-    m: { name: string; x: number; y: number; w: number; h: number },
+    m: { name: string; x: number; y: number; w: number; h: number; spread?: number },
     query: string,
   ): Promise<{ name: string; x: number; y: number; w: number; h: number } | null> {
     const host = getHost();
     if (typeof host.captureZoom !== 'function' || !this.deps.grounding) return null;
     // 粗框扩边 2.2x（最小 160x120）：粗框常偏紧或偏移，防目标贴边
-    const cw = Math.max(160, Math.round(m.w * 2.2));
-    const ch = Math.max(120, Math.round(m.h * 2.2));
+    let cw = Math.max(160, Math.round(m.w * 2.2));
+    let ch = Math.max(120, Math.round(m.h * 2.2));
+    // 投票散布大（模型定位不稳定）：复核范围必须盖住散布，否则放大图里根本没有目标
+    if (m.spread && m.spread > 0) {
+      cw = Math.max(cw, Math.round(m.spread * 2.2));
+      ch = Math.max(ch, Math.round(m.spread * 2.2));
+    }
     try {
       const { jpeg, origin, zoom } = await host.captureZoom(m.x + m.w / 2 - cw / 2, m.y + m.h / 2 - ch / 2, cw, ch);
       const hits = await this.deps.grounding(jpeg, query);
@@ -350,12 +385,14 @@ export class ComputerToolExecutor implements ToolExecutor {
     }
   }
 
-  /** SoM 候选收集：UIA 控件，坐标在截图坐标系。 */
+  /** SoM 候选收集：UIA 控件，坐标在截图坐标系。限定前台窗口（后台候选在截图上不可见，选中即点飞）。 */
   private async somCandidates(_screenshot: Buffer): Promise<SomCandidate[]> {
     const out: SomCandidate[] = [];
     try {
       const tree = await this.uiTree();
-      for (const m of collectCandidates(tree.tree, SOM_CANDIDATE_LIMIT)) {
+      const fg = await this.foregroundTitle();
+      const pool = filterForegroundCandidates(collectCandidates(tree.tree, SOM_CANDIDATE_LIMIT), fg);
+      for (const m of pool) {
         out.push({ index: out.length + 1, label: m.name.slice(0, SOM_LABEL_MAX), x: m.x, y: m.y, w: m.w, h: m.h });
         if (out.length >= SOM_CANDIDATE_LIMIT) break;
       }
