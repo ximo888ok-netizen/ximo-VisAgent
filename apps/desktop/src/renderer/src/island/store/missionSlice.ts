@@ -11,6 +11,7 @@ import type {
   MissionCreateRequest,
   SubtaskStatusUpdateRequest,
   ArtifactCreateRequest,
+  MissionResolveDecision,
 } from '@shared/island-contracts';
 
 export interface MissionDetailPayload {
@@ -30,6 +31,8 @@ export interface MissionSliceState {
   missionsLoading: boolean;
   missionDetail: MissionDetailPayload | null;
   missionDetailLoading: boolean;
+  /** 本次会话内被「驳回」（停等不执行）的计划确认卡所属 mission id；无主进程驳回通道，仅本地收卡 */
+  planDismissedIds: string[];
 
   // ---- actions ----
   loadCapabilities(req?: CapabilitySearchRequest): Promise<void>;
@@ -46,6 +49,13 @@ export interface MissionSliceState {
   createMission(req: MissionCreateRequest): Promise<string | null>;
   updateSubtaskStatus(req: SubtaskStatusUpdateRequest): Promise<boolean>;
   createArtifact(req: ArtifactCreateRequest): Promise<string | null>;
+  /** 计划确认闸（mission-confirm）：成功返回 null，失败返回主进程闸拒绝原因（绝不误启动） */
+  confirmMission(missionId: string): Promise<string | null>;
+  /** 暂停 Mission 的人工处置（mission-resolve）：成功返回 null，失败返回原因 */
+  resolveMission(missionId: string, decision: MissionResolveDecision): Promise<string | null>;
+  /** 驳回＝本次会话收卡停等：主进程暂无 awaiting_confirm→cancelled 通道，Mission 保持待确认绝不派发 */
+  dismissPlanConfirm(missionId: string): void;
+  restorePlanConfirm(missionId: string): void;
 }
 
 export function createMissionSlice(
@@ -60,6 +70,7 @@ export function createMissionSlice(
     missionsLoading: false,
     missionDetail: null,
     missionDetailLoading: false,
+    planDismissedIds: [],
 
     async loadCapabilities(req) {
       set({ capabilitiesLoading: true });
@@ -133,6 +144,44 @@ export function createMissionSlice(
       const res = await window.islandAPI.artifactCreate(req);
       if (!res.ok) return null;
       return res.data.id;
+    },
+
+    async confirmMission(missionId) {
+      const res = await window.islandAPI.missionConfirm({ missionId });
+      if (!res.ok) return res.error;
+      // 确认闸已过（awaiting_confirm → running）：刷新列表与详情，确认卡随之退役
+      const list = await window.islandAPI.missionList();
+      const detail = await window.islandAPI.missionGet(missionId);
+      set((s) => ({
+        missions: list.ok ? list.data : s.missions,
+        missionDetail: detail.ok ? detail.data : s.missionDetail,
+        planDismissedIds: s.planDismissedIds.filter((id) => id !== missionId),
+      }));
+      return null;
+    },
+
+    async resolveMission(missionId, decision) {
+      const res = await window.islandAPI.missionResolve({ missionId, decision });
+      if (!res.ok) return res.error;
+      const list = await window.islandAPI.missionList();
+      const detail = await window.islandAPI.missionGet(missionId);
+      set((s) => ({
+        missions: list.ok ? list.data : s.missions,
+        missionDetail: detail.ok ? detail.data : s.missionDetail,
+      }));
+      return null;
+    },
+
+    dismissPlanConfirm(missionId) {
+      set((s) => ({
+        planDismissedIds: s.planDismissedIds.includes(missionId)
+          ? s.planDismissedIds
+          : [...s.planDismissedIds, missionId],
+      }));
+    },
+
+    restorePlanConfirm(missionId) {
+      set((s) => ({ planDismissedIds: s.planDismissedIds.filter((id) => id !== missionId) }));
     },
   };
 }

@@ -8,7 +8,9 @@ import type { MissionRowPayload } from '@shared/island-contracts';
 
 const STATUS_LABEL: Record<string, string> = {
   draft: '草稿',
+  planning: '规划中',
   queued: '排队中',
+  awaiting_confirm: '待确认',
   running: '执行中',
   paused: '暂停',
   completed: '已完成',
@@ -18,7 +20,9 @@ const STATUS_LABEL: Record<string, string> = {
 
 const STATUS_COLOR: Record<string, string> = {
   draft: 'var(--p-ink-7)',
+  planning: 'var(--c-waiting)',
   queued: 'var(--c-waiting)',
+  awaiting_confirm: 'var(--c-waiting)',
   running: 'var(--p-ice-500)',
   paused: 'var(--c-error)',
   completed: 'var(--c-thinking)',
@@ -113,8 +117,9 @@ function MissionRow({ mission, expanded, onSelect }: {
   expanded: boolean;
   onSelect: () => void;
 }) {
+  const needsConfirm = mission.status === 'awaiting_confirm';
   return (
-    <div className="rounded-xl ig-bg-panel px-3 py-2.5">
+    <div className={`rounded-xl ig-bg-panel px-3 py-2.5 ${needsConfirm ? 'ig-alert ig-tone-warning' : ''}`}>
       <div className="flex items-center gap-2">
         <span className="text-[13px] t-strong font-medium line-clamp-1">{mission.goal}</span>
         <span
@@ -131,6 +136,11 @@ function MissionRow({ mission, expanded, onSelect }: {
           {expanded ? '收起' : '详情'}
         </button>
       </div>
+      {needsConfirm && (
+        <div className="mt-1 text-[11px] ig-fg-warning">
+          执行计划等你确认——不确认绝不派发。{expanded ? '' : '点「详情」查看计划。'}
+        </div>
+      )}
       <div className="mt-0.5 flex items-center gap-2 text-[11px] t-faint">
         <span>{PRIORITY_LABEL[mission.priority] ?? mission.priority}</span>
         <span>{new Date(mission.createdAt).toLocaleString()}</span>

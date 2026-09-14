@@ -2,6 +2,8 @@
  * MissionDetail.tsx — 任务详情（子任务列表 + 产物 + 状态操作）
  */
 import { useIslandStore } from '../../../store/islandStore';
+import { PlanConfirmCard } from './PlanConfirmCard';
+import { MissionResolveBar } from './MissionResolveBar';
 import type { SubtaskRowPayload, MissionArtifactRowPayload } from '@shared/island-contracts';
 
 const SUBTASK_STATUS_LABEL: Record<string, string> = {
@@ -35,8 +37,16 @@ export function MissionDetail({ missionId }: { missionId: string }) {
     return null;
   }
 
+  const failedSubtasks = detail.subtasks.filter((st) => st.status === 'failed');
+
   return (
     <div className="rounded-xl ig-bg-panel px-3 py-2.5 space-y-2 border-t ig-border-line">
+      {/* 人在环闸：待确认计划卡 / 失败停等处置条 */}
+      {detail.mission.status === 'awaiting_confirm' && <PlanConfirmCard mission={detail.mission} />}
+      {detail.mission.status === 'paused' && failedSubtasks.length > 0 && (
+        <MissionResolveBar missionId={detail.mission.id} failed={failedSubtasks} />
+      )}
+
       <div className="text-[12px] t-strong font-medium">子任务 ({detail.subtasks.length})</div>
 
       {detail.subtasks.map((st, idx) => (

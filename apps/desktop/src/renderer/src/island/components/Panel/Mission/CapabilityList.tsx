@@ -13,6 +13,7 @@ export function CapabilityList() {
   const matchCapabilities = useIslandStore((s) => s.matchCapabilities);
   const capMatchResult = useIslandStore((s) => s.capMatchResult);
   const capMatchLoading = useIslandStore((s) => s.capMatchLoading);
+  const pushToast = useIslandStore((s) => s.pushToast);
 
   const [query, setQuery] = useState('');
   const [seeding, setSeeding] = useState(false);
@@ -28,7 +29,9 @@ export function CapabilityList() {
     const proposalId = await seedCapabilities();
     setSeeding(false);
     if (proposalId) {
-      console.log(`[mission] 种子导入已提交宪法门审批（${proposalId}），批准后生效`);
+      pushToast('info', '种子导入已提交审批（宪法门），批准后生效');
+    } else {
+      pushToast('error', '种子导入提案未受理：宪法门可能已停用或队列拒绝');
     }
   };
 

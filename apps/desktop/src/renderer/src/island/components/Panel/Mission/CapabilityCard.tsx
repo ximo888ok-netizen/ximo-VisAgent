@@ -19,12 +19,19 @@ export function CapabilityCard({ cap }: { cap: CapabilityCardPayload }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const updateCapability = useIslandStore((s) => s.updateCapability);
+  const pushToast = useIslandStore((s) => s.pushToast);
 
   const handleToggleStatus = async () => {
-    await updateCapability({
+    const proposalId = await updateCapability({
       id: cap.id,
       status: cap.status === 'active' ? 'retired' : 'active',
     });
+    // 写操作只登记宪法门提案，批准后由执行器落库——面板不假装立即生效
+    if (proposalId) {
+      pushToast('info', `${cap.status === 'active' ? '退役' : '启用'}请求已提交审批，批准后生效`);
+    } else {
+      pushToast('error', '提案未受理：宪法门可能已停用');
+    }
   };
 
   if (editing) {
@@ -108,6 +115,7 @@ export function CapabilityCard({ cap }: { cap: CapabilityCardPayload }) {
 
 function CapabilityEditForm({ cap, onDone }: { cap: CapabilityCardPayload; onDone: () => void }) {
   const updateCapability = useIslandStore((s) => s.updateCapability);
+  const pushToast = useIslandStore((s) => s.pushToast);
   const [title, setTitle] = useState(cap.title);
   const [description, setDescription] = useState(cap.description);
   const [precondition, setPrecondition] = useState(cap.precondition);
@@ -116,7 +124,7 @@ function CapabilityEditForm({ cap, onDone }: { cap: CapabilityCardPayload; onDon
 
   const handleSave = async () => {
     setSaving(true);
-    await updateCapability({
+    const proposalId = await updateCapability({
       id: cap.id,
       title,
       description,
@@ -124,7 +132,12 @@ function CapabilityEditForm({ cap, onDone }: { cap: CapabilityCardPayload; onDon
       acceptance,
     });
     setSaving(false);
-    onDone();
+    if (proposalId) {
+      pushToast('info', '编辑已提交审批，批准后生效');
+      onDone();
+    } else {
+      pushToast('error', '提案未受理：宪法门可能已停用');
+    }
   };
 
   return (

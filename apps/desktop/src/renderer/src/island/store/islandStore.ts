@@ -48,6 +48,7 @@ export const PANEL_HEIGHTS: Record<PanelMode, number> = {
   evolution: 520,
   employee: 520,
   mission: 520,
+  knowledge: 520,
 } as const;
 
 interface IslandState extends TaskSliceState, ConfigSliceState, AuditSliceState, RunSliceState, SopSliceState, UiSliceState, SmartSliceState, ExperienceSliceState, MissionSliceState {
