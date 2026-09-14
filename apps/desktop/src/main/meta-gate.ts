@@ -43,7 +43,10 @@ export type MetaActionType =
   | 'tool_unregister'
   | 'recovery_rule_enable'
   | 'recovery_rule_disable'
-  | 'position_update';
+  | 'position_update'
+  | 'capability_upsert'
+  | 'capability_disable'
+  | 'capability_seed';
 
 export const META_ACTION_WHITELIST: ReadonlySet<MetaActionType> = new Set([
   'prompt_activate',
@@ -55,6 +58,9 @@ export const META_ACTION_WHITELIST: ReadonlySet<MetaActionType> = new Set([
   'recovery_rule_enable',
   'recovery_rule_disable',
   'position_update',
+  'capability_upsert',
+  'capability_disable',
+  'capability_seed',
 ]);
 
 /** 提权类动作：扩大 Agent 能力，必须经人工批准后生效 */
@@ -64,6 +70,8 @@ export const META_ESCALATING_ACTIONS: ReadonlySet<MetaActionType> = new Set([
   'tool_register',
   'recovery_rule_enable',
   'position_update',
+  'capability_upsert',
+  'capability_seed',
 ]);
 
 export interface MetaProposal {
@@ -140,6 +148,7 @@ export function detectViolation(
     ['sop_', 'sop-', 'sop'],
     ['recovery_', 'rec-', 'recovery'],
     ['position_', 'pos-', 'position'],
+    ['capability_', 'cap:', 'capability'],
   ];
   for (const [actionPrefix, targetPrefix, label] of prefixRules) {
     if (action.startsWith(actionPrefix) && !targetId.startsWith(targetPrefix)) {

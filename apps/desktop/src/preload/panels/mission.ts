@@ -10,6 +10,7 @@ import { ISLAND_CHANNELS } from "../../shared/island-contracts";
 import type {
   CapabilityCardPayload,
   CapabilityMatchResultPayload,
+  CapabilityProposeResult,
   MissionRowPayload,
   SubtaskRowPayload,
   MissionArtifactRowPayload,
@@ -35,16 +36,16 @@ export function registerMissionApi(safeInvoke: SafeInvoke): MissionPanelApi {
       return safeInvoke<CapabilityCardPayload[]>(ISLAND_CHANNELS.capabilityList, req ?? {});
     },
     async capabilityCreate(req) {
-      return safeInvoke<{ id: string }>(ISLAND_CHANNELS.capabilityCreate, req);
+      return safeInvoke<CapabilityProposeResult>(ISLAND_CHANNELS.capabilityCreate, req);
     },
     async capabilityUpdate(req) {
-      return safeInvoke<Record<string, never>>(ISLAND_CHANNELS.capabilityUpdate, req);
+      return safeInvoke<CapabilityProposeResult>(ISLAND_CHANNELS.capabilityUpdate, req);
     },
     async capabilityMatch(req) {
       return safeInvoke<CapabilityMatchResultPayload>(ISLAND_CHANNELS.capabilityMatch, req);
     },
     async capabilitySeed() {
-      return safeInvoke<{ imported: number; skipped: number }>(ISLAND_CHANNELS.capabilitySeed);
+      return safeInvoke<CapabilityProposeResult>(ISLAND_CHANNELS.capabilitySeed);
     },
     async missionCreate(req) {
       return safeInvoke<{ id: string }>(ISLAND_CHANNELS.missionCreate, req);

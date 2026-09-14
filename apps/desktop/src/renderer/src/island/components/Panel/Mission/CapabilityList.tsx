@@ -25,10 +25,10 @@ export function CapabilityList() {
 
   const handleSeed = async () => {
     setSeeding(true);
-    const result = await seedCapabilities();
+    const proposalId = await seedCapabilities();
     setSeeding(false);
-    if (result.imported > 0) {
-      console.log(`[mission] 种子导入: ${result.imported} 张能力卡`);
+    if (proposalId) {
+      console.log(`[mission] 种子导入已提交宪法门审批（${proposalId}），批准后生效`);
     }
   };
 

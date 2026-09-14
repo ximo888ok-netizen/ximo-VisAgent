@@ -68,6 +68,7 @@ import type {
   CapabilitySearchRequest,
   CapabilityMatchRequest,
   CapabilityMatchResultPayload,
+  CapabilityProposeResult,
   MissionRowPayload,
   SubtaskRowPayload,
   MissionArtifactRowPayload,
@@ -193,14 +194,14 @@ export interface IslandApi {
   // ---- 任务知识库（Mission / Capability）----
   /** 能力卡列表（含搜索） */
   capabilityList(req?: CapabilitySearchRequest): Promise<IpcResult<CapabilityCardPayload[]>>;
-  /** 创建能力卡 */
-  capabilityCreate(req: CapabilityCreateRequest): Promise<IpcResult<{ id: string }>>;
-  /** 更新能力卡 */
-  capabilityUpdate(req: CapabilityUpdateRequest): Promise<IpcResult<Record<string, never>>>;
+  /** 创建能力卡：登记宪法门提案，批准后落库（返回提案，非落库结果） */
+  capabilityCreate(req: CapabilityCreateRequest): Promise<IpcResult<CapabilityProposeResult>>;
+  /** 更新能力卡：登记宪法门提案（退役走 capability_disable），批准后落库 */
+  capabilityUpdate(req: CapabilityUpdateRequest): Promise<IpcResult<CapabilityProposeResult>>;
   /** 能力卡匹配（给定任务目标，返回候选） */
   capabilityMatch(req: CapabilityMatchRequest): Promise<IpcResult<CapabilityMatchResultPayload>>;
-  /** 重新导入种子能力集 */
-  capabilitySeed(): Promise<IpcResult<{ imported: number; skipped: number }>>;
+  /** 重新导入种子能力集：登记宪法门提案，批准后落库 */
+  capabilitySeed(): Promise<IpcResult<CapabilityProposeResult>>;
   /** 创建任务（含子任务分解） */
   missionCreate(req: MissionCreateRequest): Promise<IpcResult<{ id: string }>>;
   /** 任务列表 */

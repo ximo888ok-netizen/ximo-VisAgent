@@ -29,6 +29,9 @@ export interface EvolutionDeps {
   toolsDir: string;
   /** M2: 员工域存储（position_update 执行器需要） */
   employee?: import('../stores/employee-store').EmployeeStore;
+  /** 能力知识库执行器（capability_*）需要的仓储与库句柄 */
+  mission?: import('../mission-db/mission-repo').MissionRepo;
+  missionDb?: import('better-sqlite3').Database;
 }
 
 let evoRegistered = false;
@@ -75,6 +78,8 @@ export function registerEvolutionHandlers(deps: EvolutionDeps): void {
       tools: deps.tools,
       toolsDir: deps.toolsDir,
       employee: deps.employee,
+      mission: deps.mission,
+      missionDb: deps.missionDb,
     };
     const result = await metaApprove(deps.audit, deps.experience, proposalId, (prop, payload) =>
       applier(applyDeps, { ...payload, proposalId: prop.id }, prop));

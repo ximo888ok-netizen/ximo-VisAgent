@@ -59,7 +59,18 @@ export const CapabilitySearchSchema = z.object({
   source: CapabilitySourceSchema.optional(),
 });
 
+/**
+ * 能力卡写入口的返回：不再直接落库，而是登记宪法门提案，
+ * 人工批准后由 meta-appliers 执行器写入 + 审计留痕。
+ */
+export const CapabilityProposeResultSchema = z.object({
+  proposalId: z.string(),
+  targetId: z.string(),
+  status: z.enum(['pending', 'approved', 'rejected', 'executed', 'failed']),
+});
+
 export type CapabilityCardPayload = z.infer<typeof CapabilityCardSchema>;
 export type CapabilityCreateRequest = z.infer<typeof CapabilityCreateSchema>;
 export type CapabilityUpdateRequest = z.infer<typeof CapabilityUpdateSchema>;
 export type CapabilitySearchRequest = z.infer<typeof CapabilitySearchSchema>;
+export type CapabilityProposeResult = z.infer<typeof CapabilityProposeResultSchema>;

@@ -98,7 +98,7 @@ export function registerIsland(deps: IpcRegistryDeps): void {
   registerExtendedHandlers({ orchestrator, store: configStore, audit: auditDb });
   registerSmartHandlers({ orchestrator, store: configStore, audit: auditDb, memory: memoryStore, conversation: conversationStore, scheduler });
   registerExperienceHandlers({ experience: experienceStore, audit: auditDb, orchestrator, store: configStore });
-  registerEvolutionHandlers({ experience: experienceStore, audit: auditDb, orchestrator, tools: orchestrator.customTools, toolsDir: orchestrator.toolsDir, employee: employeeStore });
+  registerEvolutionHandlers({ experience: experienceStore, audit: auditDb, orchestrator, tools: orchestrator.customTools, toolsDir: orchestrator.toolsDir, employee: employeeStore, mission: missionRepo, missionDb: auditDb.exposeDb() });
   registerEmployeeHandlers({ employee: employeeStore, audit: auditDb, store: configStore });
-  registerMissionHandlers({ db: auditDb.exposeDb(), repo: missionRepo });
+  registerMissionHandlers({ repo: missionRepo, audit: auditDb, experience: experienceStore });
 }

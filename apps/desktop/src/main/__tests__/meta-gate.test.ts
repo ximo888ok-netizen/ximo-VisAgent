@@ -93,8 +93,8 @@ beforeEach(() => {
 });
 
 describe('白名单与分级', () => {
-  it('包含 9 种元层操作', () => {
-    expect(META_ACTION_WHITELIST.size).toBe(9);
+  it('包含 12 种元层操作', () => {
+    expect(META_ACTION_WHITELIST.size).toBe(12);
   });
 
   it('提权类动作必须经人工批准，降权类可即时执行', () => {
@@ -106,6 +106,15 @@ describe('白名单与分级', () => {
     expect(isEscalating('prompt_rollback')).toBe(false);
     expect(isEscalating('tool_unregister')).toBe(false);
     expect(isEscalating('sop_demote')).toBe(false);
+  });
+
+  it('能力扩权类（upsert/seed）必须经批准；退役属降权但仍只走门', () => {
+    expect(META_ACTION_WHITELIST.has('capability_upsert')).toBe(true);
+    expect(META_ACTION_WHITELIST.has('capability_disable')).toBe(true);
+    expect(META_ACTION_WHITELIST.has('capability_seed')).toBe(true);
+    expect(isEscalating('capability_upsert')).toBe(true);
+    expect(isEscalating('capability_seed')).toBe(true);
+    expect(isEscalating('capability_disable')).toBe(false);
   });
 });
 

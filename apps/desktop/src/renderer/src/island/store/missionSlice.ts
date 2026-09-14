@@ -33,10 +33,13 @@ export interface MissionSliceState {
 
   // ---- actions ----
   loadCapabilities(req?: CapabilitySearchRequest): Promise<void>;
-  createCapability(req: { id: string; title: string; description?: string; tools?: string[]; precondition?: string; acceptance?: string }): Promise<boolean>;
-  updateCapability(req: { id: string; title?: string; description?: string; tools?: string[]; precondition?: string; acceptance?: string; status?: 'active' | 'retired' }): Promise<boolean>;
+  /** 提交宪法门提案（capability_upsert），返回 proposalId；批准后才会落库 */
+  createCapability(req: { id: string; title: string; description?: string; tools?: string[]; precondition?: string; acceptance?: string }): Promise<string | null>;
+  /** 提交宪法门提案（编辑=upsert，纯退役=disable），返回 proposalId */
+  updateCapability(req: { id: string; title?: string; description?: string; tools?: string[]; precondition?: string; acceptance?: string; status?: 'active' | 'retired' }): Promise<string | null>;
   matchCapabilities(missionGoal: string): Promise<void>;
-  seedCapabilities(): Promise<{ imported: number; skipped: number }>;
+  /** 提交种子导入提案，返回 proposalId（批准后生效） */
+  seedCapabilities(): Promise<string | null>;
 
   loadMissions(): Promise<void>;
   loadMissionDetail(id: string): Promise<void>;
@@ -78,20 +81,13 @@ export function createMissionSlice(
         acceptance: req.acceptance ?? '',
         visualAnchors: [],
       });
-      if (!res.ok) return false;
-      // 刷新列表
-      const list = await window.islandAPI.capabilityList({});
-      if (list.ok) set({ capabilities: list.data });
-      return true;
+      // 写入已改为宪法门提案：批准后由主进程执行器落库，列表在下次加载时反映
+      return res.ok ? res.data.proposalId : null;
     },
 
     async updateCapability(req) {
       const res = await window.islandAPI.capabilityUpdate(req);
-      if (!res.ok) return false;
-      // 刷新列表
-      const list = await window.islandAPI.capabilityList({});
-      if (list.ok) set({ capabilities: list.data });
-      return true;
+      return res.ok ? res.data.proposalId : null;
     },
 
     async matchCapabilities(missionGoal) {
@@ -102,10 +98,7 @@ export function createMissionSlice(
 
     async seedCapabilities() {
       const res = await window.islandAPI.capabilitySeed();
-      // 刷新列表
-      const list = await window.islandAPI.capabilityList({});
-      if (list.ok) set({ capabilities: list.data });
-      return res.ok ? res.data : { imported: 0, skipped: 0 };
+      return res.ok ? res.data.proposalId : null;
     },
 
     async loadMissions() {

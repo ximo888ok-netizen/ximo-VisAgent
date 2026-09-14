@@ -18,6 +18,9 @@ const ACTION_LABELS: Record<string, string> = {
   tool_unregister: "注销自定义工具",
   recovery_rule_enable: "启用恢复规则",
   recovery_rule_disable: "禁用恢复规则",
+  capability_upsert: "创建/更新能力卡",
+  capability_disable: "退役能力卡",
+  capability_seed: "导入种子能力集",
 };
 
 export function MetaGateTab() {

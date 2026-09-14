@@ -8,9 +8,20 @@
  */
 import { writeToolScript, type CustomToolDefinition, type CustomToolRuntime } from './custom-tools';
 import { atomsInScript, deriveLevel, staticSandboxCheck, type ToolContract } from './tool-script';
+import { seedCapabilities } from './mission-db/seed-capabilities';
+import { CapabilityCreateSchema, CapabilityUpdateSchema } from '../shared/schemas/capability';
+import type Database from 'better-sqlite3';
+import type { CapabilityCardPayload, CapabilityCreateRequest, CapabilityUpdateRequest } from '../shared/schemas/capability';
 import type { MetaActionType, MetaProposal } from './meta-gate';
 import type { ExperienceStore } from './experience-store';
 import type { ZODB } from './audit-store';
+
+/** 执行器只需要能力卡的三个写/读方法，不需要整个仓储（同 MetaAudit/MetaStore 收窄模式） */
+export interface CapabilityWriter {
+  getCapability(id: string): CapabilityCardPayload | null;
+  createCapability(req: CapabilityCreateRequest): { id: string };
+  updateCapability(req: CapabilityUpdateRequest): void;
+}
 
 export interface MetaApplyDeps {
   experience: ExperienceStore;
@@ -19,6 +30,9 @@ export interface MetaApplyDeps {
   toolsDir: string;
   /** M2: 员工域存储（岗位变更执行器需要） */
   employee?: import('./stores/employee-store').EmployeeStore;
+  /** 能力知识库写入执行器（capability_*）需要的仓储与库句柄 */
+  mission?: CapabilityWriter;
+  missionDb?: Database.Database;
 }
 
 export type MetaApplier = (
@@ -75,6 +89,49 @@ async function approveCustomTool(deps: MetaApplyDeps, toolId: string, proposalId
   deps.experience.updateCustomToolSchema(tool.id, JSON.stringify({ ...contract, level: def.level, atoms }));
   deps.experience.setCustomToolApproval(tool.id, proposalId);
   deps.experience.toggleCustomTool(tool.id, true);
+}
+
+/** 能力写入执行器需要的窄依赖（单测可独立注入，不牵连其余元层存储） */
+export interface CapabilityApplyDeps {
+  mission?: CapabilityWriter;
+  missionDb?: Database.Database;
+}
+
+/** create 级载荷的判定：七个必填/默认字段全部显式存在（缺任一按部分更新处理） */
+const CAP_CREATE_KEYS = ['id', 'title', 'description', 'tools', 'precondition', 'acceptance', 'visualAnchors'] as const;
+
+/**
+ * capability_upsert：批准后才落库。
+ * create 级参数齐全 → 不存在则新建、已存在则全量更新；否则按部分更新（目标必须已存在）。
+ */
+export function applyCapabilityUpsert(deps: CapabilityApplyDeps, payload: Record<string, unknown>): void {
+  if (!deps.mission) throw new Error('能力知识库仓储不可用');
+  const looksFullCreate = CAP_CREATE_KEYS.every((k) => k in payload);
+  const create = looksFullCreate ? CapabilityCreateSchema.safeParse(payload) : null;
+  if (create && create.success) {
+    if (deps.mission.getCapability(create.data.id)) deps.mission.updateCapability(create.data);
+    else deps.mission.createCapability(create.data);
+    return;
+  }
+  const update = CapabilityUpdateSchema.safeParse(payload);
+  if (!update.success) throw new Error('能力卡提案参数损坏');
+  if (!deps.mission.getCapability(update.data.id)) throw new Error('能力卡不存在，无法更新');
+  deps.mission.updateCapability(update.data);
+}
+
+/** capability_disable（降权类）：批准后把能力卡置为退役，同样必须经门 */
+export function applyCapabilityDisable(deps: CapabilityApplyDeps, payload: Record<string, unknown>): void {
+  if (!deps.mission) throw new Error('能力知识库仓储不可用');
+  const parsed = CapabilityUpdateSchema.safeParse({ id: payload.id, status: 'retired' });
+  if (!parsed.success) throw new Error('能力卡提案参数损坏');
+  if (!deps.mission.getCapability(parsed.data.id)) throw new Error('能力卡不存在，无法退役');
+  deps.mission.updateCapability(parsed.data);
+}
+
+/** capability_seed：人工点击导入种子能力集，批准后由执行器写入（幂等） */
+export function applyCapabilitySeed(deps: CapabilityApplyDeps): void {
+  if (!deps.missionDb) throw new Error('能力知识库数据库不可用');
+  seedCapabilities(deps.missionDb);
 }
 
 export const META_APPLIERS: Record<MetaActionType, MetaApplier> = {
@@ -136,4 +193,10 @@ export const META_APPLIERS: Record<MetaActionType, MetaApplier> = {
     if (Object.keys(updates).length === 0) throw new Error('无更新字段');
     deps.employee.updatePosition(positionId, updates);
   },
+
+  capability_upsert: (deps, payload) => applyCapabilityUpsert(deps, payload),
+
+  capability_disable: (deps, payload) => applyCapabilityDisable(deps, payload),
+
+  capability_seed: (deps) => applyCapabilitySeed(deps),
 };
