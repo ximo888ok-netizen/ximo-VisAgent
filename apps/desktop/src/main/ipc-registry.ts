@@ -22,6 +22,12 @@ import { registerExperienceHandlers } from './ipc/island-experience-handlers';
 import { registerEvolutionHandlers } from './ipc/island-evolution-handlers';
 import { registerEmployeeHandlers } from './ipc/island-employee-handlers';
 import { registerMissionHandlers } from './ipc/mission-handlers';
+import { registerAppsHandlers } from './ipc/apps-handlers';
+import { getAppCatalogService } from './app-catalog-client';
+import { createAppRecentStore } from './app-recent-store';
+import { applyLongtaskSchema } from './longtask-db/migrations';
+import { app } from 'electron';
+import path from 'node:path';
 import { exportAuditToFile } from './audit-export';
 import { applyConfigUpdate, sanitizeConfig } from './config-sync';
 import { coerceArgs } from './island-bridge';
@@ -106,4 +112,14 @@ export function registerIsland(deps: IpcRegistryDeps): void {
   registerEvolutionHandlers({ experience: experienceStore, audit: auditDb, orchestrator, tools: orchestrator.customTools, toolsDir: orchestrator.toolsDir, employee: employeeStore, mission: missionRepo, missionDb: auditDb.exposeDb() });
   registerEmployeeHandlers({ employee: employeeStore, audit: auditDb, store: configStore });
   registerMissionHandlers({ repo: missionRepo, runRepo: missionRunRepo, runner: missionRunner, audit: auditDb, experience: experienceStore });
+
+  // 应用目录服务（A-M1）：专属侧车枚举+图标（低频批量走侧车，规划 §3.4）；app_recent 唯一持久化表
+  applyLongtaskSchema(auditDb.exposeDb());
+  registerAppsHandlers({
+    catalog: getAppCatalogService({
+      exePath: app.isPackaged ? path.join(process.resourcesPath, 'uia-sidecar.exe') : undefined,
+      iconCacheDir: path.join(app.getPath('userData'), 'icon-cache'),
+    }),
+    recent: createAppRecentStore(auditDb.exposeDb()),
+  });
 }

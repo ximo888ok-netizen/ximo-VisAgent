@@ -50,7 +50,17 @@ const outDir = join(__dirname, 'bin');
 mkdirSync(outDir, { recursive: true });
 
 const out = join(outDir, 'uia-sidecar.exe');
-const sources = fs.readdirSync(join(__dirname, 'src')).filter((f) => f.endsWith('.cs')).map((f) => join(__dirname, 'src', f));
+// 递归收集 src/**/*.cs（Actions/ 子目录承载新动作实现，仍按职责分文件）
+function listCsSources(dir) {
+  const files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...listCsSources(p));
+    else if (entry.isFile() && entry.name.endsWith('.cs')) files.push(p);
+  }
+  return files;
+}
+const sources = listCsSources(join(__dirname, 'src'));
 
 const args = [
   '/nologo',

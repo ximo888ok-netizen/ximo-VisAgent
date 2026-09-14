@@ -15,4 +15,5 @@ export * from "./schemas/meta";
 export * from "./schemas/employee";
 export * from "./schemas/capability";
 export * from "./schemas/mission";
+export * from "./schemas/longtask";
 export * from "./schemas/wechat";

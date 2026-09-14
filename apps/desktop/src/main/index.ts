@@ -32,6 +32,7 @@ import { logInfo, notifyTaskFinished } from './orchestrator-notify';
 import { EmployeeStore } from './stores/employee-store';
 import { WeChatBot } from './wechat-bot';
 import { installProcessGuards } from './process-guards';
+import { stopAppCatalogService } from './app-catalog-client';
 import { bootstrap } from './bootstrap';
 
 installProcessGuards();
@@ -182,6 +183,7 @@ app.on('window-all-closed', () => {
   if (island && !island.isDestroyed()) return;
   try { scheduler.stop(); } catch { /* noop */ }
   try { uiaClient.stop(); } catch { /* noop */ }
+  try { stopAppCatalogService(); } catch { /* noop */ }
   try { wechatBot.stop(); } catch { /* noop */ }
   try { auditDb.close(); } catch { /* noop */ }
   globalShortcut.unregisterAll();

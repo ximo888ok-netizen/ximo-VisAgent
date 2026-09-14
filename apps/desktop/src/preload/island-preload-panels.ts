@@ -14,6 +14,7 @@ import { registerMemoryStatsApi, type MemoryStatsPanelApi } from "./panels/memor
 import { registerSchedulerApi, type SchedulerPanelApi } from "./panels/scheduler";
 import { registerEmployeeApi, type EmployeePanelApi } from "./panels/employee";
 import { registerMissionApi, type MissionPanelApi } from "./panels/mission";
+import { registerAppsApi, type AppsPanelApi } from "./panels/apps";
 
 /** 面板 IPC = 基础各域通道 + v3 经验/演化层通道；全部切片自 IslandApi，无手抄签名（I2） */
 export type PanelApiMethods =
@@ -25,7 +26,8 @@ export type PanelApiMethods =
     SchedulerPanelApi &
     V3PanelApiMethods &
     EmployeePanelApi &
-    MissionPanelApi;
+    MissionPanelApi &
+    AppsPanelApi;
 
 export function registerPanelApi(
   safeInvoke: SafeInvoke,
@@ -41,5 +43,6 @@ export function registerPanelApi(
     ...registerV3PanelApi(safeInvoke),
     ...registerEmployeeApi(safeInvoke, ipc),
     ...registerMissionApi(safeInvoke),
+    ...registerAppsApi(safeInvoke),
   };
 }

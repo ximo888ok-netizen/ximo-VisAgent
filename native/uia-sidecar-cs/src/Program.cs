@@ -251,6 +251,9 @@ namespace UiaSidecar
                         case "getUiTree": result = BuildTree(payload); break;
                         case "elementRect": result = ElementRect(payload); break;
                         case "focusedElement": result = Focused(); break;
+                        case "listApps": result = AppCatalogActions.ListApps(payload); break;
+                        case "getAppIcon": result = IconActions.GetIcon(payload); break;
+                        case "getAppIcons": result = IconActions.GetIcons(payload); break;
                         case "health": result = "{\"ok\":true,\"version\":\"1.0.0\"}"; break;
                         default: result = "{\"ok\":false,\"error\":\"unknown method: " + Json.Escape(method) + "\"}"; break;
                     }

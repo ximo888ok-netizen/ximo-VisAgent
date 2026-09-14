@@ -85,6 +85,13 @@ import type {
   WeChatLoginResult,
 } from "./schemas/wechat";
 
+import type {
+  AppEntry,
+  AppIconPayload,
+  AppsIconsRequest,
+  AppsListRequest,
+} from "./schemas/longtask";
+
 /** 统一 IPC 返回 */
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -221,6 +228,14 @@ export interface IslandApi {
   missionConfirm(req: MissionConfirmRequest): Promise<IpcResult<{ started: boolean }>>;
   /** 暂停 Mission 的人工处置：retry 重开失败子任务 / skip 跳过放行下游 / abort 终止 */
   missionResolve(req: MissionResolveRequest): Promise<IpcResult<{ resolved: boolean }>>;
+
+  // ---- 应用目录服务（A-M1）----
+  /** 已安装应用枚举：命中主进程内存缓存；冷枚举异步进行，失败回空表（选择器永不空壳挂死） */
+  listApps(req?: AppsListRequest): Promise<IpcResult<AppEntry[]>>;
+  /** 批量应用图标（≤25）：文件缓存优先，未命中透传侧车；失败项无 pngBase64=前端字母回退 */
+  getAppIcons(req: AppsIconsRequest): Promise<IpcResult<AppIconPayload[]>>;
+  /** 最近使用应用（app_recent 近 20 条） */
+  listRecentApps(): Promise<IpcResult<AppEntry[]>>;
 
   // ---- 员工域（M1 数据底座）----
   employeeListPositions(): Promise<IpcResult<PositionRowPayload[]>>;

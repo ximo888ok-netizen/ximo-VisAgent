@@ -217,6 +217,14 @@ export const ISLAND_CHANNELS = {
   /** main -> renderer (send)：收到微信消息（UI 展示用） */
   wechatMessage: "island:wechat-message",
 
+  // ---- 应用目录服务（A-M1，锚定长任务地基）----
+  /** renderer -> main (invoke)：已安装应用枚举（内存缓存命中，冷枚举异步） */
+  appsList: "apps:list",
+  /** renderer -> main (invoke)：批量取应用图标 PNG base64（≤25/批） */
+  appsIcons: "apps:icons",
+  /** renderer -> main (invoke)：最近使用应用（近 20 条） */
+  appsRecent: "apps:recent",
+
   // ---- Agent 在场指示（极光边框）----
   /** main -> aura 窗口：状态变更 */
   auraState: "aura:state",
