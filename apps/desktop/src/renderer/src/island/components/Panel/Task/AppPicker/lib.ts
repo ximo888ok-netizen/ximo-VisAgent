@@ -133,10 +133,90 @@ export function isChipReplacement(prev: TargetApp | null, next: TargetApp): bool
   return prev !== null && prev.id !== next.id;
 }
 
+/* ---------------------------------------------------------------------------
+ * 应用 token（镜像层高亮法）：chip 在输入框文本流中的呈现 = 常量 token 字符串。
+ * 全仓统一半角形态 `[应用:名称]`；targetApp 状态仍单独持有（绑定语义），
+ * token 只是其在 textarea value 里的占位呈现。以下全部纯函数，vitest 直测。
+ * ------------------------------------------------------------------------- */
+
+export const APP_TOKEN_OPEN = "[应用:";
+export const APP_TOKEN_CLOSE = "]";
+
+export function appTokenText(name: string): string {
+  return `${APP_TOKEN_OPEN}${name}${APP_TOKEN_CLOSE}`;
+}
+
+export function appTokenOf(app: TargetApp): string {
+  return appTokenText(app.name);
+}
+
+/** 在光标处插入 token（替换当前选区），返回新 value 与 token 之后的光标位 */
+export function insertAppToken(
+  goal: string,
+  selStart: number,
+  selEnd: number,
+  token: string,
+): { value: string; caret: number } {
+  const s = Math.max(0, Math.min(selStart, goal.length));
+  const e = Math.max(s, Math.min(selEnd, goal.length));
+  return { value: goal.slice(0, s) + token + goal.slice(e), caret: s + token.length };
+}
+
+/** 删除 value 中全部 token，光标按「其前被删字符数」左移（单 token 场景精确；多枚为近似，可接受） */
+export function removeAppToken(
+  goal: string,
+  token: string,
+  caret: number,
+): { value: string; caret: number } {
+  if (!token) return { value: goal, caret };
+  let nextCaret = caret;
+  let from = 0;
+  for (;;) {
+    const i = goal.indexOf(token, from);
+    if (i === -1) break;
+    if (i < nextCaret) nextCaret -= token.length;
+    from = i + token.length;
+  }
+  return { value: goal.split(token).join(""), caret: nextCaret };
+}
+
+/** 生命周期检查：value 是否仍含完整 token（false → 组件层解绑并清授权卡前提） */
+export function hasAppToken(goal: string, app: TargetApp | null): boolean {
+  return app !== null && goal.includes(appTokenOf(app));
+}
+
+/** 剥离绑定应用的 token（提交/推荐匹配用；无绑定时原文透传，手打的 token 视为普通文本） */
+export function stripAppToken(goal: string, app: TargetApp | null): string {
+  return app ? goal.split(appTokenOf(app)).join("") : goal;
+}
+
+/** 镜像层分段：text 段正常着色，chip 段 = token 原文透明占位 + chip 覆盖渲染 */
+export type GoalSegment =
+  | { kind: "text"; text: string }
+  | { kind: "chip"; text: string };
+
+export function splitGoalByToken(goal: string, token: string | null): GoalSegment[] {
+  if (!token || !goal.includes(token)) return [{ kind: "text", text: goal }];
+  const segments: GoalSegment[] = [];
+  let from = 0;
+  for (;;) {
+    const i = goal.indexOf(token, from);
+    if (i === -1) break;
+    if (i > from) segments.push({ kind: "text", text: goal.slice(from, i) });
+    segments.push({ kind: "chip", text: token });
+    from = i + token.length;
+  }
+  if (from < goal.length) segments.push({ kind: "text", text: goal.slice(from) });
+  return segments;
+}
+
 /**
  * 发送 payload 组装（规划 §4.1-6/7 红线）：无 chip 路径与现状逐字段一致 =
  * 仅 { goal }；带 chip 才附加 targetApp + 锚定档 longTask。
+ * goal 先剥离绑定应用的 token 再 trim——token 只是 chip 的文本流呈现，
+ * 主进程/Agent 侧应用语义仍由独立 targetApp 字段承载（launch/看门狗），与改造前一致。
  */
-export function buildStartPayload(goal: string, targetApp: TargetApp | null): StartTaskRequest {
+export function buildStartPayload(rawGoal: string, targetApp: TargetApp | null): StartTaskRequest {
+  const goal = stripAppToken(rawGoal, targetApp).trim();
   return targetApp ? { goal, targetApp, longTask: ANCHOR_LONG_TASK } : { goal };
 }

@@ -2,19 +2,30 @@
  * TaskComposer.tsx — 任务输入区（草稿输入 + 提交 + 推荐条 + 会话/档位工具条）
  *
  * 无内容时由父层居中摆放（hasContent=false），有内容时沉到底部。
- * A-M2：目标应用选择器 + chip（视觉内嵌于文本区头部，Q7-A）。
+ * A-M2：目标应用选择器 + chip——镜像层高亮法，chip 内联于输入框文本流：
+ * 选中即把 token `[应用:名称]` 插入光标处，镜像层把 token 渲染为 chip；
+ * 删除（含删半）token 即解绑。targetApp 状态仍独立持有（绑定语义）。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppEntry, StartTaskRequest, TargetApp } from "@shared/island-contracts";
 import { useIslandStore } from "../../../store/islandStore";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import { ThinkingModeSelect } from "./ThinkingModeSelect";
 import { RecommendBar } from "./RecommendBar";
 import { useSopRecommendation } from "./useSopRecommendation";
-import { AppChip } from "./AppChip";
+import { AppChipMirror } from "./AppChipMirror";
 import { AppPickerButton } from "./AppPicker/AppPickerButton";
 import { AppPickerPanel } from "./AppPicker/AppPickerPanel";
-import { buildStartPayload, isChipReplacement, toTargetApp } from "./AppPicker/lib";
+import {
+  appTokenOf,
+  buildStartPayload,
+  hasAppToken,
+  insertAppToken,
+  isChipReplacement,
+  removeAppToken,
+  stripAppToken,
+  toTargetApp,
+} from "./AppPicker/lib";
 import { PreAuthDialog } from "./PreAuthDialog";
 
 export function TaskComposer({
@@ -29,6 +40,9 @@ export function TaskComposer({
   /** A-M6：带 chip 的提交先过授权卡（未 ack 关闭 = 任务不启动） */
   const [preAuth, setPreAuth] = useState<{ goal: string; app: TargetApp } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
+  /** token 插入/替换后待恢复的光标位（受控 value 重渲染完成时消费） */
+  const pendingCaret = useRef<number | null>(null);
 
   const taskRunning = useIslandStore((s) => s.taskRunning);
   const setTaskStarted = useIslandStore((s) => s.setTaskStarted);
@@ -45,7 +59,10 @@ export function TaskComposer({
   const setAppPickerOpen = useIslandStore((s) => s.setAppPickerOpen);
   const setRecentApps = useIslandStore((s) => s.setRecentApps);
 
-  useSopRecommendation(goal);
+  /** 剥离绑定 token 后的纯文本（推荐匹配 / 空判定 / 提交目标共用） */
+  const plainGoal = stripAppToken(goal, targetApp);
+
+  useSopRecommendation(plainGoal);
 
   // 无内容时自动聚焦
   useEffect(() => {
@@ -73,18 +90,57 @@ export function TaskComposer({
     return () => clearTimeout(timer);
   }, [setRecentApps]);
 
-  // 选择 → 单实例替换 + toast（规划 §4.1-3：任何时刻至多 1 chip）
+  // 选择 → token 插入光标处 + 单实例替换 + toast（规划 §4.1-3：任何时刻至多 1 chip）
   const handlePick = useCallback(
     (entry: AppEntry) => {
       const app = toTargetApp(entry);
-      const replaced = isChipReplacement(useIslandStore.getState().targetApp, app);
+      const prev = useIslandStore.getState().targetApp;
+      const replaced = isChipReplacement(prev, app);
+      const ta = inputRef.current;
+      let caret = ta ? ta.selectionStart : goal.length;
+      let value = goal;
+      if (prev) {
+        const removed = removeAppToken(value, appTokenOf(prev), caret);
+        value = removed.value;
+        caret = removed.caret;
+      }
+      const inserted = insertAppToken(value, caret, caret, appTokenOf(app));
+      pendingCaret.current = inserted.caret;
+      setGoal(inserted.value);
       setTargetApp(app);
       setAppPickerOpen(false);
       if (replaced) pushToast("info", "已替换目标应用");
-      inputRef.current?.focus();
     },
-    [setTargetApp, setAppPickerOpen, pushToast],
+    [goal, setTargetApp, setAppPickerOpen, pushToast],
   );
+
+  // token 插入/替换后恢复光标到 token 之后（受控 value 渲染完成时机）
+  useLayoutEffect(() => {
+    const ta = inputRef.current;
+    const pos = pendingCaret.current;
+    if (ta && pos !== null) {
+      pendingCaret.current = null;
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    }
+  }, [goal]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setGoal(value);
+    // 生命周期同步：value 不再含完整 token（整删/剪删/删半）→ 解绑 + 收掉授权卡前提。
+    // 残片处理选实现最轻的「降级为普通文本」：不再二次编辑 value（免光标校正），
+    // 残片留在原位可正常编辑删除。
+    if (targetApp && !hasAppToken(value, targetApp)) {
+      setTargetApp(null);
+      setPreAuth(null);
+    }
+  };
+
+  // 滚动同步：ghost textarea → 镜像层（单行到 2000 字上限内滚动场景少，scrollTop 直拷即可）
+  const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
+    if (mirrorRef.current) mirrorRef.current.scrollTop = e.currentTarget.scrollTop;
+  };
 
   const startWith = useCallback(async (payload: StartTaskRequest) => {
     setSubmitting(true);
@@ -117,7 +173,7 @@ export function TaskComposer({
   }, [setTaskStarted, resetRun, setTargetApp, setTargetAppInvalid, pushToast, onError]);
 
   const handleSubmit = useCallback(async () => {
-    const trimmed = goal.trim();
+    const trimmed = plainGoal.trim();
     if (!trimmed || submitting || taskRunning) return;
     // A-M6 授权卡闸：锚定任务先取得用户逐项确认的作用域包，未 ack 关闭 = 不启动
     if (targetApp) {
@@ -125,7 +181,7 @@ export function TaskComposer({
       return;
     }
     await startWith(buildStartPayload(trimmed, null));
-  }, [goal, submitting, taskRunning, targetApp, startWith]);
+  }, [plainGoal, submitting, taskRunning, targetApp, startWith]);
 
   // 新对话：清空会话上下文与当前展示
   const handleNewConversation = useCallback(async () => {
@@ -172,26 +228,29 @@ export function TaskComposer({
             onCancel={() => setPreAuth(null)}
           />
         )}
-        {targetApp && (
-          <AppChip
+        <div className="relative">
+          <textarea
+            ref={inputRef}
+            value={goal}
+            onChange={handleChange}
+            onScroll={handleScroll}
+            onKeyDown={handleKeyDown}
+            placeholder="输入任务，例如：打开记事本，输入「你好」并保存到桌面"
+            rows={hasContent ? 1 : 2}
+            maxLength={2000}
+            className="island-input island-input--ghost island-glow resize-none"
+            style={{ fontSize: "13px", lineHeight: "1.5", minHeight: hasContent ? 36 : 56 }}
+            data-interactive
+          />
+          <AppChipMirror
+            ref={mirrorRef}
+            goal={goal}
             app={targetApp}
             invalid={targetAppInvalid}
-            onRemove={() => setTargetApp(null)}
-            onRebind={() => setAppPickerOpen(true)}
+            fontSize="13px"
+            lineHeight="1.5"
           />
-        )}
-        <textarea
-          ref={inputRef}
-          value={goal}
-          onChange={(e) => setGoal(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="输入任务，例如：打开记事本，输入「你好」并保存到桌面"
-          rows={hasContent ? 1 : 2}
-          maxLength={2000}
-          className="island-input island-glow resize-none"
-          style={{ fontSize: "13px", lineHeight: "1.5", minHeight: hasContent ? 36 : 56 }}
-          data-interactive
-        />
+        </div>
         {targetAppInvalid && (
           <div className="mt-1 text-[12px] ig-fg-danger">目标应用不存在，请重选</div>
         )}

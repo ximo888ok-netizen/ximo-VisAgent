@@ -478,6 +478,50 @@ html.light {
 }
 .island-input::placeholder { color: var(--ig-t-faint); }
 
+/* ---- 任务输入框镜像层（层高亮法：chip 内联文本流，TaskComposer/AppChipMirror） ---- */
+
+/* ghost textarea：文字透明只留光标，可见文本由镜像层绘制 */
+.island-input--ghost {
+  color: transparent;
+  caret-color: var(--ig-t-strong);
+  scrollbar-width: none; /* 藏滚动条：镜像层 overflow:hidden 无滚动条，宽度必须一致否则排版错位 */
+}
+.island-input--ghost::-webkit-scrollbar { display: none; }
+
+/* 镜像层：与 .island-input 同 padding/边框占位/换行规则，pointer 穿透，scrollTop 由 onScroll 同步 */
+.island-input-mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  box-sizing: border-box;
+  padding: 8px 12px;             /* = .island-input */
+  border: 1px solid transparent; /* 补 .island-input 边框的内容起点偏移 */
+  color: var(--ig-t-strong);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* token 位置覆盖的 chip：圆角底 + 图标 + 名称，撑满 token 透明占位矩形 */
+.island-app-chip {
+  position: absolute;
+  inset: 0 -2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 3px;
+  border-radius: 6px;
+  border: 1px solid var(--ig-line);
+  background: var(--ig-panel);
+  font-size: 12px;
+  line-height: 1;
+  overflow: hidden;
+}
+.island-app-chip--invalid {
+  border-color: var(--tone-danger);
+  background: var(--p-ember-500-a10);
+}
+
 .island-select {
   appearance: none;
   background: var(--island-input-bg);

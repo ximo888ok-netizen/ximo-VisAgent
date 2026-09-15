@@ -6,13 +6,20 @@
 import { describe, expect, it } from "vitest";
 import type { AppEntry, TargetApp } from "@shared/island-contracts";
 import {
+  appTokenOf,
+  appTokenText,
   buildPickerRows,
   buildStartPayload,
   charInitial,
+  hasAppToken,
+  insertAppToken,
   isChipReplacement,
   matchApp,
   normalizeQuery,
   pinyinInitials,
+  removeAppToken,
+  splitGoalByToken,
+  stripAppToken,
   toSearchable,
   toTargetApp,
 } from "../lib";
@@ -92,9 +99,57 @@ describe("chip 组装与单实例替换", () => {
   });
 });
 
+describe("token 文本流呈现（镜像层高亮法）", () => {
+  const tk = appTokenText("记事本"); // [应用:记事本]
+  it("token 形态统一半角常量，appTokenOf 取绑定应用名", () => {
+    expect(tk).toBe("[应用:记事本]");
+    expect(appTokenOf(target("记事本"))).toBe(tk);
+  });
+  it("插入 = 光标处替换选区，光标落在 token 之后", () => {
+    const r = insertAppToken("打开并保存", 2, 2, tk);
+    expect(r.value).toBe(`打开${tk}并保存`);
+    expect(r.caret).toBe(2 + tk.length);
+    const sel = insertAppToken("abcdef", 1, 4, tk);
+    expect(sel.value).toBe(`a${tk}ef`);
+  });
+  it("替换 = 旧 token 全删 + 光标按被删位数左移，再插新 token", () => {
+    const old = appTokenText("计算器");
+    const value = `${old}+3`;
+    const removed = removeAppToken(value, old, value.length);
+    expect(removed.value).toBe("+3");
+    expect(removed.caret).toBe(2);
+    const mid = removeAppToken(`a${old}b`, old, 1); // token 在光标之后 → 光标不动
+    expect(mid.caret).toBe(1);
+  });
+  it("生命周期：整删/删半均判缺失（触发解绑）；strip 只剥绑定应用 token", () => {
+    const app = target("记事本");
+    expect(hasAppToken(`跑${tk}一下`, app)).toBe(true);
+    expect(hasAppToken(`跑[应用:记事本一下`, app)).toBe(false); // 删掉右括号 → 视为删除
+    expect(hasAppToken("", app)).toBe(false);
+    expect(hasAppToken(tk, target("其他"))).toBe(false);
+    expect(stripAppToken(`跑${tk}一下`, app)).toBe("跑一下");
+    expect(stripAppToken(`手打${tk}`, null)).toBe(`手打${tk}`); // 未绑定 = 普通文本
+  });
+  it("镜像分段：text/chip 交替，无绑定整体一段 text", () => {
+    expect(splitGoalByToken("打开", null)).toEqual([{ kind: "text", text: "打开" }]);
+    expect(splitGoalByToken(`a${tk}b${tk}`, tk)).toEqual([
+      { kind: "text", text: "a" },
+      { kind: "chip", text: tk },
+      { kind: "text", text: "b" },
+      { kind: "chip", text: tk },
+    ]);
+  });
+});
+
 describe("发送 payload 组装（零回归红线）", () => {
   it("无 chip：与现状逐字段一致（仅 { goal }）", () => {
     expect(buildStartPayload("打开记事本", null)).toStrictEqual({ goal: "打开记事本" });
+  });
+  it("带 chip：goal 剥离 token 后为剩余文本，targetApp 字段承载应用语义", () => {
+    const t = target("记事本");
+    const payload = buildStartPayload(`  ${appTokenOf(t)}输入「你好」  `, t);
+    expect(payload.goal).toBe("输入「你好」");
+    expect(payload.targetApp).toEqual(t);
   });
   it("带 chip：附加 targetApp + 锚定档 longTask（600 步/4h）", () => {
     const t = target("kis");
