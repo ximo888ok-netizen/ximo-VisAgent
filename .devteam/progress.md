@@ -3,7 +3,7 @@
 > 单一事实来源。项目：Windows 桌面 AI 智能体（Electron monorepo，**仅支持单屏**——2026-09-14 用户确认的范围裁剪，声明见 `packages/control-kit/src/screen-scale.ts` 头注释）。
 > 上游计划文档：`mission-knowledge-development-plan.md`（事实上的 02-plan）、`docs/fix-plan-agent-reliability.md`（8 项已全部闭环）。
 
-**当前状态：2026-09-14 强化批次全部落实，工作树干净，verify 全绿。**
+**当前状态：长任务功能（指定本地软件 + A 期长任务 + B 期长期任务 + 选择器 chip）A-M1～A-M7、B-M1～B-M3 全部落盘（10 commit，HEAD=87faff4），`pnpm verify --force` 全绿（236 测试例），工作树干净。**
 
 | 阶段 | 专家 | 状态 | 产出 | 备注 |
 |---|---|---|---|---|
