@@ -19,6 +19,14 @@
 
 选择器 chip 绑定应用 → 看门狗锚定 → 断点工件对账 → 三闸预算 → 预授权作用域包 → cron 增量长期任务 → 管理面板+度量 → 视觉收尾。`pnpm verify --force` 全绿（236 例）。真机重点：预授权卡（明暗双主题）、AppPicker 空/加载态、40 分钟锚定任务演示（e2e 需 LLM key）。
 
+## 定位与回读增强（借鉴 agent-vision-toolkit，2 commit：c01da6b / d17ca93）
+
+1. **坐标表缓存** `agent-core/ground-cache.ts`：布局稳定元素一次定位后复用（窗口签名 + 整帧 pHash 距离 ≤6 + 20 步 TTL，LRU 64；换窗/滚动/任务终态失效，缺签名一律 miss）。只替代"定位"一步，点击守卫/校验/L0-L3 审批照旧。命中率进 ui_locate summary。loop.ts 有效行 352→357。
+2. **变化区域定向读** `control-kit/changed-region.ts` + click-verify：多轮块 diff 取 ≥2 轮命中并集（minSide 12 滤噪），局部小变化（占比 ≤50%）只对该 bbox 跑 OCR，文本进 summary 供模型读回。
+3. **输入回读三态** keyboard-verify：UIA 无 value 时降级为字段区域 OCR；结论 verified/mismatch/unverifiable 结构化挂在 tool data（`inputVerify`/`clickVerify`），供后续断言消费。
+
+可选后续（未做，避免扩范围）：把 `data.inputVerify` 接进 task-assertions 做硬断言；照他们的 hint-eval 方法建 grounding 精度回归基线。
+
 ## 遗留清单（按优先级）
 
 1. **持久驳回通道**：awaiting_confirm 的"驳回"目前前端本地停等，主进程无 rejected 状态迁移（mission-confirm 需支持 reject 语义）。
