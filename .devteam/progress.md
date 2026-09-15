@@ -13,11 +13,11 @@
 | 3 架构 | 架构工程师 | ✅ 09-14 | loop-approval.ts 拆分（loop.ts 有效行 394→339）、db-migrations 版本戳 | 临界巨石未拆：wechat-bot 471 / executor 462 / mission-repo 407（物理行） |
 | 4 前端 | 前端工程师 | ✅ 09-14 | 计划确认卡（MissionDetail）+ KnowledgePanel + missionSlice | Mission 无推送事件，靠操作后刷新 |
 | 5 后端 | 后端工程师 | ✅ 09-14 | capability 宪法门收口、mission-runner（确认闸+DAG+startTask 接线）、FTS trigram、微信审批入站、botToken safeStorage、UIA 熔断复位 | — |
-| 6 美化 | UI美化师 | ⏸ 待评 | tokens.css 已随 UI 批次落盘 | 建议对新增确认卡/知识库面板做一轮视觉评审 |
+| 6 美化 | UI美化师 | ✅ 09-15 | 长任务全套件视觉 pass（picker/授权卡/长任务面板/横幅/知识面板），`60626d1` | 纯样式 diff；新增令牌 4 枚入 tokens.css |
 
-## 本次落盘（8 个 commit）
+## 长任务功能落盘（A-M1~M7 + B-M1~M3 + 目录过滤 + UI pass，共 12 commit，HEAD=60626d1）
 
-止血：拆提交×4 → 宪法门收口 → loop.ts 腾挪。主线：Mission 契约+runner → 前端确认卡+知识库。外围：微信审批双向、token 加密、UIA/输入可靠性、+31 测试例。`pnpm verify --force` 8/8 全绿（0 缓存）。
+选择器 chip 绑定应用 → 看门狗锚定 → 断点工件对账 → 三闸预算 → 预授权作用域包 → cron 增量长期任务 → 管理面板+度量 → 视觉收尾。`pnpm verify --force` 全绿（236 例）。真机重点：预授权卡（明暗双主题）、AppPicker 空/加载态、40 分钟锚定任务演示（e2e 需 LLM key）。
 
 ## 遗留清单（按优先级）
 
