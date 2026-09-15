@@ -3,10 +3,11 @@
  *
  * 向上弹出贴在 composer 头部上方；只渲染编排，行虚拟化在 AppList。
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppEntry } from "@shared/island-contracts";
 import { AppList } from "./AppList";
 import { useAppSearch } from "./useAppSearch";
+import { LIST_MIN_HEIGHT, LIST_VIEWPORT_HEIGHT, POPOVER_HEADER_HEIGHT, POPOVER_TOP_GAP } from "./constants";
 
 export function AppPickerPanel({
   onPick,
@@ -18,9 +19,27 @@ export function AppPickerPanel({
   const { rows, query, setQuery, loading, matchedCount } = useAppSearch();
   const searchRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  /** 列表可视高与弹层上限——按 composer 上方实际空间测量（弹层向上弹出，超出窗体会被裁掉搜索框） */
+  const [listH, setListH] = useState(LIST_VIEWPORT_HEIGHT);
+  const [maxH, setMaxH] = useState<number | null>(null);
 
   useEffect(() => {
     searchRef.current?.focus();
+  }, []);
+
+  useLayoutEffect(() => {
+    const measure = (): void => {
+      const anchor = rootRef.current?.parentElement; // TaskComposer 的 relative 容器
+      if (!anchor) return;
+      const available = anchor.getBoundingClientRect().top - POPOVER_TOP_GAP;
+      const headerH = headerRef.current?.offsetHeight ?? POPOVER_HEADER_HEIGHT;
+      setMaxH(Math.max(headerH + LIST_MIN_HEIGHT, available));
+      setListH(Math.max(LIST_MIN_HEIGHT, Math.min(LIST_VIEWPORT_HEIGHT, available - headerH)));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
   }, []);
 
   useEffect(() => {
@@ -45,9 +64,10 @@ export function AppPickerPanel({
     <div
       ref={rootRef}
       data-interactive
-      className="island-popover absolute bottom-full left-0 right-0 z-50 mb-1.5 overflow-hidden"
+      className="island-popover absolute bottom-full left-0 right-0 z-50 mb-1.5 flex flex-col overflow-hidden"
+      style={maxH ? { maxHeight: maxH } : undefined}
     >
-      <div className="flex items-center gap-2 border-b ig-border-line p-2 ig-bg-panel">
+      <div ref={headerRef} className="flex shrink-0 items-center gap-2 border-b ig-border-line p-2 ig-bg-panel">
         <div className="island-search relative min-w-0 flex-1">
           <svg
             aria-hidden
@@ -75,13 +95,21 @@ export function AppPickerPanel({
         </button>
       </div>
       {loading ? (
-        <div className="space-y-1 px-2 py-2.5" role="status" aria-label="正在枚举已安装应用">
+        <div
+          className="shrink-0 space-y-1 overflow-hidden px-2 py-2.5"
+          style={{ height: listH }}
+          role="status"
+          aria-label="正在枚举已安装应用"
+        >
           <div className="island-skeleton h-10 rounded-lg ig-bg-panel-hover" />
           <div className="island-skeleton h-10 rounded-lg ig-bg-panel-hover" />
-          <div className="island-skeleton h-10 rounded-lg ig-bg-panel-hover" />
+          {listH >= 160 && <div className="island-skeleton h-10 rounded-lg ig-bg-panel-hover" />}
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-1 px-4 py-9 text-center">
+        <div
+          className="flex shrink-0 flex-col items-center justify-center gap-1 px-4 text-center"
+          style={{ height: listH }}
+        >
           <span className="text-[13px] t-muted">
             {query && matchedCount === 0 ? "没有匹配的应用" : "暂时列不出应用"}
           </span>
@@ -90,7 +118,7 @@ export function AppPickerPanel({
           </span>
         </div>
       ) : (
-        <AppList rows={rows} onPick={onPick} />
+        <AppList rows={rows} onPick={onPick} viewportHeight={listH} />
       )}
     </div>
   );

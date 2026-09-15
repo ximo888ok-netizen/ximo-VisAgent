@@ -9,6 +9,12 @@ import type { LongTaskOptions } from "@shared/island-contracts";
 export const ROW_HEIGHT = 40;
 /** 弹层内列表视口高度（px）——小窗体量，超出即虚拟滚动（ROW_HEIGHT 整数倍免半行抖动） */
 export const LIST_VIEWPORT_HEIGHT = 240;
+/** 弹层搜索头实测高度（px）：行高 28 + 上下内衬 8×2 + 1px 分隔线 */
+export const POPOVER_HEADER_HEIGHT = 45;
+/** 列表最小可视高度——再小就不如不出弹层，保底可滚 2 行 */
+export const LIST_MIN_HEIGHT = 96;
+/** 弹层与岛窗口顶部的留白：8px 呼吸位 + 6px 弹层锚点间距（mb-1.5），合计须扣足否则又被窗体裁顶 */
+export const POPOVER_TOP_GAP = 14;
 /** 视口上下各多渲染的行数（防快速滚动白屏） */
 export const OVERSCAN = 5;
 /** 推荐组最多展示条数（A-M2 以 apps:recent 头部为“前台推荐”，A-M3 接看门狗真前台） */

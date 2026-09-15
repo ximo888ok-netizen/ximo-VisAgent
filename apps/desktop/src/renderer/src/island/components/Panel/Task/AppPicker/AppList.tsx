@@ -12,20 +12,23 @@ import type { PickerRow } from "./lib";
 export function AppList({
   rows,
   onPick,
+  viewportHeight = LIST_VIEWPORT_HEIGHT,
 }: {
   rows: PickerRow[];
   onPick: (app: AppEntry) => void;
+  /** 可视高度——弹层按岛窗口剩余空间自适应，缺省用常量 */
+  viewportHeight?: number;
 }) {
   const [scrollTop, setScrollTop] = useState(0);
   const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const end = Math.min(rows.length, start + Math.ceil(LIST_VIEWPORT_HEIGHT / ROW_HEIGHT) + OVERSCAN * 2);
+  const end = Math.min(rows.length, start + Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2);
   const slice = rows.slice(start, end);
 
   return (
     <div
       data-interactive
       className="overflow-y-auto overflow-x-hidden"
-      style={{ height: LIST_VIEWPORT_HEIGHT }}
+      style={{ height: viewportHeight }}
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
     >
       <div style={{ height: rows.length * ROW_HEIGHT, position: "relative" }}>
