@@ -3,6 +3,7 @@ import type { ILLMClient } from '@ximo-visagent/llm-providers';
 import type { OperationLevel, TaskStatus, ToolSchema } from '@ximo-visagent/shared-types';
 import type { ApprovalEngine, SafetyClassifier } from '@ximo-visagent/safety';
 import type { PerceptionProvider, ToolExecutor } from '../tools/registry';
+import type { GroundCache } from './ground-cache';
 import type { RecoveryContext, RecoveryHit } from './recovery';
 import type { BudgetGuard } from './loop-budget';
 
@@ -75,6 +76,8 @@ export interface AgentLoopOptions {
   evaluateAssertion?: (a: TaskAssertion) => Promise<AssertionResult>;
   /** M2: 岗位角色上下文（身份/职责/边界/目标），注入 system prompt 固定段 */
   roleContext?: import('../prompts/system').RoleContext;
+  /** 布局稳定元素坐标表缓存（ground-cache.ts）：宿主创建，注入循环登记帧上下文与失效时机 */
+  groundCache?: GroundCache;
 }
 
 export type AgentEvent =

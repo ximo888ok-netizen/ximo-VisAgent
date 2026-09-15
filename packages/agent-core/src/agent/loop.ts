@@ -21,6 +21,7 @@ import {
   type PerceptionSnap,
 } from './loop-helpers';
 import { EfficiencyGuard } from './loop-efficiency';
+import { windowSignatureOf } from './ground-cache';
 import type { BudgetStop } from './loop-budget';
 import { StateTracker } from './state-tracker';
 import { chatWithRetry, quickHash } from './loop-llm';
@@ -67,7 +68,7 @@ export class AgentLoop {
       budgetGuard,
       approvalTimeoutMs = 60_000,
       llmMaxRetries = 2,
-      onEvent, requestApproval, planFirst = false, captureEvidence,
+      onEvent, requestApproval, planFirst = false, captureEvidence, groundCache,
     } = this.opts;
 
     const startedAt = Date.now();
@@ -195,6 +196,8 @@ export class AgentLoop {
         if (screenSig !== null && !screenChanged) noChangeCount++;
         else noChangeCount = 0;
         lastScreenSig = screenSig;
+        // 坐标表缓存：登记本步窗口签名/整帧指纹/步号；窗口变化由缓存在 beginStep 内整表失效
+        groundCache?.beginStep({ windowSignature: windowSignatureOf(snap.foreground), frameHash: screenSig ?? undefined, step: index });
 
         const model = snap.screenshot && visionLLM ? visionLLM : textLLM;
         const parts: ContentPart[] = [{ type: 'text', text: buildPerceptionText(snap, tasks, index, screenChanged, noChangeCount, stepsDetail.slice(-3), maxSteps, stateTracker.snapshotLines()) }];
@@ -300,6 +303,7 @@ export class AgentLoop {
             stepsDetail.push(chatStep);
             emit({ type: 'step', step: chatStep });
             emit({ type: 'status', status: 'COMPLETED' });
+            groundCache?.invalidateAll('task-end');
             return { status: 'COMPLETED', finalAnswer: answer, steps: index, totalTokens, stepsDetail, gate: 'task_done' };
           }
         }
@@ -347,6 +351,7 @@ export class AgentLoop {
                 return { ok: false, summary: '', error: err.message } as ToolResult;
               });
           if (!execResult.ok && !blockReason) await captureEvidence?.(index).catch(() => {});
+          groundCache?.onAction(action.name); // scroll 等布局位移动作 → 坐标表整体失效
           if (execResult.image) pendingToolImage = await buildImagePart(model, Buffer.from(execResult.image, 'base64'));
 
           memory.addStep({
@@ -435,6 +440,7 @@ export class AgentLoop {
     if (status === 'FAILED' && !finalAnswer) {
       finalAnswer = lastError ? `任务失败：${lastError}` : '任务失败：未知原因';
     }
+    groundCache?.invalidateAll('task-end'); // 任务终态：坐标表不跨任务复用
     emit({ type: 'status', status });
     return { status, finalAnswer, steps: index, totalTokens, stepsDetail, acceptance: runAcceptance, gate };
   }
