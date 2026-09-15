@@ -11,9 +11,9 @@ export const ROW_HEIGHT = 40;
 export const LIST_VIEWPORT_HEIGHT = 240;
 /** 弹层搜索头实测高度（px）：行高 28 + 上下内衬 8×2 + 1px 分隔线 */
 export const POPOVER_HEADER_HEIGHT = 45;
-/** 列表最小可视高度——再小就不如不出弹层，保底可滚 2 行 */
-export const LIST_MIN_HEIGHT = 96;
-/** 弹层与岛窗口顶部的留白：8px 呼吸位 + 6px 弹层锚点间距（mb-1.5），合计须扣足否则又被窗体裁顶 */
+/** 列表硬保底线高（px，一行）——空间不足时先牺牲列表行数，搜索框永不被裁 */
+export const LIST_MIN_HEIGHT = 48;
+/** 弹层与裁剪容器（面板滚动区顶边）之间的留白：8px 呼吸位 + 6px 弹层锚点间距（mb-1.5） */
 export const POPOVER_TOP_GAP = 14;
 /** 视口上下各多渲染的行数（防快速滚动白屏） */
 export const OVERSCAN = 5;

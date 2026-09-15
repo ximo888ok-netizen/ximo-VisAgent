@@ -11,7 +11,10 @@ import {
   LABEL_ALL,
   LABEL_RECOMMEND,
   LABEL_SEARCH,
+  LIST_MIN_HEIGHT,
+  LIST_VIEWPORT_HEIGHT,
   PINYIN_BOUNDARIES,
+  POPOVER_TOP_GAP,
   RECOMMEND_LIMIT,
 } from "./constants";
 
@@ -219,4 +222,20 @@ export function splitGoalByToken(goal: string, token: string | null): GoalSegmen
 export function buildStartPayload(rawGoal: string, targetApp: TargetApp | null): StartTaskRequest {
   const goal = stripAppToken(rawGoal, targetApp).trim();
   return targetApp ? { goal, targetApp, longTask: ANCHOR_LONG_TASK } : { goal };
+}
+
+/**
+ * 弹层几何（向上弹出）。可用空间 = 锚点顶 − 裁剪容器顶 − 留白；
+ * 裁剪容器是最近的 overflow≠visible 祖先（面板滚动区 / 岛外壳），**不是视口顶部**——
+ * 按视口算会把顶栏高度误当可用空间，弹层顶部（搜索框）就被裁到容器外。
+ * 空间不足时先收缩列表（保底一行），弹层总高严格等于内容，绝不反向撑破容器。
+ */
+export function computePickerHeights(opts: {
+  anchorTop: number;
+  clipTop: number;
+  headerH: number;
+}): { listH: number; maxHeight: number } {
+  const available = opts.anchorTop - opts.clipTop - POPOVER_TOP_GAP;
+  const listH = Math.max(LIST_MIN_HEIGHT, Math.min(LIST_VIEWPORT_HEIGHT, available - opts.headerH));
+  return { listH, maxHeight: opts.headerH + listH };
 }

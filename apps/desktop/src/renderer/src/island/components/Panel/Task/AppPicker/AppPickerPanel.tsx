@@ -7,7 +7,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppEntry } from "@shared/island-contracts";
 import { AppList } from "./AppList";
 import { useAppSearch } from "./useAppSearch";
-import { LIST_MIN_HEIGHT, LIST_VIEWPORT_HEIGHT, POPOVER_HEADER_HEIGHT, POPOVER_TOP_GAP } from "./constants";
+import { computePickerHeights } from "./lib";
+import { LIST_VIEWPORT_HEIGHT, POPOVER_HEADER_HEIGHT } from "./constants";
 
 export function AppPickerPanel({
   onPick,
@@ -29,13 +30,30 @@ export function AppPickerPanel({
   }, []);
 
   useLayoutEffect(() => {
+    /**
+     * 弹层的裁剪边界不是视口顶部，而是最近的 overflow≠visible 祖先
+     * （PanelContainer 的 .island-panel-scroll 与 IslandShell 的 overflow-hidden）——
+     * 按 0 起算会把顶栏那 ~64px 误当成可用空间，结果搜索框被裁到容器外。
+     */
+    const clipTopOf = (from: HTMLElement): number => {
+      let node: HTMLElement | null = from;
+      while (node && node !== document.body) {
+        if (getComputedStyle(node).overflowY !== "visible") return node.getBoundingClientRect().top;
+        node = node.parentElement;
+      }
+      return 0;
+    };
+
     const measure = (): void => {
       const anchor = rootRef.current?.parentElement; // TaskComposer 的 relative 容器
       if (!anchor) return;
-      const available = anchor.getBoundingClientRect().top - POPOVER_TOP_GAP;
-      const headerH = headerRef.current?.offsetHeight ?? POPOVER_HEADER_HEIGHT;
-      setMaxH(Math.max(headerH + LIST_MIN_HEIGHT, available));
-      setListH(Math.max(LIST_MIN_HEIGHT, Math.min(LIST_VIEWPORT_HEIGHT, available - headerH)));
+      const { listH: h, maxHeight } = computePickerHeights({
+        anchorTop: anchor.getBoundingClientRect().top,
+        clipTop: clipTopOf(anchor),
+        headerH: headerRef.current?.offsetHeight ?? POPOVER_HEADER_HEIGHT,
+      });
+      setListH(h);
+      setMaxH(maxHeight); // 总高严格等于内容，杜绝再次溢出裁剪
     };
     measure();
     window.addEventListener("resize", measure);

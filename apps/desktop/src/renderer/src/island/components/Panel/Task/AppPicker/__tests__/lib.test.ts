@@ -11,6 +11,7 @@ import {
   buildPickerRows,
   buildStartPayload,
   charInitial,
+  computePickerHeights,
   hasAppToken,
   insertAppToken,
   isChipReplacement,
@@ -23,6 +24,7 @@ import {
   toSearchable,
   toTargetApp,
 } from "../lib";
+import { LIST_MIN_HEIGHT, LIST_VIEWPORT_HEIGHT, POPOVER_HEADER_HEIGHT, POPOVER_TOP_GAP } from "../constants";
 
 function entry(name: string, exePath = "C:\\apps\\a.exe"): AppEntry {
   return { id: name, name, exePath, iconRef: "", source: "registry" };
@@ -160,5 +162,34 @@ describe("发送 payload 组装（零回归红线）", () => {
   });
   it("normalizeQuery 去空白并小写", () => {
     expect(normalizeQuery("  JDB ")).toBe("jdb");
+  });
+});
+
+describe("computePickerHeights（弹层向上弹出的自适应高度）", () => {
+  const HEADER = POPOVER_HEADER_HEIGHT;
+
+  it("空间充足：列表取满视口高", () => {
+    const r = computePickerHeights({ anchorTop: 400, clipTop: 64, headerH: HEADER });
+    expect(r.listH).toBe(LIST_VIEWPORT_HEIGHT);
+    expect(r.maxHeight).toBe(HEADER + LIST_VIEWPORT_HEIGHT);
+  });
+
+  it("空间紧张：列表收缩到剩余空间，弹层总高不越裁剪边界（搜索框被裁的回归）", () => {
+    const available = 228 - 64 - POPOVER_TOP_GAP; // 150
+    const r = computePickerHeights({ anchorTop: 228, clipTop: 64, headerH: HEADER });
+    expect(r.listH).toBe(available - HEADER);
+    expect(r.maxHeight).toBeLessThanOrEqual(available);
+  });
+
+  it("以裁剪容器而非视口为界：clipTop 越大可用空间越小", () => {
+    const byViewport = computePickerHeights({ anchorTop: 228, clipTop: 0, headerH: HEADER });
+    const byClipper = computePickerHeights({ anchorTop: 228, clipTop: 64, headerH: HEADER });
+    expect(byViewport.maxHeight).toBeGreaterThan(byClipper.maxHeight);
+  });
+
+  it("极端矮：保底一行列表，宁少显示不丢搜索框", () => {
+    const r = computePickerHeights({ anchorTop: 100, clipTop: 64, headerH: HEADER });
+    expect(r.listH).toBe(LIST_MIN_HEIGHT);
+    expect(r.maxHeight).toBe(HEADER + LIST_MIN_HEIGHT);
   });
 });
