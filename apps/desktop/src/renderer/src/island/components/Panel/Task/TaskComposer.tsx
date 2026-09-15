@@ -2,31 +2,25 @@
  * TaskComposer.tsx — 任务输入区（草稿输入 + 提交 + 推荐条 + 会话/档位工具条）
  *
  * 无内容时由父层居中摆放（hasContent=false），有内容时沉到底部。
- * A-M2：目标应用选择器 + chip——镜像层高亮法，chip 内联于输入框文本流：
- * 选中即把 token `[应用:名称]` 插入光标处，镜像层把 token 渲染为 chip；
- * 删除（含删半）token 即解绑。targetApp 状态仍独立持有（绑定语义）。
+ * 输入区为 contenteditable 富文本（behavior 层在 useComposerEditor，序列化/清洗核在 composer-lib）：
+ * 应用 chip 是文本流中的真实原子行内节点（contenteditable=false），不再是镜像覆盖层——
+ * 光标处插入、一次退格整体删除、删除即解绑；goal 序列化时 chip 贡献 0 字符，
+ * 发给主进程的 payload 与旧 token 方案逐字段一致。
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppEntry, StartTaskRequest, TargetApp } from "@shared/island-contracts";
 import { useIslandStore } from "../../../store/islandStore";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import { ThinkingModeSelect } from "./ThinkingModeSelect";
 import { RecommendBar } from "./RecommendBar";
 import { useSopRecommendation } from "./useSopRecommendation";
-import { AppChipMirror } from "./AppChipMirror";
+import { useComposerEditor } from "./useComposerEditor";
 import { AppPickerButton } from "./AppPicker/AppPickerButton";
 import { AppPickerPanel } from "./AppPicker/AppPickerPanel";
-import {
-  appTokenOf,
-  buildStartPayload,
-  hasAppToken,
-  insertAppToken,
-  isChipReplacement,
-  removeAppToken,
-  stripAppToken,
-  toTargetApp,
-} from "./AppPicker/lib";
+import { buildStartPayload, isChipReplacement, toTargetApp } from "./AppPicker/lib";
 import { PreAuthDialog } from "./PreAuthDialog";
+
+const COMPOSER_PLACEHOLDER = "输入任务，例如：打开记事本，输入「你好」并保存到桌面";
 
 export function TaskComposer({
   hasContent,
@@ -35,14 +29,11 @@ export function TaskComposer({
   hasContent: boolean;
   onError: (message: string | null) => void;
 }) {
-  const [goal, setGoal] = useState("");
   const [submitting, setSubmitting] = useState(false);
   /** A-M6：带 chip 的提交先过授权卡（未 ack 关闭 = 任务不启动） */
   const [preAuth, setPreAuth] = useState<{ goal: string; app: TargetApp } | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const mirrorRef = useRef<HTMLDivElement>(null);
-  /** token 插入/替换后待恢复的光标位（受控 value 重渲染完成时消费） */
-  const pendingCaret = useRef<number | null>(null);
+  /** 同帧双 Enter 去抖：状态提交前先行置位（行为同现状，只加固串发防护） */
+  const submittingRef = useRef(false);
 
   const taskRunning = useIslandStore((s) => s.taskRunning);
   const setTaskStarted = useIslandStore((s) => s.setTaskStarted);
@@ -51,7 +42,6 @@ export function TaskComposer({
   const pushToast = useIslandStore((s) => s.pushToast);
   const conversationTurns = useIslandStore((s) => s.conversationTurns);
   const clearConversation = useIslandStore((s) => s.clearConversation);
-  const targetApp = useIslandStore((s) => s.targetApp);
   const targetAppInvalid = useIslandStore((s) => s.targetAppInvalid);
   const appPickerOpen = useIslandStore((s) => s.appPickerOpen);
   const setTargetApp = useIslandStore((s) => s.setTargetApp);
@@ -59,24 +49,21 @@ export function TaskComposer({
   const setAppPickerOpen = useIslandStore((s) => s.setAppPickerOpen);
   const setRecentApps = useIslandStore((s) => s.setRecentApps);
 
-  /** 剥离绑定 token 后的纯文本（推荐匹配 / 空判定 / 提交目标共用） */
-  const plainGoal = stripAppToken(goal, targetApp);
+  const editor = useComposerEditor({
+    hasContent,
+    onSubmit: () => {
+      void handleSubmit();
+    },
+    // chip 被删除（退格/×）→ 解绑 + 收起授权卡前提
+    onAppRemoved: () => {
+      setTargetApp(null);
+      setPreAuth(null);
+    },
+  });
 
+  // 序列化后的纯文本（不含 chip）：推荐匹配与 placeholder 空态共用
+  const { text: plainGoal } = editor;
   useSopRecommendation(plainGoal);
-
-  // 无内容时自动聚焦
-  useEffect(() => {
-    if (hasContent) return;
-    const timer = setTimeout(() => inputRef.current?.focus(), 300);
-    return () => clearTimeout(timer);
-  }, [hasContent]);
-
-  // 全局快速输入聚焦
-  useEffect(() => {
-    const onFocus = () => inputRef.current?.focus();
-    window.addEventListener("island:focus-quick-input", onFocus);
-    return () => window.removeEventListener("island:focus-quick-input", onFocus);
-  }, []);
 
   // 冷启动空闲预热（规划 §4.1-1）：延后触发 apps:list 建立主进程枚举缓存 +
   // 缓存最近列表（面板打开即用；前台推荐随 A-M3 看门狗通道升级）
@@ -90,68 +77,30 @@ export function TaskComposer({
     return () => clearTimeout(timer);
   }, [setRecentApps]);
 
-  // 选择 → token 插入光标处 + 单实例替换 + toast（规划 §4.1-3：任何时刻至多 1 chip）
+  // 选择 → 光标处插入 chip + 单实例替换 + toast（任何时刻至多 1 chip）
   const handlePick = useCallback(
     (entry: AppEntry) => {
       const app = toTargetApp(entry);
-      const prev = useIslandStore.getState().targetApp;
-      const replaced = isChipReplacement(prev, app);
-      const ta = inputRef.current;
-      let caret = ta ? ta.selectionStart : goal.length;
-      let value = goal;
-      if (prev) {
-        const removed = removeAppToken(value, appTokenOf(prev), caret);
-        value = removed.value;
-        caret = removed.caret;
-      }
-      const inserted = insertAppToken(value, caret, caret, appTokenOf(app));
-      pendingCaret.current = inserted.caret;
-      setGoal(inserted.value);
+      const replaced = isChipReplacement(useIslandStore.getState().targetApp, app);
+      editor.insertChip(app);
       setTargetApp(app);
       setAppPickerOpen(false);
       if (replaced) pushToast("info", "已替换目标应用");
     },
-    [goal, setTargetApp, setAppPickerOpen, pushToast],
+    [editor, setTargetApp, setAppPickerOpen, pushToast],
   );
-
-  // token 插入/替换后恢复光标到 token 之后（受控 value 渲染完成时机）
-  useLayoutEffect(() => {
-    const ta = inputRef.current;
-    const pos = pendingCaret.current;
-    if (ta && pos !== null) {
-      pendingCaret.current = null;
-      ta.focus();
-      ta.setSelectionRange(pos, pos);
-    }
-  }, [goal]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    setGoal(value);
-    // 生命周期同步：value 不再含完整 token（整删/剪删/删半）→ 解绑 + 收掉授权卡前提。
-    // 残片处理选实现最轻的「降级为普通文本」：不再二次编辑 value（免光标校正），
-    // 残片留在原位可正常编辑删除。
-    if (targetApp && !hasAppToken(value, targetApp)) {
-      setTargetApp(null);
-      setPreAuth(null);
-    }
-  };
-
-  // 滚动同步：ghost textarea → 镜像层（单行到 2000 字上限内滚动场景少，scrollTop 直拷即可）
-  const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
-    if (mirrorRef.current) mirrorRef.current.scrollTop = e.currentTarget.scrollTop;
-  };
 
   const startWith = useCallback(async (payload: StartTaskRequest) => {
     setSubmitting(true);
+    submittingRef.current = true;
     onError(null);
     try {
       const res = await window.islandAPI.startTask(payload);
       if (res.ok) {
-        // P2-14 修复：提交成功后才清空旧对话，失败时保留上一轮结果
+        // P2-14 修复：提交成功后才清空旧对话/输入区，失败时保留上一轮结果与草稿
         resetRun();
         setTaskStarted(res.data.taskId, res.data.goal, res.data.queuedIndex);
-        setGoal("");
+        editor.clearEditor();
         setTargetApp(null); // 发送即绑定：chip 生命周期移交任务卡（规划 §4.1-6）
         if (res.data.queued) {
           pushToast("info", `任务已加入队列（前方 ${res.data.queuedIndex ?? 1} 个），将自动依次执行`);
@@ -168,20 +117,22 @@ export function TaskComposer({
     } catch (err) {
       onError(err instanceof Error ? err.message : "提交失败");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
-  }, [setTaskStarted, resetRun, setTargetApp, setTargetAppInvalid, pushToast, onError]);
+  }, [setTaskStarted, resetRun, setTargetApp, setTargetAppInvalid, pushToast, onError, editor]);
 
-  const handleSubmit = useCallback(async () => {
-    const trimmed = plainGoal.trim();
-    if (!trimmed || submitting || taskRunning) return;
+  async function handleSubmit(): Promise<void> {
+    const { goal, app } = editor.serialize();
+    const trimmed = goal.trim();
+    if (!trimmed || submittingRef.current || taskRunning) return;
     // A-M6 授权卡闸：锚定任务先取得用户逐项确认的作用域包，未 ack 关闭 = 不启动
-    if (targetApp) {
-      setPreAuth({ goal: trimmed, app: targetApp });
+    if (app) {
+      setPreAuth({ goal: trimmed, app });
       return;
     }
     await startWith(buildStartPayload(trimmed, null));
-  }, [plainGoal, submitting, taskRunning, targetApp, startWith]);
+  }
 
   // 新对话：清空会话上下文与当前展示
   const handleNewConversation = useCallback(async () => {
@@ -190,13 +141,6 @@ export function TaskComposer({
     resetRun();
     pushToast("info", "已开启新对话");
   }, [clearConversation, clearTask, resetRun, pushToast]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void handleSubmit();
-    }
-  };
 
   return (
     <div className={hasContent ? "" : "w-full max-w-[460px]"}>
@@ -228,29 +172,18 @@ export function TaskComposer({
             onCancel={() => setPreAuth(null)}
           />
         )}
-        <div className="relative">
-          <textarea
-            ref={inputRef}
-            value={goal}
-            onChange={handleChange}
-            onScroll={handleScroll}
-            onKeyDown={handleKeyDown}
-            placeholder="输入任务，例如：打开记事本，输入「你好」并保存到桌面"
-            rows={hasContent ? 1 : 2}
-            maxLength={2000}
-            className="island-input island-input--ghost island-glow resize-none"
-            style={{ fontSize: "13px", lineHeight: "1.5", minHeight: hasContent ? 36 : 56 }}
-            data-interactive
-          />
-          <AppChipMirror
-            ref={mirrorRef}
-            goal={goal}
-            app={targetApp}
-            invalid={targetAppInvalid}
-            fontSize="13px"
-            lineHeight="1.5"
-          />
-        </div>
+        <div
+          ref={editor.editorRef}
+          className={`island-input island-glow island-composer${hasContent ? " island-composer--tight" : ""}`}
+          contentEditable="plaintext-only"
+          role="textbox"
+          aria-multiline="true"
+          aria-label="任务输入"
+          data-placeholder={COMPOSER_PLACEHOLDER}
+          data-empty={editor.empty ? "true" : "false"}
+          data-interactive
+          {...editor.handlers}
+        />
         {targetAppInvalid && (
           <div className="mt-1 text-[12px] ig-fg-danger">目标应用不存在，请重选</div>
         )}
@@ -273,8 +206,10 @@ export function TaskComposer({
         )}
         <button
           className="island-btn island-btn--primary text-[12px]"
-          disabled={!goal.trim() || submitting}
-          onClick={handleSubmit}
+          disabled={editor.empty || submitting}
+          onClick={() => {
+            void handleSubmit();
+          }}
           data-interactive
         >
           {submitting ? "提交中…" : "发送"}

@@ -57,6 +57,12 @@
   --island-input-bg: rgba(255, 255, 255, 0.05);
   --island-input-border: rgba(255, 255, 255, 0.12);
   --island-input-focus: var(--p-ice-500);
+  /* 任务输入区（contenteditable）几何：三档高度 + chip 图标/删除钮口径 */
+  --island-composer-min-h: 56px;
+  --island-composer-min-h-tight: 36px;
+  --island-composer-max-h: 168px;
+  --island-chip-icon: 14px;
+  --island-chip-remove: 15px;
 
   /* 四档文字色（alpha 经实测校核：最差情况为"暗色主题 + 纯白文档背景"。
    * 整改前 muted 0.42 / faint 0.25 分别只有 3.01:1 与 1.98:1，低于 WCAG AA 的 4.5:1。
@@ -490,49 +496,100 @@ html.light {
 }
 .island-search .island-input { padding-left: 28px; }
 
-/* ---- 任务输入框镜像层（层高亮法：chip 内联文本流，TaskComposer/AppChipMirror） ---- */
+/* ---- 任务输入区（contenteditable 富文本 + 文本流内原子 chip，TaskComposer/useComposerEditor） ---- */
 
-/* ghost textarea：文字透明只留光标，可见文本由镜像层绘制 */
-.island-input--ghost {
-  color: transparent;
-  caret-color: var(--ig-t-strong);
-  scrollbar-width: none; /* 藏滚动条：镜像层 overflow:hidden 无滚动条，宽度必须一致否则排版错位 */
-}
-.island-input--ghost::-webkit-scrollbar { display: none; }
-
-/* 镜像层：与 .island-input 同 padding/边框占位/换行规则，pointer 穿透，scrollTop 由 onScroll 同步 */
-.island-input-mirror {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  box-sizing: border-box;
-  padding: 8px 12px;             /* = .island-input */
-  border: 1px solid transparent; /* 补 .island-input 边框的内容起点偏移 */
-  color: var(--ig-t-strong);
+/* 输入区本体：外观承接 .island-input（底色/描边/聚焦光晕），此处只定排版与高度收放。
+ * rows 自适应 = min-height 两档 + 自然增高，超上限内部滚动（对齐旧 textarea 行为）。 */
+.island-composer {
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  min-height: var(--island-composer-min-h);
+  max-height: var(--island-composer-max-h);
+  overflow-y: auto;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  user-select: text;
+  cursor: text;
+}
+.island-composer--tight { min-height: var(--island-composer-min-h-tight); }
+
+/* placeholder：空态（无文本且无 chip，由组件维护 data-empty） */
+.island-composer:empty::before,
+.island-composer[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: var(--ig-t-faint);
+  pointer-events: none;
 }
 
-/* token 位置覆盖的 chip：圆角胶囊底 + 图标底衬 + 名称，撑满 token 透明占位矩形。
- * 描边走 inset ring（border 会吃掉 19.5px 行盒里 18px 图标底衬的高度）；左右各多撑 4px 呼吸。 */
+/* chip：文本流里的真实原子行内节点（contenteditable=false，一次退格整体删除）。
+ * 高度 18px ≤ 行盒（13px × 1.5 = 19.5px），vertical-align 让图标底衬中线对准文字中线，绝不撑破行高。 */
 .island-app-chip {
-  position: absolute;
-  inset: 0 -4px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 0 7px 0 2px;
+  vertical-align: middle; /* 与前后文字同中线；chip 18px ≤ 行盒 19.5px（13px×1.5），不撑破行高 */
+  max-width: 100%;
+  height: 18px;
+  padding: 0 4px 0 2px;
   border-radius: var(--r-pill);
   background: var(--ig-panel);
   box-shadow: inset 0 0 0 1px var(--ig-line);
   font-size: var(--fs-caption);
   line-height: 1;
   overflow: hidden;
+  user-select: none;
 }
 .island-app-chip--invalid {
   background: var(--p-ember-500-a10);
   box-shadow: inset 0 0 0 1px var(--tone-danger);
+}
+.island-app-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+/* 字母兜底字形（与 AppIcon 兜底同一视觉语言；DOM 工厂产物，见 composer-dom） */
+.island-app-chip-glyph {
+  display: grid;
+  place-items: center;
+  width: var(--island-chip-icon);
+  height: var(--island-chip-icon);
+  border-radius: var(--r-pill);
+  background: var(--ig-panel-hover);
+  color: var(--ig-t-muted);
+  font-weight: 500;
+  font-size: calc(var(--island-chip-icon) * 0.6);
+}
+.island-app-chip .island-app-chip-icon {
+  display: block;
+  width: var(--island-chip-icon);
+  height: var(--island-chip-icon);
+  border-radius: var(--r-chip);
+}
+/* × 仅在 chip hover / 输入区聚焦时显形 */
+.island-app-chip-remove {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--island-chip-remove);
+  height: var(--island-chip-remove);
+  border-radius: var(--r-pill);
+  color: var(--ig-t-muted);
+  font-size: var(--fs-caption);
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms var(--island-ease), background 120ms var(--island-ease), color 120ms var(--island-ease);
+}
+.island-app-chip-remove:hover {
+  background: var(--ig-panel-hover);
+  color: var(--ig-t-strong);
+}
+.island-app-chip:hover .island-app-chip-remove,
+.island-composer:focus .island-app-chip-remove {
+  opacity: 1;
 }
 
 /* 应用图标底衬：与字母兜底同色系的圆形容器（chip 14→18px / 列表行 16→24px） */

@@ -2,25 +2,19 @@
  * lib.test.ts — A-M2 AppPicker 纯函数单测（规划 §5：搜索过滤 / chip 组装 /
  * 单实例替换 / 无 chip payload 零回归红线）。渲染层无组件测试基座，
  * 交互逻辑已全部抽入 lib.ts，此处 vitest 直测；Playwright 项为手测待办。
+ * chip 序列化/粘贴清洗等输入区核见 ../../__tests__/composer-lib.test.ts。
  */
 import { describe, expect, it } from "vitest";
 import type { AppEntry, TargetApp } from "@shared/island-contracts";
 import {
-  appTokenOf,
-  appTokenText,
   buildPickerRows,
   buildStartPayload,
   charInitial,
   computePickerHeights,
-  hasAppToken,
-  insertAppToken,
   isChipReplacement,
   matchApp,
   normalizeQuery,
   pinyinInitials,
-  removeAppToken,
-  splitGoalByToken,
-  stripAppToken,
   toSearchable,
   toTargetApp,
 } from "../lib";
@@ -101,61 +95,17 @@ describe("chip 组装与单实例替换", () => {
   });
 });
 
-describe("token 文本流呈现（镜像层高亮法）", () => {
-  const tk = appTokenText("记事本"); // [应用:记事本]
-  it("token 形态统一半角常量，appTokenOf 取绑定应用名", () => {
-    expect(tk).toBe("[应用:记事本]");
-    expect(appTokenOf(target("记事本"))).toBe(tk);
-  });
-  it("插入 = 光标处替换选区，光标落在 token 之后", () => {
-    const r = insertAppToken("打开并保存", 2, 2, tk);
-    expect(r.value).toBe(`打开${tk}并保存`);
-    expect(r.caret).toBe(2 + tk.length);
-    const sel = insertAppToken("abcdef", 1, 4, tk);
-    expect(sel.value).toBe(`a${tk}ef`);
-  });
-  it("替换 = 旧 token 全删 + 光标按被删位数左移，再插新 token", () => {
-    const old = appTokenText("计算器");
-    const value = `${old}+3`;
-    const removed = removeAppToken(value, old, value.length);
-    expect(removed.value).toBe("+3");
-    expect(removed.caret).toBe(2);
-    const mid = removeAppToken(`a${old}b`, old, 1); // token 在光标之后 → 光标不动
-    expect(mid.caret).toBe(1);
-  });
-  it("生命周期：整删/删半均判缺失（触发解绑）；strip 只剥绑定应用 token", () => {
-    const app = target("记事本");
-    expect(hasAppToken(`跑${tk}一下`, app)).toBe(true);
-    expect(hasAppToken(`跑[应用:记事本一下`, app)).toBe(false); // 删掉右括号 → 视为删除
-    expect(hasAppToken("", app)).toBe(false);
-    expect(hasAppToken(tk, target("其他"))).toBe(false);
-    expect(stripAppToken(`跑${tk}一下`, app)).toBe("跑一下");
-    expect(stripAppToken(`手打${tk}`, null)).toBe(`手打${tk}`); // 未绑定 = 普通文本
-  });
-  it("镜像分段：text/chip 交替，无绑定整体一段 text", () => {
-    expect(splitGoalByToken("打开", null)).toEqual([{ kind: "text", text: "打开" }]);
-    expect(splitGoalByToken(`a${tk}b${tk}`, tk)).toEqual([
-      { kind: "text", text: "a" },
-      { kind: "chip", text: tk },
-      { kind: "text", text: "b" },
-      { kind: "chip", text: tk },
-    ]);
-  });
-});
-
 describe("发送 payload 组装（零回归红线）", () => {
   it("无 chip：与现状逐字段一致（仅 { goal }）", () => {
     expect(buildStartPayload("打开记事本", null)).toStrictEqual({ goal: "打开记事本" });
   });
-  it("带 chip：goal 剥离 token 后为剩余文本，targetApp 字段承载应用语义", () => {
-    const t = target("记事本");
-    const payload = buildStartPayload(`  ${appTokenOf(t)}输入「你好」  `, t);
-    expect(payload.goal).toBe("输入「你好」");
-    expect(payload.targetApp).toEqual(t);
+  it("goal 只做 trim（chip 序列化已保证 goal 不含应用信息）", () => {
+    expect(buildStartPayload("  输入「你好」  ", null)).toStrictEqual({ goal: "输入「你好」" });
   });
-  it("带 chip：附加 targetApp + 锚定档 longTask（600 步/4h）", () => {
+  it("带 chip：附加 targetApp + 锚定档 longTask（600 步/4h），goal 为纯文本", () => {
     const t = target("kis");
     const payload = buildStartPayload("跑月结", t);
+    expect(payload.goal).toBe("跑月结");
     expect(payload.targetApp).toEqual(t);
     expect(payload.longTask?.maxSteps).toBe(600);
     expect(payload.longTask?.maxDurationMs).toBe(4 * 60 * 60 * 1000);
