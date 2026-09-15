@@ -62,8 +62,8 @@ describe('apps:list 冷枚举（mock 侧车报文）', () => {
     expect(calls).toBe(1);
     expect(apps.map((a) => a.name)).toEqual(['Google Chrome', '记事本']);
     for (const a of apps) expect(() => AppEntrySchema.parse(a)).not.toThrow();
-    // iconRef 与 C# 侧同构的 {sha1}_{mtime}_{size}.png 预判
-    expect(apps[0]?.iconRef).toBe(`${sha1Normalized('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')}_1700000000000_3000000.png`);
+    // iconRef 与缓存文件同构的 {sha1}_{mtime}_{exeBytes}_{iconPx}px.png 预判（默认 64px 取图）
+    expect(apps[0]?.iconRef).toBe(`${sha1Normalized('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')}_1700000000000_3000000_64px.png`);
   });
 
   it('内存缓存 5min TTL 命中不再打侧车；refresh 强制重枚举；过期自动重枚举', async () => {

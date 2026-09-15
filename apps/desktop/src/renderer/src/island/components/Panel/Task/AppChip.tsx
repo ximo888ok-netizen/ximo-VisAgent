@@ -22,7 +22,7 @@ export function AppChip({ app, invalid }: { app: TargetApp; invalid: boolean }) 
       aria-hidden
       className={`island-app-chip ${invalid ? "island-app-chip--invalid" : ""}`}
     >
-      <AppIcon app={iconEntry} size={14} />
+      <AppIcon app={iconEntry} size={14} plate="chip" />
       <span className="min-w-0 truncate font-medium">{app.name}</span>
     </span>
   );

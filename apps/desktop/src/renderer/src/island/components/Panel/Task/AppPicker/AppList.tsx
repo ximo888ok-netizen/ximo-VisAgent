@@ -35,14 +35,14 @@ export function AppList({
             style={{ position: "absolute", top: (start + i) * ROW_HEIGHT, left: 0, right: 0, height: ROW_HEIGHT }}
           >
             {row.kind === "header" ? (
-              <div className="island-group-head h-full ig-bg-panel">{row.label}</div>
+              <div className="island-group-head h-full">{row.label}</div>
             ) : (
               <button
                 data-interactive
-                className="group flex h-full w-full items-center gap-2.5 px-3 text-left transition-colors duration-150 hover:ig-bg-panel-hover active:ig-bg-panel-hover"
+                className="island-app-row group flex h-full w-full items-center gap-3 px-3 text-left hover:ig-bg-panel-hover active:ig-bg-panel-hover"
                 onClick={() => onPick(row.app.entry)}
               >
-                <AppIcon app={row.app.entry} size={20} />
+                <AppIcon app={row.app.entry} size={16} plate="row" />
                 <span className="min-w-0 flex-1 truncate text-[12px] t-body group-hover:t-strong">{row.app.entry.name}</span>
                 <span className="max-w-[40%] shrink-0 truncate text-[10px] t-faint">
                   {row.app.entry.exePath}

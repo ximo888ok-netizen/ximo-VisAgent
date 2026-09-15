@@ -5,7 +5,7 @@
  * 1. 专属 C# 侧车进程：懒拉起 / 复用，NDJSON JSON-RPC，15s 超时，空闲自动回收；
  *    一切失败回空表 / 无图标（前端字母兜底，选择器永不为空壳）。
  * 2. 内存目录缓存：5min TTL + refresh 手动失效；并发 listApps 合流只发一次枚举。
- * 3. 图标文件缓存 `icon-cache/`：键 = sha1(normalize(exePath))_{mtime}_{size}.png；
+ * 3. 图标文件缓存 `icon-cache/`：键 = sha1(normalize(exePath))_{mtime}_{exeBytes}_{iconPx}px.png；
  *    写前清同 exe 旧文件；LRU 500 个 / 50MB 按 atime 淘汰；启动空闲期一次性清扫孤儿。
  *
  * 分层口诀：低频枚举/图标走侧车（本文件）；高频 pid→exe 走主进程 koffi（A-M3 另文件）。
@@ -53,6 +53,8 @@ export interface AppCatalogOptions {
 const SIDECAR_REL = path.join('native', 'uia-sidecar-cs', 'bin', 'uia-sidecar.exe');
 const ICONS_PER_BATCH = 25;
 const ICON_CONCURRENCY = 2;
+/** 统一取图尺寸：64px 兼顾 24px 显示 @2x DPI；侧车从 .ico 大层降采样，缓存键含此段 */
+const DEFAULT_ICON_SIZE = 64;
 const DEFAULT_TTL_MS = 5 * 60_000;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_IDLE_KILL_MS = 120_000;
@@ -160,20 +162,20 @@ class AppCatalogService {
       id: r.id || sha1Hex(normalizeExePath(r.exePath)),
       name: r.name,
       exePath: r.exePath,
-      // 侧车已报 mtime+size，iconRef 直接按同名规则预判；mtime 变化只多一次缓存未命中
-      iconRef: r.mtime > 0 ? `${sha1Hex(normalizeExePath(r.exePath))}_${Math.floor(r.mtime)}_${r.size}.png` : '',
+      // 侧车已报 mtime+size，iconRef 按缓存同名规则预判（含默认取图尺寸段）；mtime 变化只多一次缓存未命中
+      iconRef: r.mtime > 0 ? `${sha1Hex(normalizeExePath(r.exePath))}_${Math.floor(r.mtime)}_${r.size}_${DEFAULT_ICON_SIZE}px.png` : '',
       source: r.source,
     };
   }
 
   // ---- 图标：文件缓存优先，未命中透传侧车（并发 ≤2） ----------------------
 
-  async getIcons(exePaths: readonly string[], size = 32): Promise<AppIconPayload[]> {
+  async getIcons(exePaths: readonly string[], size = DEFAULT_ICON_SIZE): Promise<AppIconPayload[]> {
     const results = new Map<string, AppIconPayload>();
     const misses: string[] = [];
     for (const p of exePaths) {
       if (results.has(p)) continue;
-      const hit = await this.readIconFile(p);
+      const hit = await this.readIconFile(p, size);
       if (hit) results.set(p, { exePath: p, pngBase64: hit });
       else misses.push(p);
     }
@@ -191,7 +193,7 @@ class AppCatalogService {
         const row = asIconRow(raw);
         if (!row) continue;
         const png = row.pngBase64 && isBase64(row.pngBase64) ? row.pngBase64 : null;
-        if (png) await this.writeIconFile(row.exePath, png);
+        if (png) await this.writeIconFile(row.exePath, png, size);
         results.set(row.exePath, png ? { exePath: row.exePath, pngBase64: png } : { exePath: row.exePath, error: 'extract failed' });
       }
       // 侧车漏答的路径显式回错误项（渲染层字母兜底，不留悬空请求）
@@ -200,18 +202,18 @@ class AppCatalogService {
     return exePaths.map((p) => results.get(p) ?? { exePath: p, error: 'failed' });
   }
 
-  /** 图标缓存文件名：键含 exe mtime+size（升级即失效，风险行 §6）；exe 不存在回空 */
-  private async iconFileName(exePath: string): Promise<string | null> {
+  /** 图标缓存文件名：键含 exe mtime+字节大小+请求图标尺寸（升级/换尺寸即失效，风险行 §6）；exe 不存在回空 */
+  private async iconFileName(exePath: string, iconSize: number): Promise<string | null> {
     try {
       const st = await stat(exePath);
-      return `${sha1Hex(normalizeExePath(exePath))}_${Math.floor(st.mtimeMs)}_${st.size}.png`;
+      return `${sha1Hex(normalizeExePath(exePath))}_${Math.floor(st.mtimeMs)}_${st.size}_${iconSize}px.png`;
     } catch {
       return null;
     }
   }
 
-  private async readIconFile(exePath: string): Promise<string | null> {
-    const name = await this.iconFileName(exePath);
+  private async readIconFile(exePath: string, iconSize: number): Promise<string | null> {
+    const name = await this.iconFileName(exePath, iconSize);
     if (!name) return null;
     try {
       const png = (await readFile(path.join(this.opts.iconCacheDir, name))).toString('base64');
@@ -223,8 +225,8 @@ class AppCatalogService {
     }
   }
 
-  private async writeIconFile(exePath: string, pngBase64: string): Promise<void> {
-    const name = await this.iconFileName(exePath);
+  private async writeIconFile(exePath: string, pngBase64: string, iconSize: number): Promise<void> {
+    const name = await this.iconFileName(exePath, iconSize);
     if (!name) return;
     const dir = this.opts.iconCacheDir;
     const target = path.join(dir, name);

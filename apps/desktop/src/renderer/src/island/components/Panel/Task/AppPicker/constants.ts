@@ -5,10 +5,10 @@
  */
 import type { LongTaskOptions } from "@shared/island-contracts";
 
-/** 虚拟滚动统一行高（px，组头行与应用行同高，免测量） */
-export const ROW_HEIGHT = 34;
-/** 弹层内列表视口高度（px）——小窗体量，超出即虚拟滚动 */
-export const LIST_VIEWPORT_HEIGHT = 238;
+/** 虚拟滚动统一行高（px，组头行与应用行同高，免测量；≥40 让 24px 图标底衬有呼吸感） */
+export const ROW_HEIGHT = 40;
+/** 弹层内列表视口高度（px）——小窗体量，超出即虚拟滚动（ROW_HEIGHT 整数倍免半行抖动） */
+export const LIST_VIEWPORT_HEIGHT = 240;
 /** 视口上下各多渲染的行数（防快速滚动白屏） */
 export const OVERSCAN = 5;
 /** 推荐组最多展示条数（A-M2 以 apps:recent 头部为“前台推荐”，A-M3 接看门狗真前台） */

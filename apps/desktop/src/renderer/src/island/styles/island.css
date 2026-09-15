@@ -474,9 +474,20 @@ html.light {
 }
 .island-input:focus {
   border-color: var(--island-input-focus);
-  box-shadow: 0 0 0 3px rgba(46, 124, 246, 0.15);
+  box-shadow: 0 0 0 3px var(--p-ice-500-a15);
 }
 .island-input::placeholder { color: var(--ig-t-faint); }
+
+/** 带放大镜饰标的搜索框（AppPicker 弹层头部） */
+.island-search-icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ig-t-faint);
+  pointer-events: none;
+}
+.island-search .island-input { padding-left: 28px; }
 
 /* ---- 任务输入框镜像层（层高亮法：chip 内联文本流，TaskComposer/AppChipMirror） ---- */
 
@@ -502,25 +513,38 @@ html.light {
   overflow-wrap: break-word;
 }
 
-/* token 位置覆盖的 chip：圆角底 + 图标 + 名称，撑满 token 透明占位矩形 */
+/* token 位置覆盖的 chip：圆角胶囊底 + 图标底衬 + 名称，撑满 token 透明占位矩形。
+ * 描边走 inset ring（border 会吃掉 19.5px 行盒里 18px 图标底衬的高度）；左右各多撑 4px 呼吸。 */
 .island-app-chip {
   position: absolute;
-  inset: 0 -2px;
+  inset: 0 -4px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 3px;
-  border-radius: 6px;
-  border: 1px solid var(--ig-line);
+  gap: 5px;
+  padding: 0 7px 0 2px;
+  border-radius: var(--r-pill);
   background: var(--ig-panel);
-  font-size: 12px;
+  box-shadow: inset 0 0 0 1px var(--ig-line);
+  font-size: var(--fs-caption);
   line-height: 1;
   overflow: hidden;
 }
 .island-app-chip--invalid {
-  border-color: var(--tone-danger);
   background: var(--p-ember-500-a10);
+  box-shadow: inset 0 0 0 1px var(--tone-danger);
 }
+
+/* 应用图标底衬：与字母兜底同色系的圆形容器（chip 14→18px / 列表行 16→24px） */
+.island-app-icon-plate {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  background: var(--ig-panel-hover);
+}
+.island-app-icon-plate img { border-radius: var(--r-chip); }
+.island-app-icon-plate--chip { padding: 2px; }
+.island-app-icon-plate--row { padding: 4px; }
 
 .island-select {
   appearance: none;
@@ -772,17 +796,29 @@ input[type="range"].island-range,
   to   { opacity: 1; transform: none; }
 }
 
-/** 选择器分组头（推荐 / 全部 / 搜索结果）：比正文小一档但比内容更"退后"，靠字重与字距立层级 */
+/** 选择器分组头（推荐 / 全部 / 搜索结果）：小标签化，尾部一缕 hairline 代替整带底色 */
 .island-group-head {
   display: flex;
   align-items: center;
+  gap: var(--sp-2);
   padding: 0 12px;
   font-size: var(--fs-micro);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  color: var(--ig-t-muted);
-  background: var(--ig-panel);
+  letter-spacing: 0.08em;
+  color: var(--ig-t-faint);
   user-select: none;
+}
+.island-group-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--ig-line);
+}
+
+/** 选择器应用行：圆角 hover 填充（与壳体玻璃同呼吸），过渡 ≤120ms */
+.island-app-row {
+  border-radius: var(--r-control);
+  transition: background-color var(--dur-instant) var(--island-ease);
 }
 
 /** chip 移除钮：悬停点出危险底色、按下轻微收缩——只在 hover 时才"danger 化"，平时安静 */

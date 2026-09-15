@@ -20,7 +20,7 @@ export const AppEntrySchema = z.object({
   name: z.string().min(1),
   /** 绝对路径（.lnk 解析失败时为 .lnk 本体，直喂 openAppSafe 现成分支） */
   exePath: z.string().min(1),
-  /** icon-cache 文件名（{sha1}_{mtime}_{size}.png）；空=字母图标回退 */
+  /** icon-cache 文件名（{sha1}_{mtime}_{exeBytes}_{iconPx}px.png）；空=字母图标回退 */
   iconRef: z.string().default(""),
   source: AppSourceSchema,
 });
@@ -35,7 +35,7 @@ export type AppsListRequest = z.infer<typeof AppsListSchema>;
 /** apps:icons 入参：批量 ≤25（超限边界直接拒绝，preload 与主进程双侧复校） */
 export const AppsIconsSchema = z.object({
   exePaths: z.array(z.string().min(1).max(1024)).max(25),
-  size: z.number().int().min(16).max(256).default(32),
+  size: z.number().int().min(16).max(256).default(64),
 });
 export type AppsIconsRequest = z.infer<typeof AppsIconsSchema>;
 

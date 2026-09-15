@@ -48,24 +48,37 @@ export function AppPickerPanel({
       className="island-popover absolute bottom-full left-0 right-0 z-50 mb-1.5 overflow-hidden"
     >
       <div className="flex items-center gap-2 border-b ig-border-line p-2 ig-bg-panel">
-        <input
-          ref={searchRef}
-          data-interactive
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索应用（名称 / 拼音首字母，如 jdb）"
-          maxLength={60}
-          className="island-input flex-1 text-[12px]"
-        />
+        <div className="island-search relative min-w-0 flex-1">
+          <svg
+            aria-hidden
+            className="island-search-icon"
+            width="13"
+            height="13"
+            viewBox="0 0 14 14"
+            fill="none"
+          >
+            <circle cx="6.2" cy="6.2" r="4.4" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M9.6 9.6L12.7 12.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+          <input
+            ref={searchRef}
+            data-interactive
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索应用（名称 / 拼音首字母，如 jdb）"
+            maxLength={60}
+            className="island-input w-full text-[12px]"
+          />
+        </div>
         <button className="island-btn island-btn--ghost h-7 shrink-0 px-2.5 text-[12px]" onClick={onClose} data-interactive>
           关闭
         </button>
       </div>
       {loading ? (
         <div className="space-y-1 px-2 py-2.5" role="status" aria-label="正在枚举已安装应用">
-          <div className="island-skeleton h-8 rounded-lg ig-bg-panel-hover" />
-          <div className="island-skeleton h-8 rounded-lg ig-bg-panel-hover" />
-          <div className="island-skeleton h-8 rounded-lg ig-bg-panel-hover" />
+          <div className="island-skeleton h-10 rounded-lg ig-bg-panel-hover" />
+          <div className="island-skeleton h-10 rounded-lg ig-bg-panel-hover" />
+          <div className="island-skeleton h-10 rounded-lg ig-bg-panel-hover" />
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center gap-1 px-4 py-9 text-center">
