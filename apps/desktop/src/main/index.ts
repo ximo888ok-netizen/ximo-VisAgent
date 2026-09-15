@@ -29,6 +29,7 @@ import { createMissionRepo } from './mission-db/mission-repo';
 import { createMissionRunRepo } from './mission-db/run-repo';
 import { createMissionRunner } from './mission-runner';
 import { logInfo, notifyTaskFinished } from './orchestrator-notify';
+import { getJobIncrementRunner } from './longtask-increment';
 import { EmployeeStore } from './stores/employee-store';
 import { WeChatBot } from './wechat-bot';
 import { installProcessGuards } from './process-guards';
@@ -114,7 +115,11 @@ const wechatBot = new WeChatBot({
 orchestrator.setWeChatBot(wechatBot);
 
 const scheduler = new Scheduler(path.join(userData(), 'scheduler.json'), {
+  // B-M1 触发链：goal 型 job 走 longtask-increment（游标注入 + 无人值守派发 + 轮次收敛）；
+  // SOP 模板 job 与未装配窗口保持旧链路（零回归）。bootstrap 在首轮 tick 前完成装配。
   runJob: async (job) => {
+    const increment = getJobIncrementRunner();
+    if (increment && !job.sopId) return increment.startRound(job);
     try {
       if (job.sopId) {
         await orchestrator.runSop(job.sopId, job.goal);

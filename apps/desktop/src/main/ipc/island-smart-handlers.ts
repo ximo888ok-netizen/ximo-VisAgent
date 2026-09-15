@@ -43,6 +43,14 @@ export interface SmartDeps {
   memory: MemoryStore;
   conversation: ConversationStore;
   scheduler: Scheduler;
+  /**
+   * B-M1 预授权仓储（缺省=未装配：带 grantId 的创建直接拒绝，fail-closed）：
+   * job:create 携带 grantId 时主进程复校三生效条件并把 grant 绑到 job_id。
+   */
+  grants?: {
+    get(grantId: string): { acked: boolean; status: string; expiresAt: number } | null;
+    bindJob(grantId: string, jobId: string): boolean;
+  };
 }
 
 let smartRegistered = false;
@@ -109,7 +117,20 @@ export function registerSmartHandlers(deps: SmartDeps): void {
       if (deps.store.get().schedulerEnabled === false) {
         return { ok: false as const, error: "定时任务已在设置中全局关闭" };
       }
+      const grantId = parsed.data.grantId;
+      // B-M1 边界复校（A-M6 同纪律）：grant 三生效条件缺一不建 job；未装配 fail-closed
+      if (grantId) {
+        const grant = deps.grants?.get(grantId);
+        if (!grant || !grant.acked || grant.status !== "active" || grant.expiresAt <= Date.now()) {
+          return { ok: false as const, error: "预授权未确认或已失效，长期任务未创建" };
+        }
+      }
       const job = deps.scheduler.create(parsed.data);
+      if (grantId && !deps.grants?.bindJob(grantId, job.id)) {
+        // 一个作用域包只服务一个 job（复用即串权限）：绑不上则回收刚建的 job，可见失败
+        deps.scheduler.delete(job.id);
+        return { ok: false as const, error: "该预授权已绑定其他长期任务，请在授权卡重新签发" };
+      }
       return { ok: true as const, data: { id: job.id } };
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : "create failed" };

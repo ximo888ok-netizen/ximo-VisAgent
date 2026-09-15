@@ -40,8 +40,9 @@ import { loadApprovedTools } from './custom-tools';
 import { scheduleStartupDiagnostics } from './diagnostics';
 import { scheduleE2ERun } from './e2e-runner';
 import { registerWeChatHandlers } from './ipc/wechat-handlers';
-import { setWeChatNotifier } from './orchestrator-notify';
+import { setWeChatNotifier, logInfo } from './orchestrator-notify';
 import { autoResumeInterrupted } from './orchestrator-autoresume';
+import { createJobIncrementRunner, getJobIncrementRunner, setJobIncrementRunner } from './longtask-increment';
 import { publishStep } from './windows/island';
 import { createStepEvent } from '../shared/island-contracts';
 
@@ -142,7 +143,32 @@ export async function bootstrap(deps: BootstrapDeps): Promise<void> {
     }
   }, 1500);
 
+  // B-M1 无人值守触发链装配（必须晚于 registerIsland——preauth 表已建；晚于
+  // longTaskRunner——检查点仓储取用口）。
+  setJobIncrementRunner(createJobIncrementRunner({
+    scheduler,
+    db: auditDb.exposeDb(),
+    // B1 修正的派发一路：不传 interactive（=非交互），有效 job grant 经审批门视同已授权；
+    // targetApp/longTask 档位随触发链携带（规划 §2.4）
+    dispatch: async (job, goal) => {
+      const res = await orchestrator.startTask(goal, undefined, {
+        ...(job.targetApp ? { targetApp: job.targetApp } : {}),
+        ...(job.longTask ? { longTask: job.longTask } : {}),
+        jobId: job.id,
+      });
+      return { taskId: res.taskId };
+    },
+    getTaskOutcome: (taskId) => orchestrator.getTaskStatus(taskId),
+    hasPendingApproval: (taskId) => orchestrator.hasPendingApproval(taskId),
+    checkpoints: () => longTaskRunner.store,
+    notify: (text) => logInfo(text),
+  }));
+
   if (configStore.get().schedulerEnabled !== false) {
+    // B-M2 重启对账（resumeRunningMissions 在 longtask 域的等价物）：崩溃遗留轮次按
+    // 审计库终态一次性收敛——已完成补推进游标，中断轮不推进等下次 cron 从原位续跑。
+    // 必须先于 start()：start 的即时 tick 会拿上轮状态做 skipped-busy 判定。
+    if (!isE2E && !isSelfTest) getJobIncrementRunner()?.convergeOrphanRounds();
     scheduler.start();
   }
 

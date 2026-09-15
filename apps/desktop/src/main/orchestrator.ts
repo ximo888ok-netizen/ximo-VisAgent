@@ -39,6 +39,8 @@ export interface QueuedTask {
   targetApp?: TargetApp;
   /** A-M5 预算档位（Q4 任务级参数化）：maxDurationMs/maxSteps/maxTokens 可配 */
   longTask?: LongTaskOptions;
+  /** B-M1 job 触发链：来源 job id（审批门按 job_id 命中 job 级作用域包，规划 §2.2） */
+  jobId?: string;
 }
 
 export interface OrchestratorDeps {
@@ -101,7 +103,7 @@ export class Orchestrator {
   async startTask(
     goal: string,
     sopSteps?: string[],
-    meta?: { sopId?: string; interactive?: boolean; assertions?: TaskAssertion[]; targetApp?: TargetApp; longTask?: LongTaskOptions },
+    meta?: { sopId?: string; interactive?: boolean; assertions?: TaskAssertion[]; targetApp?: TargetApp; longTask?: LongTaskOptions; jobId?: string },
   ): Promise<{ taskId: string; queued: boolean; queuedIndex: number }> {
     if (!goal.trim()) throw new Error('任务目标为空');
     const taskId = crypto.randomUUID();
@@ -109,6 +111,7 @@ export class Orchestrator {
       taskId, goal, sopSteps, interactive: meta?.interactive === true, assertions: meta?.assertions,
       ...(meta?.targetApp ? { targetApp: meta.targetApp } : {}),
       ...(meta?.longTask ? { longTask: meta.longTask } : {}),
+      ...(meta?.jobId ? { jobId: meta.jobId } : {}),
     };
 
     if (meta?.sopId) {
@@ -297,6 +300,11 @@ export class Orchestrator {
       .listPending()
       .filter((a) => a.id.toLowerCase().startsWith(p))
       .map((a) => ({ id: a.id, timedOut: a.status === 'TIMEOUT' }));
+  }
+
+  /** B-M2：任务当前是否挂起等待人工审批（job pump 标 paused-out-of-scope 的只读探针） */
+  hasPendingApproval(taskId: string): boolean {
+    return this.approvals.listPending().some((a) => a.taskId === taskId);
   }
 
   editAndApprove(id: string, newArgs: Record<string, unknown>): void {

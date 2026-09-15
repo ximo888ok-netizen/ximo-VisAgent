@@ -2,7 +2,7 @@
  * 记忆 / 统计 / 定时 / 会话域 schema（island-smart-handlers 对应面板）
  */
 import { z } from "zod";
-import { TargetAppSchema } from "./longtask";
+import { LongTaskOptionsSchema, TargetAppSchema } from "./longtask";
 
 /** 记忆条目（工作事实，自动提炼自完成任务） */
 export const MemoryRowSchema = z.object({
@@ -50,6 +50,24 @@ export const StatsQuerySchema = z.object({
 export type StatsQueryRequest = z.infer<typeof StatsQuerySchema>;
 
 /** 定时任务 */
+export const JobRunStatusSchema = z.enum(["done", "running", "skipped-busy", "failed", "paused-out-of-scope"]);
+export type JobRunStatusPayload = z.infer<typeof JobRunStatusSchema>;
+
+/** 增量游标引用（上轮最新检查点，task_checkpoints 行的 (taskId, seq)） */
+export const JobCheckpointRefSchema = z.object({
+  taskId: z.string().min(1).max(64),
+  seq: z.number().int().min(1),
+});
+export type JobCheckpointRefPayload = z.infer<typeof JobCheckpointRefSchema>;
+
+/** 错过合并记账：fromAt 起共 count 个错过的触发点并入 intoAt 这一轮补跑（UI：「昨日 09:00 错过，已并入今日」） */
+export const JobMergedIntoSchema = z.object({
+  count: z.number().int().min(1),
+  fromAt: z.number(),
+  intoAt: z.number(),
+});
+export type JobMergedIntoPayload = z.infer<typeof JobMergedIntoSchema>;
+
 export const ScheduledJobSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -61,9 +79,23 @@ export const ScheduledJobSchema = z.object({
   enabled: z.boolean(),
   lastRunAt: z.number().nullable(),
   nextRunAt: z.number().nullable(),
-  /** lastStatus: 成功/失败/从未 */
+  /** lastStatus: 成功/失败/跳过/从未（人话徽标；机器语义看 lastRunStatus） */
   lastStatus: z.string().nullable(),
   createdAt: z.number(),
+  // ---- B 期字段（规划 §2.4，全部可选：旧 job 无感） ----
+  /** 触发时随 startTask 下传的锚位 */
+  targetApp: TargetAppSchema.optional(),
+  /** job 级预授权作用域包 id（preauth_grants.job_id 绑定） */
+  grantId: z.string().min(1).max(64).optional(),
+  /** 长任务预算档位 */
+  longTask: LongTaskOptionsSchema.optional(),
+  /** 「转为长期任务」来源任务 id（审计回链） */
+  sourceTaskId: z.string().max(64).optional(),
+  /** 增量游标：上轮成功终态后的检查点引用（失败轮不推进） */
+  checkpointRef: JobCheckpointRefSchema.optional(),
+  lastTaskId: z.string().max(64).optional(),
+  lastRunStatus: JobRunStatusSchema.optional(),
+  mergedInto: JobMergedIntoSchema.optional(),
 });
 export type ScheduledJobPayload = z.infer<typeof ScheduledJobSchema>;
 
@@ -72,10 +104,14 @@ export const SchedulerCreateSchema = z.object({
   sopId: z.string().optional(),
   goal: z.string().max(2000).optional(),
   cron: z.string().min(1).max(60),
-  /** B-M1 预留（A-M7 留路由）：job 触发时随 startTask 下传的锚位；A 期存储侧忽略 */
+  /** B-M1：job 触发时随 startTask 下传的锚位 */
   targetApp: TargetAppSchema.optional(),
-  /** B-M1 预留：「转为长期任务」的来源任务 id（审计回链） */
+  /** B-M1：「转为长期任务」的来源任务 id（审计回链） */
   sourceTaskId: z.string().max(64).optional(),
+  /** B-M1：绑定的预授权作用域包（创建时主进程复校三生效条件并绑 job_id） */
+  grantId: z.string().min(1).max(64).optional(),
+  /** B-M1：长任务预算档位 */
+  longTask: LongTaskOptionsSchema.optional(),
 });
 export type SchedulerCreateRequest = z.infer<typeof SchedulerCreateSchema>;
 

@@ -151,9 +151,13 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
         },
         // A-M6→A-M7 装配（清单 6）：仓储只返回 acked ∧ active ∧ 未过期的 grant；
         // 未 ack = 空表 = 真值表逐字节回落到既有 ask 路径（装配级用例见 approval-gate-assembly.test.ts）
-        grantRepo: { listActiveForTask: (taskId) => getPreauthGrants()?.listActiveForTask(taskId) ?? [] },
+        // B-M1：job 触发链（非交互）追加 job 级作用域包——有效 grant 视同已授权（B1 修正的取数一路）
+        grantRepo: {
+          listActiveForTask: (taskId) => getPreauthGrants()?.listActiveForTask(taskId) ?? [],
+          listActiveForJob: (jobId) => getPreauthGrants()?.listActiveForJob(jobId) ?? [],
+        },
       },
-      { taskId: t.taskId, interactive: t.interactive === true },
+      { taskId: t.taskId, interactive: t.interactive === true, jobId: t.jobId },
     ),
     sopSteps: autoSopSteps,
     // 条目4：多步任务先出计划（启发式判定，简单任务不白烧规划调用；cfg 总开关显式 false = 永不规划）
@@ -280,6 +284,8 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
           // A-M5：重试保留锚位与预算档位（否则重试轮退回 30min 硬顶、看门狗失联）
           targetApp: t.targetApp,
           longTask: t.longTask,
+          // B-M1：重试保留 job 归属（丢了 jobId = 无人值守轮次重试即弹审批，破坏零弹窗承诺）
+          jobId: t.jobId,
         });
       }
     })
@@ -297,7 +303,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
           ? `上次尝试中途崩溃。已完成（核对现场后勿重做）: ${steps.slice(-5).map((s) => `${s.actionName} → ${(s.resultSummary || '').slice(0, 40)}`).join('; ')}。先核对当前屏幕处于哪一步，已完成的部分不要重做；若现场与预期不符，以屏幕实际状态为准。`
           : undefined;
         publishStep(createStepEvent('thinking', '任务崩溃（INTERNAL_ERROR），自动重试（1/1）'));
-        host.relaunch({ taskId: crypto.randomUUID(), goal: t.goal, isRetry: true, guidance, targetApp: t.targetApp, longTask: t.longTask });
+        host.relaunch({ taskId: crypto.randomUUID(), goal: t.goal, isRetry: true, guidance, targetApp: t.targetApp, longTask: t.longTask, jobId: t.jobId });
       }
     })
     .finally(() => {

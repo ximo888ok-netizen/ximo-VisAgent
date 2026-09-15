@@ -32,9 +32,13 @@ export interface PreauthStore {
   revoke(grantId: string): boolean;
   /** task:start 成功后补绑（A 期 grant 与任务 1:1） */
   bindTask(grantId: string, taskId: string): boolean;
+  /** B-M1：job:create 携带 grantId 时补绑（job 级作用域包随 job 复用，规划 §2.2） */
+  bindJob(grantId: string, jobId: string): boolean;
   get(grantId: string): PreauthGrant | null;
   /** 策略层取数口：先扫过期，再返回该任务全部生效 grant（ActiveGrant 形状） */
   listActiveForTask(taskId: string, now?: number): ActiveGrant[];
+  /** B-M1 无人值守取数口：job 触发链（非交互）按 job_id 命中有效 grant 视同已授权 */
+  listActiveForJob(jobId: string, now?: number): ActiveGrant[];
   /** 到期 active → expired（可审计的显式状态迁移），返回清扫行数 */
   sweepExpired(now?: number): number;
 }
@@ -79,12 +83,16 @@ export function createPreauthStore(db: MigrationDb): PreauthStore {
   const selectForTask = db.prepare(
     "SELECT * FROM preauth_grants WHERE task_id = ? AND acked = 1 AND status = 'active'",
   );
+  const selectForJob = db.prepare(
+    "SELECT * FROM preauth_grants WHERE job_id = ? AND acked = 1 AND status = 'active'",
+  );
   const markAcked = db.prepare("UPDATE preauth_grants SET acked = 1 WHERE id = ? AND status = 'active'");
   const rewriteScope = db.prepare(
     "UPDATE preauth_grants SET scope_json = ? WHERE id = ? AND acked = 0 AND status = 'active'",
   );
   const markRevoked = db.prepare("UPDATE preauth_grants SET status = 'revoked' WHERE id = ? AND status = 'active'");
   const bindRow = db.prepare('UPDATE preauth_grants SET task_id = ? WHERE id = ? AND task_id IS NULL');
+  const bindJobRow = db.prepare('UPDATE preauth_grants SET job_id = ? WHERE id = ? AND job_id IS NULL');
   const sweep = db.prepare("UPDATE preauth_grants SET status = 'expired' WHERE status = 'active' AND expires_at <= ?");
 
   const store: PreauthStore = {
@@ -111,6 +119,9 @@ export function createPreauthStore(db: MigrationDb): PreauthStore {
     bindTask(grantId, taskId) {
       return changesOf(bindRow.run(taskId, grantId)) > 0;
     },
+    bindJob(grantId, jobId) {
+      return changesOf(bindJobRow.run(jobId, grantId)) > 0;
+    },
     get(grantId) {
       const row = selectById.get(grantId) as GrantRow | undefined;
       return row ? toGrant(row) : null;
@@ -118,6 +129,13 @@ export function createPreauthStore(db: MigrationDb): PreauthStore {
     listActiveForTask(taskId, now = Date.now()) {
       store.sweepExpired(now);
       return (selectForTask.all(taskId) as GrantRow[])
+        .map(toGrant)
+        .filter((g) => g.expiresAt > now)
+        .map(({ issuedAt: _issuedAt, taskId: _taskId, jobId: _jobId, ...active }) => active);
+    },
+    listActiveForJob(jobId, now = Date.now()) {
+      store.sweepExpired(now);
+      return (selectForJob.all(jobId) as GrantRow[])
         .map(toGrant)
         .filter((g) => g.expiresAt > now)
         .map(({ issuedAt: _issuedAt, taskId: _taskId, jobId: _jobId, ...active }) => active);

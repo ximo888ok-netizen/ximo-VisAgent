@@ -178,6 +178,8 @@ export const GrantCreateSchema = z.object({
   scope: ScopePackageSchema,
   /** A 期绑定任务（起跑前可先建后绑，task:start 携带 grantId 时补写） */
   taskId: z.string().min(1).optional(),
+  /** B 期：绑定长期任务 job（job:create 携带 grantId 时复校后补写 job_id） */
+  jobId: z.string().min(1).max(64).optional(),
   /** 有效期天数，缺省 30（用户确认参数 Q8） */
   ttlDays: z.number().int().min(1).max(365).optional(),
 });

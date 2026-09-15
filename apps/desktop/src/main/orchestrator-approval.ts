@@ -83,8 +83,12 @@ interface ApprovalGateDeps {
   /**
    * A-M6 预授权仓储（可缺省=功能未装配，行为与现状逐字节一致）。
    * 取数口只返回 acked ∧ active ∧ 未过期的 grant；approval-policy 仍独立复核。
+   * B-M1：listActiveForJob = job 级作用域包（无人值守触发链按 job_id 命中，规划 §2.2/§2.4）。
    */
-  grantRepo?: { listActiveForTask(taskId: string): ActiveGrant[] };
+  grantRepo?: {
+    listActiveForTask(taskId: string): ActiveGrant[];
+    listActiveForJob?(jobId: string): ActiveGrant[];
+  };
 }
 
 type GateDecision = Awaited<ReturnType<ApprovalGateDeps['requestUI']>>;
@@ -95,7 +99,7 @@ type GateDecision = Awaited<ReturnType<ApprovalGateDeps['requestUI']>>;
  */
 export function createApprovalGate(
   deps: ApprovalGateDeps,
-  task: { taskId: string; interactive: boolean },
+  task: { taskId: string; interactive: boolean; jobId?: string },
 ): (approvalId: string, op: ApprovalGateOp) => Promise<GateDecision> {
   const quota = { usedL2: 0, usedL3: 0 };
   return async (approvalId, op) => {
@@ -105,7 +109,10 @@ export function createApprovalGate(
     const mode = deps.getConfigMode();
     // 取 loop 分级与规则热更新复查中的较大者：只会更严，不会更松
     const level = Math.max(op.level ?? 2, deps.escalatedLevel(op));
-    const grants = deps.grantRepo?.listActiveForTask(task.taskId);
+    const grants = [
+      ...(deps.grantRepo?.listActiveForTask(task.taskId) ?? []),
+      ...(task.jobId ? deps.grantRepo?.listActiveForJob?.(task.jobId) ?? [] : []),
+    ];
     const grantCtx = matchContextOf(op);
     if (
       resolveApprovalDecision({
