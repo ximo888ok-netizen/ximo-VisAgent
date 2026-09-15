@@ -193,16 +193,17 @@ renderer/.../Panel/Task/
     AppIcon.tsx               # 图标加载器：iconRef 有→<img>；无/加载失败→首字圆形字母图标
     useAppSearch.ts           # 搜索(名称子串+拼音首字母)/最近/前台推荐 hook，≤100ms 本地过滤
     constants.ts              # 分组顺序、虚拟滚动行高、拼音表
-  AppChip.tsx                 # chip 本体（图标+名称+X）
+  AppChip.tsx                 # chip 视觉渲染单元（镜像层内：图标+名称）
+  AppChipMirror.tsx           # textarea 镜像层（token→chip，层高亮法）
 ```
 
 全路径交互（每条对应 PRD 3.1/3.3 分支）：
 
 1. **冷启动预热**：岛就绪后空闲调 `apps:list`（不阻塞首帧），面板打开即用；打开时把**当前前台窗口**置顶为"推荐"组（复用既有 foreground 通道）。
-2. **选择**：点行 → 面板收起 → chip 出现于文本区头部（视觉内嵌，Q7-A），焦点回 textarea；输入中文/粘贴/chip 不消失（Playwright 用例）。
-3. **单实例**：已有 chip 再选新应用 = 直接替换 + toast「已替换目标应用」；任何时刻至多 1 chip；点 X 移除回到无锚态。
+2. **选择**：点行 → 面板收起 → token `[应用:名称]` 插入 textarea 光标处并在镜像层渲染为 chip（文本流内嵌），光标落 token 之后、焦点回 textarea；输入中文/粘贴 chip 随文本流移动（Playwright 用例）。
+3. **单实例**：已有 chip 再选新应用 = 旧 token 删除 + 新 token 插入光标处 + toast「已替换目标应用」；任何时刻至多 1 chip；**删除 token 即解绑**（整删/剪删/删半均触发解绑，残片降级为普通文本）。
 4. **搜索**：本地过滤（列表已在内存），按 name 子串+拼音首字母；Esc/点击外部关闭。
-5. **失败占位**：发送时主进程 `existsSync(exePath)` 校验失败 → 任务不起跑，**chip 标红保留**+行内错误「目标应用不存在，请重选」；点红 chip 直接重开面板替换。
+5. **失败占位**：发送时主进程 `existsSync(exePath)` 校验失败 → 任务不起跑，**chip（镜像层危险色底）标红保留**+行内错误「目标应用不存在，请重选」；重开面板替换或删除 token 解绑。
 6. **发送即绑定**：校验通过 → `startTask({goal, targetApp, longTask})` → composer 清空含 chip（chip 生命周期归任务卡），任务卡/控制条接管锚定显示。
 7. **无 chip 路径**：不传 targetApp/longTask，payload 与现状一致——e2e 旧用例零改动通过（红线）。
 
@@ -245,7 +246,7 @@ renderer/.../Panel/Task/
 | 里程碑 | 触碰/新增文件（★新 ✎改） | 验收 |
 |:--|:--|:--|
 | **A-M1 应用目录服务**（后端） | ★`native/uia-sidecar-cs/src/Actions/AppCatalogActions.cs`、★`Actions/IconActions.cs`、✎`Program.cs`(+2 路由行)、★`main/app-catalog-client.ts`、★`main/ipc/apps-handlers.ts`、✎`shared/island-channels.ts`、★`shared/schemas/longtask.ts`、✎`shared/island-api.ts`、✎`main/ipc-registry.ts`、✎`preload/island-preload.ts`、✎`main/db-migrations.ts`(+app_recent)、★`main/app-recent-store.ts` | 冷枚举 <2s 单测（mock 侧车报文）；Excel/记事本/Chrome 三图标真机 selftest 用例；`pnpm verify` |
-| **A-M2 选择器+chip+契约**（前端，依赖 M1） | ✎`TaskComposer.tsx`、★`AppPicker/`6 文件（§4.1）、★`AppChip.tsx`、✎`shared/schemas/task.ts`(targetApp/longTask 可选)、✎`main/ipc/island.handlers.ts`(startTask 校验+existsSync 预检)、★task store 扩展 | FR-001/002/003 验收；Playwright：选→chip→50 字中文不消失→替换→移除；不带 targetApp 旧 e2e 零回归 |
+| **A-M2 选择器+chip+契约**（前端，依赖 M1） | ✎`TaskComposer.tsx`、★`AppPicker/`6 文件（§4.1）、★`AppChip.tsx`、✎`shared/schemas/task.ts`(targetApp/longTask 可选)、✎`main/ipc/island.handlers.ts`(startTask 校验+existsSync 预检)、★task store 扩展 | FR-001/002/003 验收；Playwright：选→token 光标处成 chip→50 字中文 chip 随文本流→替换→删除 token 即解绑；不带 targetApp 旧 e2e 零回归 |
 | **A-M3 看门狗**（后端+前端，依赖 M2） | ★`main/foreground-proc.ts`、★`main/anchor-watchdog.ts`、★`main/anchor-watchdog-host.ts`、✎`orchestrator-launch.ts`(挂接)、✎`main/ipc-registry.ts` | 纯逻辑单测：离开/回归/进程退出三分支+N=120 边界；pid→exe 多窗口单测(selftest)；手测脚本 FR-004 |
 | **A-M4 断点落盘**（后端，依赖 M2） | ★`main/longtask-reconcile.ts`、✎`db-migrations.ts`(+task_checkpoints)、★`main/checkpoint-store.ts`、✎`main/custom-tools.ts`(checkpoint 工具)、✎`orchestrator-executors.ts`(写副作用工具后钩子)、★`main/longtask-recovery.ts`、✎`InterruptedBanner.tsx`(对账预览) | FR-005 验收：篡改 1 工件→stale 识别单测；`pnpm selftest` 真库对账 |
 | **A-M5 三闸**（后端，依赖 M4） | ★`packages/agent-core/src/agent/loop-budget.ts`、✎`agent-core/src/agent/loop.ts`(≤15 有效行)、✎`agent-core/src/agent/types.ts`(+2 断言型)、✎`control-kit/src/task-assertions.ts`(注册表)、✎`main/perception-host.ts`(注入 evaluator)、✎`orchestrator-launch.ts`(档位+收口报告) | 三闸独立触发单测+终态 gate 字段断言；≥150 步 demo（`pnpm e2e`）预算闸不误杀；`pnpm test` |
