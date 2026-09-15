@@ -27,12 +27,14 @@ export function AppChip({
   return (
     <div
       data-interactive
-      className="mb-1 inline-flex max-w-full items-center gap-1 rounded-lg border ig-bg-panel px-1.5 py-0.5 text-[12px]"
-      style={{ borderColor: invalid ? "var(--tone-danger)" : "var(--island-input-border)" }}
+      className={`island-fade-up mb-1 inline-flex max-w-full items-center gap-0.5 rounded-lg border ig-bg-panel py-0.5 pr-0.5 pl-1 text-[12px] transition-colors duration-150 ${
+        invalid ? "" : "ig-border-line"
+      }`}
+      style={invalid ? { borderColor: "var(--tone-danger)" } : undefined}
     >
       <button
         data-interactive
-        className="flex min-w-0 items-center gap-1.5 px-0.5"
+        className="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors duration-150 hover:ig-bg-panel-hover"
         title={invalid ? "目标应用不存在，点击重选" : `已锚定 ${app.name}，点击更换`}
         onClick={onRebind}
       >
@@ -42,7 +44,7 @@ export function AppChip({
       </button>
       <button
         data-interactive
-        className="shrink-0 rounded px-1 t-muted hover:t-strong"
+        className="island-chip-x"
         aria-label="移除目标应用"
         title="移除锚定"
         onClick={onRemove}

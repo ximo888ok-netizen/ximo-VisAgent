@@ -77,7 +77,8 @@ export function PlanConfirmCard({ mission }: { mission: MissionRowPayload }) {
   return (
     <div className="rounded-xl ig-alert ig-tone-warning px-3 py-2.5 space-y-2 border-t ig-border-line">
       <div className="flex items-center gap-2">
-        <span className="text-[13px] t-strong font-medium">计划确认 · 人工闸</span>
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full ig-bg-warning" aria-hidden />
+        <span className="text-[13px] t-strong font-semibold">计划确认 · 人工闸</span>
         <span className="ig-tag ig-tone-warning rounded-full px-1.5 py-0.5 text-[11px]">待你确认</span>
       </div>
       <div className="text-[11px] t-muted">
@@ -94,7 +95,7 @@ export function PlanConfirmCard({ mission }: { mission: MissionRowPayload }) {
               .map((depId) => plan.subtasks.find((n) => n.id === depId)?.goal ?? depId)
               .join('、');
             return (
-              <li key={st.id} className="rounded-lg ig-bg-panel px-2.5 py-1.5">
+              <li key={st.id} className="rounded-lg ig-bg-panel px-2.5 py-1.5 transition-colors duration-150">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-[11px] t-faint t-num">#{idx + 1}</span>
                   <span className="text-[12px] t-strong">{st.goal}</span>

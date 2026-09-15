@@ -15,13 +15,14 @@ const SUBTASK_STATUS_LABEL: Record<string, string> = {
   skipped: '跳过',
 };
 
-const SUBTASK_STATUS_COLOR: Record<string, string> = {
-  pending: 'var(--p-ink-7)',
-  running: 'var(--p-ice-500)',
-  awaiting_review: 'var(--c-waiting)',
-  done: 'var(--c-thinking)',
-  failed: 'var(--p-ember-500)',
-  skipped: 'var(--p-ink-6)',
+/** 状态徽标统一走 ig-tag 语义色族（与长期任务徽标同一语言，停用/跳过取中性态） */
+const SUBTASK_STATUS_TONE: Record<string, string> = {
+  pending: 'ig-tone-muted',
+  running: 'ig-tone-info',
+  awaiting_review: 'ig-tone-warning',
+  done: 'ig-tone-success',
+  failed: 'ig-tone-danger',
+  skipped: 'ig-tone-muted',
 };
 
 export function MissionDetail({ missionId }: { missionId: string }) {
@@ -74,8 +75,7 @@ function SubtaskRow({ subtask, index, onUpdateStatus }: {
         <span className="text-[12px] t-faint">#{index + 1}</span>
         <span className="text-[12px] t-strong line-clamp-1">{subtask.title}</span>
         <span
-          className="rounded-full px-1.5 py-0.5 text-[11px] flex-shrink-0"
-          style={{ background: `color-mix(in srgb, ${SUBTASK_STATUS_COLOR[subtask.status]} 13%, transparent)`, color: SUBTASK_STATUS_COLOR[subtask.status] }}
+          className={`ig-tag ${SUBTASK_STATUS_TONE[subtask.status] ?? 'ig-tone-muted'} shrink-0 rounded-full px-1.5 py-0.5 text-[11px]`}
         >
           {SUBTASK_STATUS_LABEL[subtask.status] ?? subtask.status}
         </span>

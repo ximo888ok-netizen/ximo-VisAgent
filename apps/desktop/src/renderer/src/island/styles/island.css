@@ -122,6 +122,8 @@ html.light {
   --ig-line: rgba(15, 23, 42, 0.08);
 
   --ig-toast-bg: rgba(255, 255, 255, 0.95);
+  /* 浅色主题浮层阴影：同结构降透明度，白底上的黑影过重会显脏 */
+  --elev-pop: 0 14px 36px rgba(15, 23, 42, 0.18), 0 3px 10px rgba(15, 23, 42, 0.1);
 
   --c-idle: var(--p-ink-6);
   --c-thinking: var(--p-glow-600);
@@ -143,6 +145,8 @@ html.light {
 .hover\:ig-bg-panel-hover:hover  { background: var(--ig-panel-hover); }
 .hover\:t-body:hover              { color: var(--ig-t-body); }
 .hover\:t-strong:hover            { color: var(--ig-t-strong); }
+/* group-hover 变体同理手动补（列表行：悬停行时应用名提亮一档） */
+.group:hover .group-hover\:t-strong { color: var(--ig-t-strong); }
 
 /* ---- 语义色调（提示块 / 状态标签的唯一入口） ------------------------------
  *
@@ -159,6 +163,8 @@ html.light {
 .ig-tone-warning { --ig-tone: var(--tone-warning); --ig-tone-fg: var(--tone-warning-fg); }
 .ig-tone-success { --ig-tone: var(--tone-success); --ig-tone-fg: var(--tone-success-fg); }
 .ig-tone-info    { --ig-tone: var(--tone-info);    --ig-tone-fg: var(--tone-info-fg); }
+/* 中性态（UI 美化新增）：停用/跳过等「无状态的状态」，不占四语义色，走灰阶 */
+.ig-tone-muted   { --ig-tone: var(--p-ink-7);      --ig-tone-fg: var(--ig-t-muted); }
 
 /* 只改前景色 / 只改底色的小工具（用于内联状态文字与状态点）。
  * 注意顺序：这两个块必须排在 .ig-alert / .ig-tag 之前 —— 同特异性下后者胜出，
@@ -705,4 +711,57 @@ input[type="range"].island-range,
 .island-tab:focus-visible {
   outline: 2px solid var(--island-input-focus);
   outline-offset: 1px;
+}
+
+/* ---- 9. 浮层与选择器微件（UI 美化新增：AppPicker 弹层 / 授权卡通用外观） ---- */
+
+/** 向上弹出的浮层卡片（应用选择器、预授权卡共用）：toast 材质 + 浮层投影 + 120ms 弹出 */
+.island-popover {
+  background: var(--ig-toast-bg);
+  border: 1px solid var(--island-border);
+  border-radius: var(--r-card);
+  box-shadow: var(--elev-pop);
+  animation: island-pop-in var(--dur-instant) var(--island-ease) both;
+}
+@keyframes island-pop-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/** 选择器分组头（推荐 / 全部 / 搜索结果）：比正文小一档但比内容更"退后"，靠字重与字距立层级 */
+.island-group-head {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ig-t-muted);
+  background: var(--ig-panel);
+  user-select: none;
+}
+
+/** chip 移除钮：悬停点出危险底色、按下轻微收缩——只在 hover 时才"danger 化"，平时安静 */
+.island-chip-x {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  color: var(--ig-t-muted);
+  cursor: pointer;
+  transition:
+    color var(--dur-instant) var(--island-ease),
+    background var(--dur-instant) var(--island-ease),
+    transform var(--dur-instant) var(--island-ease);
+}
+.island-chip-x:hover { color: var(--tone-danger-fg); background: var(--p-ember-500-a10); }
+.island-chip-x:active { transform: scale(0.86); }
+
+/** 原生复选框统一走交互主色，与聚焦环/主按钮同族 */
+.island-check {
+  accent-color: var(--island-input-focus);
+  cursor: pointer;
+  flex-shrink: 0;
 }

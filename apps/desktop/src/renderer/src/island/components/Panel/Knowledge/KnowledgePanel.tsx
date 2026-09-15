@@ -104,12 +104,14 @@ export function KnowledgePanel() {
           {capMatchResult && (
             <div className="mt-1.5 space-y-1">
               {capMatchResult.items.length === 0 ? (
-                <div className="text-[12px] t-faint">无匹配能力——规划出的子任务将按「能力缺口」进确认卡。</div>
+                <div className="rounded-lg ig-bg-panel px-2.5 py-1.5 text-[12px] t-faint">
+                  无匹配能力——规划出的子任务将按「能力缺口」进确认卡。
+                </div>
               ) : (
                 capMatchResult.items.map((item) => (
-                  <div key={item.capabilityId} className="flex items-center gap-2 text-[12px]">
-                    <span className="t-strong">{item.title}</span>
-                    <span className="t-faint t-num">{(item.score * 100).toFixed(0)}%</span>
+                  <div key={item.capabilityId} className="flex items-center justify-between gap-2 rounded-lg ig-bg-panel px-2.5 py-1 text-[12px]">
+                    <span className="min-w-0 truncate t-strong">{item.title}</span>
+                    <span className="shrink-0 t-faint t-num">{(item.score * 100).toFixed(0)}%</span>
                   </div>
                 ))
               )}
@@ -138,16 +140,22 @@ export function KnowledgePanel() {
         {/* 已批准·生效的能力卡 */}
         <div className="flex items-center gap-2 pt-0.5">
           <span className="text-[12px] t-strong font-medium">能力库（已批准 · 生效中）</span>
-          <span className="ig-tag ig-tone-success rounded-full px-1.5 py-0.5 text-[11px]">{capabilities.length}</span>
+          <span className="ig-tag ig-tone-success rounded-full px-1.5 py-0.5 text-[11px] t-num">{capabilities.length}</span>
         </div>
 
         {loading && capabilities.length === 0 && (
-          <div className="island-skeleton h-20 rounded-xl ig-bg-panel" />
+          <div className="space-y-1.5" role="status" aria-label="能力库加载中">
+            <div className="island-skeleton h-20 rounded-xl ig-bg-panel" />
+            <div className="island-skeleton h-20 rounded-xl ig-bg-panel" />
+          </div>
         )}
 
         {!loading && capabilities.length === 0 && (
-          <div className="py-8 text-center text-[12px] t-faint">
-            {query.trim() ? "没有命中的能力卡。" : "知识库还是空的——去「任务库」导入种子或创建能力卡（提交后需宪法门批准）。"}
+          <div className="flex flex-col items-center gap-1 rounded-xl border border-dashed ig-border-line py-8 text-center">
+            <span className="text-[12px] t-muted">{query.trim() ? "没有命中的能力卡" : "知识库还是空的"}</span>
+            <span className="text-[11px] t-faint">
+              {query.trim() ? "换个关键词再试试。" : "去「任务库」导入种子或创建能力卡（提交后需宪法门批准）。"}
+            </span>
           </div>
         )}
 

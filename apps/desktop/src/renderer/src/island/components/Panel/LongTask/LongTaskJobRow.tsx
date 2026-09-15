@@ -14,7 +14,7 @@ import { cursorText, humanizeCron, missedLabel, nextRunText, progressPct, runBad
 
 function Badge({ label, tone }: { label: string; tone: string }) {
   return (
-    <span className={`ig-tag shrink-0 rounded-full px-1.5 py-0.5 text-[11px] ${tone === "muted" ? "" : `ig-tone-${tone}`}`}>
+    <span className={`ig-tag ig-tone-${tone} shrink-0 rounded-full px-1.5 py-0.5 text-[11px]`}>
       {label}
     </span>
   );
@@ -28,7 +28,7 @@ function MiniTimeline({ job, cursor }: { job: ScheduledJobPayload; cursor: LongT
   const pct = progressPct(cursor);
   const running = job.lastRunStatus === "running" || job.lastRunStatus === "paused-out-of-scope";
   return (
-    <div className="mt-1 flex h-1.5 items-stretch gap-[2px]" title={`${cursorText(cursor) ?? "尚无游标"} · 近 ${rounds.length} 轮`}>
+    <div className="mt-1.5 flex h-1 items-stretch gap-1" title={`${cursorText(cursor) ?? "尚无游标"} · 近 ${rounds.length} 轮`}>
       {Array.from({ length: Math.min(segCount, 5) }).map((_, i) => {
         const round = rounds[i];
         const base = !round
@@ -40,9 +40,12 @@ function MiniTimeline({ job, cursor }: { job: ScheduledJobPayload; cursor: LongT
               : "ig-bg-info";
         const isLast = i === segCount - 1;
         return (
-          <div key={i} className={`relative min-w-0 flex-1 overflow-hidden rounded-full ${base}`}>
+          <div key={i} className={`relative min-w-0 flex-1 overflow-hidden rounded-full opacity-80 ${base}`}>
             {isLast && running && pct > 0 && pct < 100 && (
-              <div className="absolute inset-y-0 right-0 rounded-full ig-bg-panel-hover" style={{ width: `${100 - pct}%` }} />
+              <div
+                className="absolute inset-y-0 right-0 rounded-full ig-bg-panel-hover transition-[width] duration-200"
+                style={{ width: `${100 - pct}%` }}
+              />
             )}
           </div>
         );
@@ -134,7 +137,7 @@ export function LongTaskJobRow({ job, cursor, busy, detail, onToggle, onRunNow, 
   const cursorSummary = cursorText(cursor);
 
   return (
-    <div className="rounded-xl ig-bg-panel px-3 py-2 transition hover:ig-bg-panel-hover">
+    <div className="rounded-xl ig-bg-panel px-3 py-2.5 transition-colors duration-150 hover:ig-bg-panel-hover">
       <div className="flex items-center gap-2">
         <button
           data-interactive
@@ -142,28 +145,28 @@ export function LongTaskJobRow({ job, cursor, busy, detail, onToggle, onRunNow, 
           title={job.enabled ? "暂停" : "恢复"}
           onClick={() => onToggle(!job.enabled)}
         />
-        <span className="min-w-0 flex-1 truncate text-[12px] t-strong" title={job.goal || job.name}>{job.name}</span>
+        <span className="min-w-0 flex-1 truncate text-[12px] font-medium t-strong" title={job.goal || job.name}>{job.name}</span>
         {job.targetApp && <span className="ig-tag ig-tone-info shrink-0 rounded-full px-1.5 py-0.5 text-[11px]">锚定 · {job.targetApp.name}</span>}
         <Badge label={badge.label} tone={badge.tone} />
       </div>
 
-      <div className="mt-1 flex items-center gap-2 text-[11px] t-faint">
-        <span className="min-w-0 truncate" title={job.cron}>{humanizeCron(job.cron)}</span>
+      <div className="mt-1.5 flex items-center gap-2 text-[11px] t-faint">
+        <span className="min-w-0 truncate t-muted" title={job.cron}>{humanizeCron(job.cron)}</span>
         <span className="shrink-0">·</span>
         <span className="shrink-0 t-num">{job.enabled ? nextRunText(job.nextRunAt, now) : "已停用"}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1">
-          <button data-interactive className="island-btn island-btn--ghost h-5 px-1.5 text-[11px]" disabled={busy} onClick={onRunNow} title="立即跑一次（不打乱排期）">
+          <button data-interactive className="island-btn island-btn--ghost h-6 px-2 text-[11px]" disabled={busy} onClick={onRunNow} title="立即跑一次（不打乱排期）">
             {busy ? "触发中…" : "跑一次"}
           </button>
-          <button data-interactive className="island-btn island-btn--ghost h-5 px-1.5 text-[11px]" onClick={() => setEditing((v) => !v)}>
+          <button data-interactive className="island-btn island-btn--ghost h-6 px-2 text-[11px]" onClick={() => setEditing((v) => !v)}>
             编辑
           </button>
-          <button data-interactive className="island-btn island-btn--ghost h-5 px-1.5 text-[11px]" onClick={onToggleDetail}>
+          <button data-interactive className="island-btn island-btn--ghost h-6 px-2 text-[11px]" onClick={onToggleDetail}>
             {detail ? "收起" : "详情"}
           </button>
           <button
             data-interactive
-            className={`island-btn h-5 px-1.5 text-[11px] ${confirming ? "island-btn--danger" : "island-btn--ghost"}`}
+            className={`island-btn h-6 px-2 text-[11px] transition-colors duration-150 ${confirming ? "island-btn--danger" : "island-btn--ghost hover:ig-fg-danger"}`}
             onClick={() => { if (confirming) onDelete(); else setConfirming(true); }}
           >
             {confirming ? "确认?" : "删除"}
@@ -172,8 +175,8 @@ export function LongTaskJobRow({ job, cursor, busy, detail, onToggle, onRunNow, 
       </div>
 
       {(cursorSummary || missed) && (
-        <div className="mt-1 space-y-1 text-[11px]">
-          {cursorSummary && <div className="t-muted">{cursorSummary}</div>}
+        <div className="mt-1.5 space-y-1 text-[11px]">
+          {cursorSummary && <div className="t-muted t-num">{cursorSummary}</div>}
           {missed && <div className="ig-tag ig-tone-warning inline-block rounded-full px-1.5 py-0.5">{missed}</div>}
         </div>
       )}

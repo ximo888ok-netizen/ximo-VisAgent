@@ -5,7 +5,7 @@
  * PreAuthDialog 的初始草稿决定：目标应用窗口内 type_text/click/scroll/read_only
  * 默认选中；预算三输入与 ScopePackage.budget 同源可改。
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { GrantOpClass, ScopePackage } from "@shared/island-contracts";
 
 const OP_CLASSES: ReadonlyArray<{ value: GrantOpClass; label: string; hint: string }> = [
@@ -22,7 +22,12 @@ const HOUR_MS = 3_600_000;
 const MILLION_TOKENS = 1_000_000;
 
 function SectionTitle({ children }: { children: string }) {
-  return <p className="mb-1 text-[11px] t-faint font-medium">{children}</p>;
+  return <p className="mb-1.5 text-[11px] font-semibold tracking-wide t-muted">{children}</p>;
+}
+
+/** 四节统一分组容器：发丝线 + 留白分节，扫读时一眼数出四节 */
+function Section({ children, first = false }: { children: ReactNode; first?: boolean }) {
+  return <div className={first ? "" : "border-t ig-border-line pt-2.5"}>{children}</div>;
 }
 
 export function ScopeEditor({
@@ -54,14 +59,14 @@ export function ScopeEditor({
 
   return (
     <div className="space-y-2.5 text-[12px]">
-      <div>
+      <Section first>
         <SectionTitle>① 目标应用</SectionTitle>
-        <p className="rounded-lg ig-bg-panel px-2 py-1.5">
+        <p className="rounded-lg ig-alert ig-tone-info px-2.5 py-1.5 leading-relaxed">
           仅锚定「{appName}」窗口内的操作生效；窗口外的任何动作一律逐次询问
         </p>
-      </div>
+      </Section>
 
-      <div>
+      <Section>
         <SectionTitle>② 读写目录白名单（写文件/导出仅在这些目录内放行）</SectionTitle>
         <div className="flex gap-1.5">
           <input
@@ -79,42 +84,56 @@ export function ScopeEditor({
               }
             }}
           />
-          <button className="island-btn px-2 text-[12px]" onClick={() => { addListEntry("dirs", scope.dirs, dirDraft); setDirDraft(""); }} data-interactive>
+          <button className="island-btn h-8 shrink-0 px-2.5 text-[12px]" onClick={() => { addListEntry("dirs", scope.dirs, dirDraft); setDirDraft(""); }} data-interactive>
             添加
           </button>
         </div>
-        {scope.dirs.map((d, i) => (
-          <div key={d} className="mt-1 flex items-center justify-between rounded ig-bg-panel px-2 py-1">
-            <span className="truncate" title={d}>{d}</span>
-            <button className="t-faint hover:ig-fg-danger px-1" onClick={() => removeListEntry("dirs", scope.dirs, i)} data-interactive>×</button>
+        {scope.dirs.length > 0 && (
+          <div className="mt-1.5 space-y-1">
+            {scope.dirs.map((d, i) => (
+              <div key={d} className="flex items-center justify-between gap-1.5 rounded-lg ig-bg-panel py-1 pr-1 pl-2.5">
+                <span className="min-w-0 truncate" title={d}>{d}</span>
+                <button className="island-chip-x" onClick={() => removeListEntry("dirs", scope.dirs, i)} data-interactive aria-label={`移除目录 ${d}`}>×</button>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        )}
+      </Section>
 
-      <div>
+      <Section>
         <SectionTitle>③ 操作类别（默认勾选高频安全四类，缓解审批疲劳）</SectionTitle>
-        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-          {OP_CLASSES.map((o) => (
-            <label key={o.value} className="flex items-center gap-1.5" title={o.hint} data-interactive>
-              <input
+        <div className="grid grid-cols-2 gap-x-1.5 gap-y-0.5">
+          {OP_CLASSES.map((o) => {
+            const on = scope.opClasses.includes(o.value);
+            return (
+              <label
+                key={o.value}
+                className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors duration-150 ${
+                  on ? "ig-bg-panel-hover t-strong" : "t-body hover:ig-bg-panel"
+                }`}
+                title={o.hint}
                 data-interactive
-                type="checkbox"
-                className="accent-[var(--ig-accent,currentColor)]"
-                checked={scope.opClasses.includes(o.value)}
-                onChange={(e) =>
-                  patch({
-                    opClasses: e.target.checked
-                      ? [...scope.opClasses, o.value]
-                      : scope.opClasses.filter((v) => v !== o.value),
-                  })}
-              />
-              <span>{o.label}</span>
-            </label>
-          ))}
+              >
+                <input
+                  data-interactive
+                  type="checkbox"
+                  className="island-check h-3.5 w-3.5"
+                  checked={on}
+                  onChange={(e) =>
+                    patch({
+                      opClasses: e.target.checked
+                        ? [...scope.opClasses, o.value]
+                        : scope.opClasses.filter((v) => v !== o.value),
+                    })}
+                />
+                <span className="truncate">{o.label}</span>
+              </label>
+            );
+          })}
         </div>
-      </div>
+      </Section>
 
-      <div>
+      <Section>
         <SectionTitle>④ 敏感排除（命中即强制询问，任何作用域不可覆盖）</SectionTitle>
         <div className="flex gap-1.5">
           <input
@@ -132,59 +151,59 @@ export function ScopeEditor({
               }
             }}
           />
-          <button className="island-btn px-2 text-[12px]" onClick={() => { addListEntry("sensitiveExcludes", scope.sensitiveExcludes, kwDraft); setKwDraft(""); }} data-interactive>
+          <button className="island-btn h-8 shrink-0 px-2.5 text-[12px]" onClick={() => { addListEntry("sensitiveExcludes", scope.sensitiveExcludes, kwDraft); setKwDraft(""); }} data-interactive>
             添加
           </button>
         </div>
-        <div className="mt-1 flex flex-wrap gap-1">
+        <div className="mt-1.5 flex flex-wrap gap-1">
           {scope.sensitiveExcludes.map((kw, i) => (
-            <span key={kw} className="flex items-center gap-1 rounded-full ig-alert ig-tone-danger px-2 py-0.5 text-[11px]">
+            <span key={kw} className="ig-tag ig-tone-danger flex items-center gap-1 rounded-full py-0.5 pr-1 pl-2 text-[11px]">
               {kw}
-              <button className="opacity-60 hover:opacity-100" onClick={() => removeListEntry("sensitiveExcludes", scope.sensitiveExcludes, i)} data-interactive>×</button>
+              <button className="island-chip-x" onClick={() => removeListEntry("sensitiveExcludes", scope.sensitiveExcludes, i)} data-interactive aria-label={`移除排除词 ${kw}`}>×</button>
             </span>
           ))}
         </div>
-      </div>
+      </Section>
 
-      <div>
+      <Section>
         <SectionTitle>预算（超限自动收口；与任务档位同源）</SectionTitle>
         <div className="grid grid-cols-3 gap-1.5">
-          <label className="flex flex-col gap-0.5 text-[11px] t-faint">
+          <label className="flex flex-col gap-1 text-[11px] t-faint">
             步数上限
             <input
               data-interactive
               type="number"
               min={1}
-              className="island-input text-[12px]"
+              className="island-input t-num text-[12px]"
               value={scope.budget.maxSteps}
               onChange={(e) => budgetPatch("maxSteps", Number(e.target.value))}
             />
           </label>
-          <label className="flex flex-col gap-0.5 text-[11px] t-faint">
+          <label className="flex flex-col gap-1 text-[11px] t-faint">
             时长（小时）
             <input
               data-interactive
               type="number"
               min={0.1}
               step={0.5}
-              className="island-input text-[12px]"
+              className="island-input t-num text-[12px]"
               value={Number((scope.budget.maxDurationMs / HOUR_MS).toFixed(1))}
               onChange={(e) => budgetPatch("maxDurationMs", Number(e.target.value) * HOUR_MS)}
             />
           </label>
-          <label className="flex flex-col gap-0.5 text-[11px] t-faint">
+          <label className="flex flex-col gap-1 text-[11px] t-faint">
             Tokens（百万）
             <input
               data-interactive
               type="number"
               min={1}
-              className="island-input text-[12px]"
+              className="island-input t-num text-[12px]"
               value={Math.round(scope.budget.maxTokens / MILLION_TOKENS)}
               onChange={(e) => budgetPatch("maxTokens", Number(e.target.value) * MILLION_TOKENS)}
             />
           </label>
         </div>
-      </div>
+      </Section>
     </div>
   );
 }

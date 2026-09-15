@@ -75,16 +75,16 @@ export function LongTaskPanel() {
 
   return (
     <div className="flex h-full flex-col px-4 py-3">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-[12px] t-strong font-medium">长期任务</span>
+      <div className="mb-2.5 flex items-center justify-between">
+        <span className="text-[13px] font-semibold t-strong">长期任务</span>
         {!creating && (
-          <button data-interactive className="island-btn island-btn--primary h-6 px-2.5 text-[12px]" onClick={() => setCreating(true)}>
+          <button data-interactive className="island-btn island-btn--primary h-7 px-3 text-[12px]" onClick={() => setCreating(true)}>
             + 新建
           </button>
         )}
       </div>
 
-      <div className="island-panel-scroll min-h-0 flex-1 space-y-1.5 pr-1">
+      <div className="island-panel-scroll min-h-0 flex-1 space-y-2 pr-1">
         <MetricsCards />
 
         {creating && (
@@ -101,17 +101,19 @@ export function LongTaskPanel() {
           <>
             <div className="island-skeleton h-16 rounded-xl ig-bg-panel" />
             <div className="island-skeleton h-16 rounded-xl ig-bg-panel" />
+            <div className="island-skeleton h-16 rounded-xl ig-bg-panel" />
           </>
         )}
         {jobsError && (
-          <div className="flex flex-col items-center gap-2 py-6">
-            <span className="text-[12px] ig-fg-danger">长期任务加载失败：{jobsError}</span>
-            <button data-interactive className="island-btn island-btn--ghost text-[12px]" onClick={() => void loadJobs()}>重试</button>
+          <div className="ig-alert ig-tone-danger flex flex-col items-center gap-2 rounded-xl px-4 py-6">
+            <span className="text-[12px]">长期任务加载失败：{jobsError}</span>
+            <button data-interactive className="island-btn island-btn--ghost h-7 text-[12px]" onClick={() => void loadJobs()}>重试</button>
           </div>
         )}
         {!jobsLoading && !jobsError && jobs.length === 0 && !creating && (
-          <div className="flex h-24 items-center justify-center text-[12px] t-faint">
-            还没有长期任务 · 点「+ 新建」，或在任务收口卡点「转为长期任务」
+          <div className="flex h-28 flex-col items-center justify-center gap-1 rounded-xl border border-dashed ig-border-line text-center">
+            <span className="text-[12px] t-muted">还没有长期任务</span>
+            <span className="text-[11px] t-faint">点「+ 新建」，或在任务收口卡点「转为长期任务」</span>
           </div>
         )}
 

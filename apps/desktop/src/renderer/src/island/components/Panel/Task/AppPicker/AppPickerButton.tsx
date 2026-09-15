@@ -11,11 +11,12 @@ export function AppPickerButton() {
   return (
     <button
       data-interactive
-      className="island-btn island-btn--ghost shrink-0 px-2 text-[12px]"
+      className="island-btn island-btn--ghost h-7 max-w-[11rem] shrink-0 px-2 text-[12px]"
       title="选择目标应用（长任务锚定）"
       onClick={() => setAppPickerOpen(!appPickerOpen)}
     >
-      {targetName ? `⊞ ${targetName}` : "⊞ 选择应用"}
+      <span className="shrink-0">⊞</span>
+      <span className="min-w-0 truncate">{targetName ?? "选择应用"}</span>
     </button>
   );
 }

@@ -114,48 +114,48 @@ export function RunningControlBar({ onCancel }: { onCancel: () => void }) {
       {/* 锚定态（A-M7 §4.2）：已锚定 [icon] 名称 · 进度 x/y · 剩余 时长/步数 */}
       {anchorApp && (
         <div
-          className="island-fade-up flex items-center gap-1.5 rounded-lg ig-bg-panel px-3 py-1.5 text-[12px] t-muted"
+          className="island-fade-up flex items-center gap-1.5 rounded-xl ig-bg-panel px-3 py-1.5 text-[12px] t-muted transition-colors duration-150"
           title={lt?.summary ? `断点：${lt.summary}` : undefined}
         >
-          <span className="shrink-0">已锚定</span>
+          <span className="ig-tag ig-tone-info shrink-0 rounded-full px-1.5 py-0.5 text-[11px]">已锚定</span>
           <AppIcon app={anchorApp} size={16} />
-          <span className="truncate t-body font-medium">{anchorApp.name}</span>
-          {(progressText || budgetText) && <span className="shrink-0">·</span>}
-          {progressText && <span className="shrink-0 tabular-nums">{progressText}</span>}
-          {budgetText && <span className="shrink-0 tabular-nums">{budgetText}</span>}
-          {anchorApp && (lt?.redoCount ?? 0) > 0 && (
+          <span className="truncate font-medium t-strong">{anchorApp.name}</span>
+          {(progressText || budgetText) && <span className="shrink-0 t-faint">·</span>}
+          {progressText && <span className="shrink-0 t-num">{progressText}</span>}
+          {budgetText && <span className="shrink-0 t-num">{budgetText}</span>}
+          {(lt?.redoCount ?? 0) > 0 && (
             <span className="shrink-0 ig-fg-warning">· {lt?.redoCount} 项工件待重做</span>
           )}
         </div>
       )}
 
-      <div className="flex items-center justify-between rounded-lg ig-bg-panel px-3 py-2">
+      <div className="flex items-center justify-between rounded-xl ig-bg-panel px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${taskPaused ? "ig-bg-info" : "ig-bg-success island-ring--thinking"}`} />
+          <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${taskPaused ? "ig-bg-info" : "ig-bg-success island-ring--idle"}`} />
           <span className="truncate text-[12px] t-body">
             {watchdogPaused ? "看门狗暂停" : taskPaused ? "已暂停" : "运行中"}
           </span>
         </div>
         <div className="flex shrink-0 gap-1.5">
           <CostBadge promptTokens={promptTokens} completionTokens={completionTokens} />
-          <button className="island-btn island-btn--ghost px-2.5 text-[12px]" onClick={handlePauseToggle} data-interactive>
+          <button className="island-btn island-btn--ghost h-7 px-2.5 text-[12px]" onClick={handlePauseToggle} data-interactive>
             {taskPaused ? "继续" : "暂停"}
           </button>
-          <button className="island-btn island-btn--ghost px-2.5 text-[12px]" onClick={onCancel} data-interactive>
+          <button className="island-btn island-btn--ghost h-7 px-2.5 text-[12px] hover:ig-fg-danger" onClick={onCancel} data-interactive>
             取消
           </button>
         </div>
       </div>
 
-      {/* PAUSED（看门狗来源）横幅：原因 + 恢复按钮（手动暂停仍走上方原语） */}
+      {/* PAUSED（看门狗来源）横幅：温和提示原因 + 恢复按钮（手动暂停仍走上方原语） */}
       {watchdogPaused && (
-        <div className="island-fade-up flex items-center gap-2 rounded-lg ig-alert ig-tone-warning px-3 py-2.5">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full ig-bg-warning island-ring--waiting" />
-          <div className="min-w-0 flex-1 text-[12px] ig-fg-warning">
+        <div className="island-fade-up flex items-center gap-2.5 rounded-xl ig-alert ig-tone-warning px-3 py-2.5">
+          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full ig-bg-warning island-ring--idle" />
+          <div className="min-w-0 flex-1 text-[12px] leading-snug ig-fg-warning">
             {pauseReasonText(lt?.pauseReason, anchorName)}
           </div>
           <button
-            className="island-btn island-btn--ghost shrink-0 px-2.5 text-[12px]"
+            className="island-btn island-btn--ghost h-7 shrink-0 px-2.5 text-[12px]"
             data-interactive
             onClick={() => {
               void (async () => {

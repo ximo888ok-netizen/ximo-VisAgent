@@ -80,24 +80,27 @@ export function PreAuthDialog({
   return (
     <div
       data-interactive
-      className="absolute bottom-full left-0 right-0 z-50 mb-1 rounded-xl"
-      style={{ background: "var(--ig-toast-bg)", border: "1px solid var(--island-input-border)" }}
+      className="island-popover absolute bottom-full left-0 right-0 z-50 mb-1.5 overflow-hidden"
     >
-      <div className="flex items-center justify-between px-3 py-2 ig-bg-panel">
-        <span className="text-[12px] font-medium">预授权 · 作用域包</span>
-        <button className="t-faint hover:t-body px-1" onClick={discard} data-interactive aria-label="关闭（任务不启动）">✕</button>
+      <div className="flex items-center gap-2 border-b ig-border-line px-3 py-2 ig-bg-panel">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full ig-bg-info" aria-hidden />
+        <span className="text-[12px] font-semibold t-strong">预授权 · 作用域包</span>
+        <span className="min-w-0 flex-1 truncate text-[11px] t-faint">决定哪些操作不再逐次询问</span>
+        <button className="island-chip-x" onClick={discard} data-interactive aria-label="关闭（任务不启动）">✕</button>
       </div>
-      <div className="max-h-[320px] overflow-y-auto px-3 py-2.5">
-        <p className="mb-2 text-[12px] t-muted line-clamp-2" title={goal}>任务：{goal}</p>
+      <div className="max-h-[320px] overflow-y-auto island-panel-scroll px-3 py-2.5">
+        <p className="mb-2 line-clamp-2 rounded-lg ig-bg-panel px-2.5 py-1.5 text-[12px] t-muted" title={goal}>
+          <span className="t-faint">任务 · </span>{goal}
+        </p>
         <ScopeEditor appName={app.name} scope={scope} onChange={setScope} />
-        <div className="mt-2.5 rounded-lg ig-alert ig-tone-danger px-2.5 py-2">
-          <label className="flex items-start gap-1.5 text-[11px] leading-relaxed ig-fg-danger" data-interactive>
+        <div className="mt-3 rounded-lg ig-alert ig-tone-warning px-2.5 py-2">
+          <label className="flex cursor-pointer items-start gap-2 text-[11px] leading-relaxed ig-fg-warning" data-interactive>
             <input
               data-interactive
               type="checkbox"
               checked={accepted}
               onChange={(e) => setAccepted(e.target.checked)}
-              className="mt-0.5"
+              className="island-check mt-0.5 h-3.5 w-3.5"
             />
             <span>
               我确认：以上作用域内的 L2 操作不再逐次询问（含无人值守时）；敏感排除命中、超出作用域或
@@ -105,14 +108,14 @@ export function PreAuthDialog({
             </span>
           </label>
         </div>
-        {error && <p className="mt-1.5 text-[11px] ig-fg-danger">{error}</p>}
+        {error && <p className="mt-2 text-[11px] ig-fg-danger">{error}</p>}
       </div>
-      <div className="flex items-center justify-end gap-2 px-3 py-2 ig-bg-panel">
-        <button className="island-btn island-btn--ghost px-2.5 text-[12px]" onClick={discard} disabled={busy} data-interactive>
+      <div className="flex items-center justify-end gap-2 border-t ig-border-line px-3 py-2 ig-bg-panel">
+        <button className="island-btn island-btn--ghost h-7 px-2.5 text-[12px]" onClick={discard} disabled={busy} data-interactive>
           取消（不启动）
         </button>
         <button
-          className="island-btn island-btn--primary px-2.5 text-[12px]"
+          className="island-btn island-btn--primary h-7 px-2.5 text-[12px]"
           disabled={!grantId || !accepted || busy}
           onClick={() => void confirm()}
           data-interactive

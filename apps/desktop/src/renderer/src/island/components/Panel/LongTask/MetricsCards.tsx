@@ -11,12 +11,12 @@ import { GATE_LABELS } from "../../common/labels";
 function StatCard({ label, value, sub, title }: { label: string; value: string; sub?: string; title?: string }) {
   return (
     <div
-      className="rounded-lg ig-bg-panel px-2.5 py-1.5 min-w-0"
+      className="min-w-0 rounded-xl border ig-bg-panel ig-border-line px-2.5 py-1.5"
       data-interactive
       title={title}
     >
       <div className="truncate text-[11px] t-faint">{label}</div>
-      <div className="mt-0.5 truncate text-[15px] font-semibold tabular-nums" style={{ color: "var(--ig-t-strong)" }}>
+      <div className="mt-0.5 truncate t-num text-[15px] font-semibold t-strong">
         {value}
         {sub && <span className="ml-1 text-[11px] font-normal t-faint">{sub}</span>}
       </div>
@@ -34,16 +34,16 @@ export function MetricsCards() {
 
   if (metricsError) {
     return (
-      <div className="rounded-lg ig-bg-panel px-2.5 py-1.5 text-[11px] ig-fg-danger">
+      <div className="ig-alert ig-tone-danger rounded-xl px-2.5 py-1.5 text-[11px]">
         度量读取失败：{metricsError}
       </div>
     );
   }
   if (!metrics) {
     return (
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="grid grid-cols-4 gap-2">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="island-skeleton h-11 rounded-lg ig-bg-panel" />
+          <div key={i} className="island-skeleton h-11 rounded-xl ig-bg-panel" />
         ))}
       </div>
     );
@@ -57,7 +57,7 @@ export function MetricsCards() {
   const preauthValue = rate(metrics.preauthCount, metrics.approvalTotal);
 
   return (
-    <div className="grid grid-cols-4 gap-1.5">
+    <div className="grid grid-cols-4 gap-2">
       <StatCard
         label="锚定任务数"
         value={String(metrics.anchoredTasks)}

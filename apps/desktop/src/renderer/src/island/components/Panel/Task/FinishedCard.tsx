@@ -65,23 +65,17 @@ export function FinishedCard({
 
   return (
     <div className="mt-3 island-fade-up">
-      <div
-        className="rounded-xl rounded-tl-sm px-3.5 py-2.5"
-        style={{
-          background: completed ? "rgba(63,224,160,0.08)" : "rgba(248,113,113,0.08)",
-          border: `1px solid ${completed ? "rgba(63,224,160,0.2)" : "rgba(248,113,113,0.2)"}`,
-        }}
-      >
-        <div className="flex items-center justify-between text-[12px] t-faint mb-1">
-          <span style={{ color: completed ? "var(--c-thinking)" : "var(--c-error)" }}>
+      <div className={`rounded-xl rounded-tl-sm px-3.5 py-2.5 ig-alert ${completed ? "ig-tone-success" : "ig-tone-danger"}`}>
+        <div className="mb-1 flex items-center justify-between text-[12px] t-faint">
+          <span className={completed ? "ig-fg-success font-medium" : "ig-fg-danger font-medium"}>
             {completed ? "✓ 已完成" : `✕ ${statusLabel(finished.status)}`}
           </span>
-          <span>{finished.steps} 步 · {finished.totalTokens} tokens</span>
+          <span className="t-num">{finished.steps} 步 · {finished.totalTokens} tokens</span>
         </div>
         {/* 收口报告（FR-006）：终态由哪一闸触发（预算/停滞闸收口必然有值） */}
         {gateText && (
-          <div className="mb-1 inline-flex items-center gap-1 rounded-full ig-bg-panel-hover px-2 py-0.5 text-[11px] t-muted" data-interactive>
-            收口闸 · {gateText}
+          <div className="mb-1.5 inline-flex items-center gap-1 rounded-full ig-bg-panel px-2 py-0.5 text-[11px] t-muted" data-interactive>
+            收口闸 · <span className="t-num">{gateText}</span>
           </div>
         )}
         <div className="text-[13px] leading-snug t-strong">

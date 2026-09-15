@@ -89,26 +89,26 @@ export function JobDetailDrawer({ job }: { job: ScheduledJobPayload }) {
 
   return (
     <div className="island-fade-up mt-1.5 rounded-lg ig-bg-panel-hover px-2.5 py-2 text-[11px]">
-      {job.goal && <div className="mb-1 line-clamp-2 t-muted" title={job.goal}>目标：{job.goal}</div>}
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 items-center">
-        <span className="t-faint">近 {rounds.length} 轮</span>
-        <span className="t-faint">游标</span>
-        <span className="t-faint">耗时</span>
-        <span className="t-faint">收口闸</span>
+      {job.goal && <div className="mb-1.5 line-clamp-2 t-muted" title={job.goal}>目标：{job.goal}</div>}
+      <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-2">
+        <span className="border-b ig-border-line pb-1 text-[10px] t-faint">近 {rounds.length} 轮</span>
+        <span className="border-b ig-border-line pb-1 text-[10px] t-faint">游标</span>
+        <span className="border-b ig-border-line pb-1 text-[10px] t-faint">耗时</span>
+        <span className="border-b ig-border-line pb-1 text-[10px] t-faint">收口闸</span>
         {rounds.map((r, i) => {
           const d = details[r.taskId];
           const live = r.status === "started" && r.endedAt === undefined;
           return (
             <div key={`${r.taskId}-${i}`} className="contents">
-              <span className="min-w-0 truncate t-num">
+              <span className="min-w-0 truncate py-0.5 t-num">
                 {atText(r.at)}
-                {live && job.lastRunStatus === "paused-out-of-scope" && <span className="ig-tag ig-tone-warning ml-1 rounded px-1">等待批复</span>}
-                {live && job.lastRunStatus === "running" && <span className="ig-tag ig-tone-info ml-1 rounded px-1">运行中</span>}
+                {live && job.lastRunStatus === "paused-out-of-scope" && <span className="ig-tag ig-tone-warning ml-1 rounded-full px-1.5 py-px">等待批复</span>}
+                {live && job.lastRunStatus === "running" && <span className="ig-tag ig-tone-info ml-1 rounded-full px-1.5 py-px">运行中</span>}
                 {r.status === "skipped-busy" && <span className="t-faint ml-1">· 跳过（上轮在跑）</span>}
               </span>
-              <span className="truncate t-num" title={d?.cursor?.summary}>{cursorText(d?.cursor ?? null) ?? "—"}</span>
-              <span className="t-num">{live ? "进行中" : durationText(d?.durationMs ?? null)}</span>
-              <span className="truncate">{d?.gate ? GATE_LABELS[d.gate] ?? d.gate : "—"}</span>
+              <span className="truncate py-0.5 t-num" title={d?.cursor?.summary}>{cursorText(d?.cursor ?? null) ?? "—"}</span>
+              <span className="py-0.5 t-num">{live ? "进行中" : durationText(d?.durationMs ?? null)}</span>
+              <span className="truncate py-0.5">{d?.gate ? GATE_LABELS[d.gate] ?? d.gate : "—"}</span>
             </div>
           );
         })}

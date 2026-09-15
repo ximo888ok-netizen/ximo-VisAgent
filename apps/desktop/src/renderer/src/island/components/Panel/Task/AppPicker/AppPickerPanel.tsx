@@ -45,10 +45,9 @@ export function AppPickerPanel({
     <div
       ref={rootRef}
       data-interactive
-      className="absolute bottom-full left-0 right-0 z-50 mb-1 overflow-hidden rounded-xl"
-      style={{ background: "var(--ig-toast-bg)", border: "1px solid var(--island-input-border)" }}
+      className="island-popover absolute bottom-full left-0 right-0 z-50 mb-1.5 overflow-hidden"
     >
-      <div className="flex items-center gap-1.5 p-1.5 ig-bg-panel">
+      <div className="flex items-center gap-2 border-b ig-border-line p-2 ig-bg-panel">
         <input
           ref={searchRef}
           data-interactive
@@ -58,15 +57,24 @@ export function AppPickerPanel({
           maxLength={60}
           className="island-input flex-1 text-[12px]"
         />
-        <button className="island-btn island-btn--ghost shrink-0 px-2 text-[12px]" onClick={onClose} data-interactive>
+        <button className="island-btn island-btn--ghost h-7 shrink-0 px-2.5 text-[12px]" onClick={onClose} data-interactive>
           关闭
         </button>
       </div>
       {loading ? (
-        <div className="px-4 py-6 text-center text-[12px] t-faint">正在枚举已安装应用…</div>
+        <div className="space-y-1 px-2 py-2.5" role="status" aria-label="正在枚举已安装应用">
+          <div className="island-skeleton h-8 rounded-lg ig-bg-panel-hover" />
+          <div className="island-skeleton h-8 rounded-lg ig-bg-panel-hover" />
+          <div className="island-skeleton h-8 rounded-lg ig-bg-panel-hover" />
+        </div>
       ) : rows.length === 0 ? (
-        <div className="px-4 py-6 text-center text-[12px] t-faint">
-          {query && matchedCount === 0 ? "无匹配应用，换个关键词试试" : "未枚举到应用（目录服务未就绪，稍后重试）"}
+        <div className="flex flex-col items-center gap-1 px-4 py-9 text-center">
+          <span className="text-[13px] t-muted">
+            {query && matchedCount === 0 ? "没有匹配的应用" : "暂时列不出应用"}
+          </span>
+          <span className="text-[11px] t-faint">
+            {query && matchedCount === 0 ? "换个关键词试试，支持拼音首字母（如 jdb）" : "目录服务尚未就绪，稍等片刻再打开"}
+          </span>
         </div>
       ) : (
         <AppList rows={rows} onPick={onPick} />
