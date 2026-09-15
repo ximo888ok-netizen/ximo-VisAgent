@@ -63,20 +63,21 @@ export function createChipElement(app: TargetApp): HTMLSpanElement {
   return chip;
 }
 
-/** 图标异步回填：缓存命中同步换图；未命中留字母兜底，IPC 回来后仅当 chip 仍在场才替换 */
+/** 图标异步回填：缓存命中同步换图（此刻 chip 尚未插入编辑器，不能要求 isConnected）；
+ *  未命中留字母兜底，IPC 回来后仅当 chip 仍在场才替换，避免写已移除的节点 */
 function syncChipIcon(chip: HTMLSpanElement, app: TargetApp): void {
   const cached = getCachedIconPng(app.exePath);
   if (cached === undefined) {
     void loadIconPng({ exePath: app.exePath, iconRef: app.iconRef }).then((png) => {
-      if (png) applyChipIcon(chip, png);
+      if (png) applyChipIcon(chip, png, true);
     });
     return;
   }
-  if (cached) applyChipIcon(chip, cached);
+  if (cached) applyChipIcon(chip, cached, false);
 }
 
-function applyChipIcon(chip: HTMLSpanElement, pngBase64: string): void {
-  if (!chip.isConnected) return;
+function applyChipIcon(chip: HTMLSpanElement, pngBase64: string, requireConnected: boolean): void {
+  if (requireConnected && !chip.isConnected) return;
   const plate = chip.firstElementChild;
   if (!plate || plate.firstElementChild instanceof HTMLImageElement) return;
   const img = document.createElement("img");

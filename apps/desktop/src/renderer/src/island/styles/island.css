@@ -557,8 +557,7 @@ html.light {
   width: var(--island-chip-icon);
   height: var(--island-chip-icon);
   border-radius: var(--r-pill);
-  background: var(--ig-panel-hover);
-  color: var(--ig-t-muted);
+  color: var(--ig-t-body); /* 底衬已有色，字形不再重复铺底，否则与底衬同色看不见 */
   font-weight: 500;
   font-size: calc(var(--island-chip-icon) * 0.6);
 }
