@@ -1,12 +1,20 @@
 /**
  * smartSlice.ts — 智能功能状态（记忆/统计/定时/推荐/中断任务/会话）
+ *
+ * B-M3：定时域扩展为长期任务管理面（FR-011 四操作中的「编辑 cron / 立即跑一次」
+ * 走这里，暂停·删除复用既有 toggleJob/deleteJob；FR-012 metrics 四数卡状态同域）。
  */
+import type { IpcResult } from "@shared/island-api";
 import type {
   MemoryRowPayload,
   StatsResultPayload,
   ScheduledJobPayload,
+  SchedulerCreateRequest,
+  SchedulerRunNowRequest,
+  SchedulerUpdateRequest,
   RecommendResultPayload,
   InterruptedTaskInfo,
+  LongTaskMetrics,
 } from "@shared/island-contracts";
 
 export interface SmartSliceState {
@@ -29,9 +37,23 @@ export interface SmartSliceState {
   jobsLoading: boolean;
   jobsError: string | null;
   loadJobs(): Promise<void>;
-  createJob(req: { name: string; sopId?: string; goal?: string; cron: string }): Promise<{ ok: boolean; error?: string }>;
+  createJob(req: SchedulerCreateRequest): Promise<{ ok: boolean; error?: string }>;
   toggleJob(id: string, enabled: boolean): Promise<void>;
   deleteJob(id: string): Promise<void>;
+  /** B-M3：编辑 cron（返回新 nextRunAt 供即时回显） */
+  updateJobCron(req: SchedulerUpdateRequest): Promise<IpcResult<{ nextRunAt: number | null }>>;
+  /** B-M3：立即跑一次（复用触发链；status 供 ≤1s 回显徽标） */
+  runJobNow(req: SchedulerRunNowRequest): Promise<IpcResult<{ status: 'started' | 'skipped-busy' | 'done' | 'failed' }>>;
+
+  /** FR-012 度量聚合（B-M3 面板四数卡） */
+  metrics: LongTaskMetrics | null;
+  metricsLoading: boolean;
+  metricsError: string | null;
+  loadMetrics(): Promise<void>;
+  /** 面板轮询定时器句柄（复用 longtask:status 轮询节奏；离开面板清定时器） */
+  longTaskPollTimer: number | null;
+  startLongTaskPoll(): void;
+  stopLongTaskPoll(): void;
 
   recommendation: RecommendResultPayload | null;
   recommendGoalText: string;
@@ -64,6 +86,10 @@ export function createSmartSlice(
     jobs: [],
     jobsLoading: false,
     jobsError: null,
+    metrics: null,
+    metricsLoading: false,
+    metricsError: null,
+    longTaskPollTimer: null,
     recommendation: null,
     recommendGoalText: "",
     interrupted: [],
@@ -136,6 +162,44 @@ export function createSmartSlice(
     async deleteJob(id) {
       await window.islandAPI.schedulerDelete({ id });
       set((s) => ({ jobs: s.jobs.filter((j) => j.id !== id) }));
+    },
+
+    async updateJobCron(req) {
+      const res = await window.islandAPI.schedulerUpdate(req);
+      // 成功后拉权威列表（cron/下次触发/历史一次到位；乐观回显与真源不打架）
+      if (res.ok) await get().loadJobs();
+      return res;
+    },
+
+    async runJobNow(req) {
+      const res = await window.islandAPI.schedulerRunNow(req);
+      if (res.ok) await get().loadJobs();
+      return res;
+    },
+
+    async loadMetrics() {
+      set({ metricsLoading: true, metricsError: null });
+      const res = await window.islandAPI.longTaskMetrics();
+      if (res.ok) set({ metrics: res.data, metricsLoading: false });
+      else set({ metricsError: res.error, metricsLoading: false });
+    },
+
+    /** 面板可见期轮询（5s：job 徽标/游标推进/度量刷新；同 longtask:status 轮询纪律，不做事件推流） */
+    startLongTaskPoll() {
+      const existing = get().longTaskPollTimer;
+      if (existing !== null) window.clearInterval(existing);
+      set({
+        longTaskPollTimer: window.setInterval(() => {
+          void get().loadJobs();
+          void get().loadMetrics();
+        }, 5_000),
+      });
+    },
+
+    stopLongTaskPoll() {
+      const timer = get().longTaskPollTimer;
+      if (timer !== null) window.clearInterval(timer);
+      set({ longTaskPollTimer: null });
     },
 
     setRecommendation(rec, goal) {

@@ -8,7 +8,7 @@ import { invokeOk, type PanelIpc, type SafeInvoke } from "./deps";
 
 export type SchedulerPanelApi = Pick<
   IslandApi,
-  "schedulerList" | "schedulerCreate" | "schedulerToggle" | "schedulerDelete"
+  "schedulerList" | "schedulerCreate" | "schedulerToggle" | "schedulerDelete" | "schedulerUpdate" | "schedulerRunNow"
 >;
 
 export function registerSchedulerApi(
@@ -30,6 +30,18 @@ export function registerSchedulerApi(
 
     async schedulerDelete(req) {
       return invokeOk(ipc, ISLAND_CHANNELS.schedulerDelete, req);
+    },
+
+    // B-M3 管理面板：编辑 cron / 立即跑一次（带 data 回显，走 safeInvoke 透传 {ok,data|error}）
+    async schedulerUpdate(req) {
+      return safeInvoke<{ nextRunAt: number | null }>(ISLAND_CHANNELS.schedulerUpdate, req);
+    },
+
+    async schedulerRunNow(req) {
+      return safeInvoke<{ status: "started" | "skipped-busy" | "done" | "failed" }>(
+        ISLAND_CHANNELS.schedulerRunNow,
+        req,
+      );
     },
   };
 }

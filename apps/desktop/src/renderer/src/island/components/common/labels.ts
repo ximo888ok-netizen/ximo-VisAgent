@@ -33,3 +33,15 @@ export const AGENT_STATUS_LABEL: Record<string, string> = {
   error: "异常",
   stopped: "已停止",
 };
+
+// 触发闸人话（agent-core TaskEndGate / 审计 task_gate_report 同枚举，FR-006 收口口径）
+// 消费方：收口卡（FinishedCard）+ 长期任务详情抽屉（Panel/LongTask），单一来源避免文案散落
+export const GATE_LABELS: Record<string, string> = {
+  "budget-steps": "预算闸 · 步数上限",
+  "budget-duration": "预算闸 · 时长上限",
+  "budget-tokens": "预算闸 · token 上限",
+  stall: "停滞闸 · 死局止损",
+  assertion: "断言闸 · 校验收口",
+  task_done: "模型自评完成",
+  error: "宿主异常收口",
+};

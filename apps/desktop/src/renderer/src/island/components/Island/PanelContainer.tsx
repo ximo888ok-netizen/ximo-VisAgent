@@ -23,6 +23,7 @@ import { HistoryPanel } from "../Panel/HistoryPanel";
 import { SopPanel } from "../Panel/SopPanel";
 import { StatsPanel } from "../Panel/StatsPanel";
 import { SchedulePanel } from "../Panel/SchedulePanel";
+import { LongTaskPanel } from "../Panel/LongTask/LongTaskPanel";
 import { EmployeePanel } from "../Panel/Employee/EmployeePanel";
 import { MissionPanel } from "../Panel/Mission/MissionPanel";
 import { KnowledgePanel } from "../Panel/Knowledge/KnowledgePanel";
@@ -45,9 +46,9 @@ interface NavGroup {
 }
 
 /**
- * 一级分组。硬约束：12 个 PanelMode 必须恰好出现一次，
+ * 一级分组。硬约束：13 个 PanelMode 必须恰好出现一次，
  * 与 shared/schemas/panel-mode.ts 的 PANEL_MODES 保持一致
- * （task / schedule / stats / history / sop / mission / employee / knowledge / settings / audit / log / evolution）。
+ * （task / schedule / longtask / stats / history / sop / mission / employee / knowledge / settings / audit / log / evolution）。
  *
  * as const：让它成为定长元组，NAV_GROUPS[0] 在 noUncheckedIndexedAccess 下仍是非空类型。
  */
@@ -64,6 +65,7 @@ const NAV_GROUPS = [
     icon: "schedule",
     modes: [
       { mode: "schedule", label: "定时" },
+      { mode: "longtask", label: "长期" },
       { mode: "stats", label: "统计" },
     ],
   },
@@ -182,6 +184,7 @@ export function PanelContainer() {
               {panelMode === "history" && <HistoryPanel />}
               {panelMode === "sop" && <SopPanel />}
               {panelMode === "schedule" && <SchedulePanel />}
+              {panelMode === "longtask" && <LongTaskPanel />}
               {panelMode === "stats" && <StatsPanel />}
               {panelMode === "log" && <LogPanel />}
               {panelMode === "settings" && <SettingsPanel />}

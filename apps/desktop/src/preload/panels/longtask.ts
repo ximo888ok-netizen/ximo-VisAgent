@@ -7,9 +7,9 @@
 import type { IslandApi } from "../../shared/island-api";
 import type { SafeInvoke } from "./deps";
 import { ISLAND_CHANNELS } from "../../shared/island-contracts";
-import type { LongTaskCheckpointSummary, LongTaskStatusPayload } from "../../shared/schemas/longtask";
+import type { LongTaskCheckpointSummary, LongTaskMetrics, LongTaskStatusPayload } from "../../shared/schemas/longtask";
 
-export type LongTaskPanelApi = Pick<IslandApi, "longTaskStatus" | "longTaskCheckpoints">;
+export type LongTaskPanelApi = Pick<IslandApi, "longTaskStatus" | "longTaskCheckpoints" | "longTaskMetrics">;
 
 export function registerLongTaskApi(safeInvoke: SafeInvoke): LongTaskPanelApi {
   return {
@@ -18,6 +18,10 @@ export function registerLongTaskApi(safeInvoke: SafeInvoke): LongTaskPanelApi {
     },
     async longTaskCheckpoints(req) {
       return safeInvoke<LongTaskCheckpointSummary[]>(ISLAND_CHANNELS.longtaskCheckpoints, req);
+    },
+    // B-M3：FR-012 度量聚合（无入参，全时累计口径；SQL 在仓储层钉死）
+    async longTaskMetrics() {
+      return safeInvoke<LongTaskMetrics>(ISLAND_CHANNELS.longtaskMetrics);
     },
   };
 }

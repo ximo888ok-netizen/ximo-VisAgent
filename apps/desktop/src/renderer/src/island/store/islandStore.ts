@@ -41,6 +41,7 @@ export const PANEL_HEIGHTS: Record<PanelMode, number> = {
   history: 520,
   sop: 520,
   schedule: 520,
+  longtask: 520,
   stats: 520,
   log: 360,
   settings: 520,

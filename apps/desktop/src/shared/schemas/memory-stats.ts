@@ -68,6 +68,16 @@ export const JobMergedIntoSchema = z.object({
 });
 export type JobMergedIntoPayload = z.infer<typeof JobMergedIntoSchema>;
 
+/** 轮次历史行（B-M3 详情抽屉「近 5 轮」；running 轮 endedAt/status 为空，收敛补丁时定格） */
+export const JobRoundSchema = z.object({
+  /** 本轮派发任务 id；skipped-busy/派发失败轮可能为空串（无任务可回链） */
+  taskId: z.string().max(64),
+  at: z.number(),
+  status: z.union([JobRunStatusSchema, z.literal('started')]),
+  endedAt: z.number().optional(),
+});
+export type JobRoundPayload = z.infer<typeof JobRoundSchema>;
+
 export const ScheduledJobSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -96,6 +106,8 @@ export const ScheduledJobSchema = z.object({
   lastTaskId: z.string().max(64).optional(),
   lastRunStatus: JobRunStatusSchema.optional(),
   mergedInto: JobMergedIntoSchema.optional(),
+  /** 近 5 轮历史（B-M3 详情抽屉；旧 job 无此字段 = 未开始积累，面板降级为只显当前轮） */
+  runHistory: z.array(JobRoundSchema).max(5).optional(),
 });
 export type ScheduledJobPayload = z.infer<typeof ScheduledJobSchema>;
 
@@ -120,6 +132,17 @@ export type SchedulerToggleRequest = z.infer<typeof SchedulerToggleSchema>;
 
 export const SchedulerDeleteSchema = z.object({ id: z.string().min(1) });
 export type SchedulerDeleteRequest = z.infer<typeof SchedulerDeleteSchema>;
+
+/** B-M3 管理面板「编辑 cron」：仅改 cron（重算下次触发），名称/目标等载荷不动 */
+export const SchedulerUpdateSchema = z.object({
+  id: z.string().min(1),
+  cron: z.string().min(1).max(60),
+});
+export type SchedulerUpdateRequest = z.infer<typeof SchedulerUpdateSchema>;
+
+/** B-M3 管理面板「立即跑一次」（FR-011）：不改 nextRunAt 排期，仅本轮触发 + 记账 */
+export const SchedulerRunNowSchema = z.object({ id: z.string().min(1) });
+export type SchedulerRunNowRequest = z.infer<typeof SchedulerRunNowSchema>;
 
 /** 会话上下文信息 */
 export const ConversationInfoSchema = z.object({

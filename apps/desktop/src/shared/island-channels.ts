@@ -104,6 +104,10 @@ export const ISLAND_CHANNELS = {
   schedulerToggle: "island:scheduler-toggle",
   /** renderer -> main (invoke)：删除定时任务 */
   schedulerDelete: "island:scheduler-delete",
+  /** renderer -> main (invoke)：编辑定时任务 cron（B-M3 管理面板，重算下次触发） */
+  schedulerUpdate: "island:scheduler-update",
+  /** renderer -> main (invoke)：立即跑一次（B-M3 管理面板，FR-011；不动排期只记账本轮） */
+  schedulerRunNow: "island:scheduler-run-now",
   /** renderer -> main (invoke)：SOP 导出（JSON 字符串） */
   sopExport: "island:sop-export",
   /** renderer -> main (invoke)：SOP 导入（JSON 字符串） */
@@ -238,6 +242,8 @@ export const ISLAND_CHANNELS = {
   longtaskStatus: "longtask:status",
   /** renderer -> main (invoke)：任务检查点列表（seq 降序，恢复预览/B 期面板） */
   longtaskCheckpoints: "longtask:checkpoints",
+  /** renderer -> main (invoke)：FR-012 度量聚合（B-M3 面板四数卡；SQL 见 orchestrator-audit） */
+  longtaskMetrics: "longtask:metrics",
 
   // ---- Agent 在场指示（极光边框）----
   /** main -> aura 窗口：状态变更 */

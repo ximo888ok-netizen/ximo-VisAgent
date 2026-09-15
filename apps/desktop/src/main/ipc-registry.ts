@@ -25,6 +25,7 @@ import { registerMissionHandlers } from './ipc/mission-handlers';
 import { registerAppsHandlers } from './ipc/apps-handlers';
 import { registerPreauthHandlers } from './ipc/preauth-handlers';
 import { registerLongTaskHandlers } from './ipc/longtask-handlers';
+import { registerLongTaskPanelHandlers } from './ipc/longtask-panel-handlers';
 import { getAppCatalogService } from './app-catalog-client';
 import { createAppRecentStore } from './app-recent-store';
 import { createPreauthStore, type PreauthStore } from './preauth-store';
@@ -138,6 +139,9 @@ export function registerIsland(deps: IpcRegistryDeps): void {
 
   registerExtendedHandlers({ orchestrator, store: configStore, audit: auditDb });
   registerSmartHandlers({ orchestrator, store: configStore, audit: auditDb, memory: memoryStore, conversation: conversationStore, scheduler, grants: preauthGrants });
+  // B-M3 管理面板：FR-011 四操作补两通道（编辑 cron / 立即跑一次）+ FR-012 度量聚合；
+  // scheduler 恒装配、metrics 走 audit 共库连接，均不依赖 longTaskRunner
+  registerLongTaskPanelHandlers({ scheduler, auditDb: auditDb.exposeDb() });
   registerExperienceHandlers({ experience: experienceStore, audit: auditDb, orchestrator, store: configStore });
   registerEvolutionHandlers({ experience: experienceStore, audit: auditDb, orchestrator, tools: orchestrator.customTools, toolsDir: orchestrator.toolsDir, employee: employeeStore, mission: missionRepo, missionDb: auditDb.exposeDb() });
   registerEmployeeHandlers({ employee: employeeStore, audit: auditDb, store: configStore });

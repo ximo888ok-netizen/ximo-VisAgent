@@ -21,6 +21,14 @@ export interface JobMergedInto {
   intoAt: number;
 }
 
+/** 轮次历史行（B-M3 详情抽屉「近 5 轮」）：started 轮在新轮触发时定格 endedAt + 终态 */
+export interface JobRunRecord {
+  taskId: string;
+  at: number;
+  status: JobRunStatus | 'started';
+  endedAt?: number;
+}
+
 export interface ScheduledJob {
   id: string;
   name: string;
@@ -48,6 +56,8 @@ export interface ScheduledJob {
   lastRunStatus?: JobRunStatus;
   /** 错过合并记账（仅补跑轮写入；按时触发为 undefined） */
   mergedInto?: JobMergedInto;
+  /** 近 5 轮历史（B-M3 抽屉；旧 job 无此字段 = 未开始积累，面板降级为只显当前轮） */
+  runHistory?: JobRunRecord[];
 }
 
 export interface JobRunResult {
@@ -70,6 +80,8 @@ const CHECK_INTERVAL_MS = 30_000;
 const MAX_SCAN_MINUTES = 60 * 24 * 366; // 向前扫描上限：一年
 /** 错过槽位扫描上限（病久 cron 防打满；超出只按此数记账，触发语义不变：仍补跑 1 次） */
 const MAX_MISSED_SLOTS = 9999;
+/** B-M3 轮次历史保留条数（详情抽屉「近 5 轮」） */
+const MAX_RUN_HISTORY = 5;
 
 /** 极简 cron 字段解析：支持 * 、数字、逗号列表、连字符区间、/步长 */
 function parseField(field: string, min: number, max: number): number[] | null {
@@ -244,6 +256,15 @@ export class Scheduler {
   private recordRun(job: ScheduledJob, res: JobRunResult, slots: { count: number; fromAt: number; intoAt: number }, now: number): void {
     job.lastRunAt = now;
     job.nextRunAt = nextRunAt(job.cron);
+    this.applyRunOutcome(job, res);
+    if (res.ok && res.status === 'started' && slots.count > 1) {
+      job.mergedInto = { count: slots.count - 1, fromAt: slots.fromAt, intoAt: slots.intoAt };
+    }
+    this.appendRoundHistory(job, res, now);
+  }
+
+  /** 触发结果 → lastRunStatus/lastStatus 语义（tick 与手动「立即跑一次」共用；错过记账由调用方管） */
+  private applyRunOutcome(job: ScheduledJob, res: JobRunResult): void {
     if (!res.ok) {
       job.lastRunStatus = 'failed';
       job.lastStatus = `失败: ${res.error ?? '未知'}`;
@@ -261,11 +282,77 @@ export class Scheduler {
       job.lastRunStatus = 'done';
       job.lastStatus = '成功';
     }
-    if (slots.count > 1) {
-      job.mergedInto = { count: slots.count - 1, fromAt: slots.fromAt, intoAt: slots.intoAt };
+    delete job.mergedInto;
+  }
+
+  /**
+   * B-M3 轮次历史（详情抽屉「近 5 轮」）：started 轮以开放行入表，终态由
+   * longtask-increment 收敛时经 patch → finalizeRoundHistory 定格 endedAt；
+   * skipped-busy/派发失败是一次性行（当场闭合，skipped 无新任务所以 taskId 空）。
+   */
+  private appendRoundHistory(job: ScheduledJob, res: JobRunResult, now: number): void {
+    const hist = job.runHistory ?? [];
+    if (!res.ok) {
+      hist.push({ taskId: '', at: now, status: 'failed', endedAt: now });
+    } else if (res.status === 'skipped-busy') {
+      hist.push({ taskId: '', at: now, status: 'skipped-busy', endedAt: now });
+    } else if (res.status === 'started') {
+      const last = hist.length > 0 ? hist[hist.length - 1] : undefined;
+      const task = job.lastTaskId ?? '';
+      const openSame = last !== undefined && last.status === 'started' && last.endedAt === undefined && last.taskId === task;
+      if (!openSame) hist.push({ taskId: task, at: now, status: 'started' });
     } else {
-      delete job.mergedInto;
+      // 旧即时完成链路（SOP 模板 job）：一轮当场完成
+      hist.push({ taskId: job.lastTaskId ?? '', at: now, status: 'done', endedAt: now });
     }
+    job.runHistory = hist.slice(-MAX_RUN_HISTORY);
+  }
+
+  /** 收敛定格：done/failed 补丁（settleRound 经 patch 写回）闭合对应的开放历史行 */
+  private finalizeRoundHistory(job: ScheduledJob, changes: JobPatch): void {
+    const final = changes.lastRunStatus;
+    if (final !== 'done' && final !== 'failed') return;
+    const task = job.lastTaskId ?? '';
+    const hist = job.runHistory;
+    if (!hist) return;
+    for (let i = hist.length - 1; i >= 0; i--) {
+      const entry = hist[i];
+      if (entry && entry.status === 'started' && entry.endedAt === undefined && entry.taskId === task) {
+        entry.status = final;
+        entry.endedAt = Date.now();
+        return;
+      }
+    }
+  }
+
+  /** 立即跑一次（B-M3，FR-011）：复用触发链跑本轮；不动 nextRunAt（手跑不打乱排期），清掉已补过的错过记账 */
+  async runNow(id: string): Promise<JobRunResult> {
+    const job = this.jobs.find((j) => j.id === id);
+    if (!job) return { ok: false, error: '定时任务不存在' };
+    let res: JobRunResult;
+    try {
+      res = await this.callbacks.runJob(job);
+    } catch (err) {
+      res = { ok: false, error: err instanceof Error ? err.message : '未知' };
+    }
+    const now = Date.now();
+    job.lastRunAt = now;
+    this.applyRunOutcome(job, res);
+    this.appendRoundHistory(job, res, now);
+    this.save();
+    return res;
+  }
+
+  /** 编辑 cron（B-M3）：主进程复校合法性 + 按新 cron 重算下次触发（停用 job 下轮槽位保持 null） */
+  updateCron(id: string, cron: string): boolean {
+    const job = this.jobs.find((j) => j.id === id);
+    if (!job) return false;
+    const next = cron.trim();
+    if (!parseCron(next)) throw new Error(`无效的 cron 表达式: "${next}"（格式: 分 时 日 月 周，如 "0 17 * * 1-5"）`);
+    job.cron = next;
+    job.nextRunAt = job.enabled ? nextRunAt(next) : null;
+    this.save();
+    return true;
   }
 
   list(): ScheduledJob[] {
@@ -284,6 +371,8 @@ export class Scheduler {
       if (value === undefined) continue;
       Object.assign(job, { [key]: value });
     }
+    // B-M3：收敛补丁（lastRunStatus done/failed）同步定格轮次历史开放行
+    this.finalizeRoundHistory(job, changes);
     this.save();
     return true;
   }

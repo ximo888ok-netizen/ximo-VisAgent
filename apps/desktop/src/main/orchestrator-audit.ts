@@ -125,16 +125,8 @@ export function recordAnchorWatchdogEvent(
 }
 
 /**
- * FR-012 A 期四项指标（audit 表直查；「SQL 可查」验收口径，B-M3 面板聚合前的正源）。
- * detail 为 JSON 字符串列，用 json_extract 取字段。
+ * FR-012 度量 SQL：正源已迁至 audit-db/metrics-sql.ts（B-M3 聚合查询要在 vitest
+ * node 环境可测，本模块传递 import 链含 electron/vite ?asset，不能作为查询依赖）。
+ * 此处保持 re-export：既有引用口径（「SQL 见 orchestrator-audit 的 FR012_METRIC_SQL」）不变。
  */
-export const FR012_METRIC_SQL: Record<'anchoredTasks' | 'pauseCount' | 'preauthRate' | 'gateDist', string> = {
-  anchoredTasks: "SELECT COUNT(DISTINCT taskId) AS anchored_tasks FROM audit WHERE kind = 'anchor_attached'",
-  pauseCount: "SELECT COUNT(*) AS pauses FROM audit WHERE kind = 'anchor_pause'",
-  preauthRate: "SELECT SUM(CASE WHEN json_extract(detail,'$.decidedBy') = 'preauth' THEN 1 ELSE 0 END) AS preauth," +
-    " COUNT(*) AS total_approvals," +
-    " 1.0 * SUM(CASE WHEN json_extract(detail,'$.decidedBy') = 'preauth' THEN 1 ELSE 0 END) / COUNT(*) AS preauth_rate" +
-    " FROM audit WHERE kind = 'approval_decided'",
-  gateDist: "SELECT json_extract(detail,'$.gate') AS gate, COUNT(*) AS n FROM audit" +
-    " WHERE kind = 'task_gate_report' GROUP BY gate",
-};
+export { FR012_METRIC_SQL } from './audit-db/metrics-sql';

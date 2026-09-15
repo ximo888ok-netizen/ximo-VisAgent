@@ -37,6 +37,8 @@ import type {
   SchedulerCreateRequest,
   SchedulerToggleRequest,
   SchedulerDeleteRequest,
+  SchedulerUpdateRequest,
+  SchedulerRunNowRequest,
   SaveSopRequest,
   RunSopRequest,
   SimulateRuleRequest,
@@ -95,6 +97,7 @@ import type {
   GrantCreateRequest,
   GrantIdRequest,
   LongTaskCheckpointSummary,
+  LongTaskMetrics,
   LongTaskQueryRequest,
   LongTaskStatusPayload,
 } from "./schemas/longtask";
@@ -179,6 +182,10 @@ export interface IslandApi {
   schedulerCreate(req: SchedulerCreateRequest): Promise<IpcResult<{ id: string }>>;
   schedulerToggle(req: SchedulerToggleRequest): Promise<{ ok: boolean; error?: string }>;
   schedulerDelete(req: SchedulerDeleteRequest): Promise<{ ok: boolean; error?: string }>;
+  /** B-M3 编辑 cron：主进程复校 + 重算下次触发（返回新 nextRunAt 供即时回显） */
+  schedulerUpdate(req: SchedulerUpdateRequest): Promise<IpcResult<{ nextRunAt: number | null }>>;
+  /** B-M3 立即跑一次：复用触发链跑本轮（返回轮次语义供 ≤1s 回显徽标） */
+  schedulerRunNow(req: SchedulerRunNowRequest): Promise<IpcResult<{ status: 'started' | 'skipped-busy' | 'done' | 'failed' }>>;
 
   // ---- SOP 导入导出 / 推荐 ----
   sopExport(req: SopExportRequest): Promise<IpcResult<{ json: string }>>;
@@ -258,6 +265,8 @@ export interface IslandApi {
   longTaskStatus(req: LongTaskQueryRequest): Promise<IpcResult<LongTaskStatusPayload>>;
   /** 任务检查点摘要（seq 降序）：恢复预览/B 期面板 */
   longTaskCheckpoints(req: LongTaskQueryRequest): Promise<IpcResult<LongTaskCheckpointSummary[]>>;
+  /** FR-012 度量聚合（B-M3 面板四数卡；SQL 口径见 main/audit-db/longtask-metrics.ts） */
+  longTaskMetrics(): Promise<IpcResult<LongTaskMetrics>>;
 
   // ---- 员工域（M1 数据底座）----
   employeeListPositions(): Promise<IpcResult<PositionRowPayload[]>>;

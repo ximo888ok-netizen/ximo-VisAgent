@@ -147,3 +147,77 @@ describe('既有语义回归钉死', () => {
       : new Date(from.getFullYear(), from.getMonth(), from.getDate(), from.getHours(), from.getMinutes() + 1).getTime());
   });
 });
+
+describe('B-M3 编辑 cron / 立即跑一次 / 轮次历史（FR-011）', () => {
+  it('updateCron：合法表达式重算 nextRunAt；非法抛错、不存在返回 false；停用 job 保持 null', () => {
+    const file = tempFile();
+    const sched = makeScheduler(async () => ({ ok: true, status: 'started' }), file);
+    const job = sched.create({ name: '改期', goal: 'g', cron: '0 9 * * *' });
+    expect(sched.updateCron(job.id, '30 18 * * 1-5')).toBe(true);
+    const j = sched.get(job.id);
+    expect(j?.cron).toBe('30 18 * * 1-5');
+    expect(j!.nextRunAt!).toBeGreaterThan(Date.now());
+    expect(() => sched.updateCron(job.id, 'not a cron')).toThrow(/无效的 cron/);
+    expect(sched.updateCron('nope', '0 9 * * *')).toBe(false);
+    sched.toggle(job.id, false);
+    expect(sched.updateCron(job.id, '0 8 * * *')).toBe(true);
+    expect(sched.get(job.id)?.nextRunAt).toBeNull();
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  });
+
+  it('runNow：走触发链记 running 且不清排期；不存在返回错误；抛错转 failed', async () => {
+    const file = tempFile();
+    let calls = 0;
+    const sched = makeScheduler(async () => { calls++; return { ok: true, status: 'started' }; }, file);
+    const job = sched.create({ name: '手跑', goal: 'g', cron: '0 9 * * *' });
+    const before = sched.get(job.id)!.nextRunAt!;
+    const res = await sched.runNow(job.id);
+    expect(res).toEqual({ ok: true, status: 'started' });
+    expect(calls).toBe(1);
+    const j = sched.get(job.id);
+    expect(j?.lastRunStatus).toBe('running');
+    expect(j?.lastStatus).toBe('运行中');
+    expect(j?.nextRunAt).toBe(before); // 立即跑一次不打乱既有排期
+    expect((await sched.runNow('ghost')).ok).toBe(false);
+    const boom = makeScheduler(async () => { throw new Error('派发炸了'); }, file);
+    const r2 = await boom.runNow(job.id);
+    expect(r2.ok).toBe(false);
+    expect(boom.get(job.id)?.lastRunStatus).toBe('failed');
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  });
+
+  it('runHistory：起跑记 started 开放行 → 收敛补丁定格终态 + endedAt；skipped 记一次性行；封顶 5', async () => {
+    const file = tempFile();
+    const sched = makeScheduler(async () => ({ ok: true, status: 'started' }), file);
+    const job = sched.create({ name: '轮次', goal: 'g', cron: '*/30 * * * *' });
+    // 第一轮起跑（模拟 startRound 已写 lastTaskId + running）
+    sched.patch(job.id, { lastTaskId: 'r1', lastRunStatus: 'running', lastStatus: '运行中' });
+    sched.patch(job.id, { nextRunAt: Date.now() });
+    await sched.tick();
+    let h = sched.get(job.id)!.runHistory!;
+    expect(h).toHaveLength(1);
+    expect(h[0]).toMatchObject({ taskId: 'r1', status: 'started' });
+    expect(h[0]!.endedAt).toBeUndefined();
+    // 收敛写回终态 → 开放行定格
+    sched.patch(job.id, { lastRunStatus: 'done', lastStatus: '成功' });
+    h = sched.get(job.id)!.runHistory!;
+    expect(h[0]!.status).toBe('done');
+    expect(h[0]!.endedAt).toBeTypeOf('number');
+    // 上轮未终态时再触发 → 另起 r2 + 一条 skipped-busy 一次性行
+    const busy = makeScheduler(async () => ({ ok: true, status: 'skipped-busy' }), file);
+    busy.patch(job.id, { lastTaskId: 'r2', lastRunStatus: 'running' });
+    busy.patch(job.id, { nextRunAt: Date.now() });
+    await busy.tick();
+    h = busy.get(job.id)!.runHistory!;
+    expect(h[h.length - 1]!.status).toBe('skipped-busy');
+    expect(h[h.length - 1]!.endedAt).toBeTypeOf('number');
+    // 连续补 6 轮：封顶 5 条，旧行滚出
+    for (let i = 3; i <= 8; i++) {
+      busy.patch(job.id, { lastTaskId: `r${i}`, lastRunStatus: 'running' });
+      await busy.runNow(job.id);
+    }
+    h = busy.get(job.id)!.runHistory!;
+    expect(h).toHaveLength(5);
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  });
+});

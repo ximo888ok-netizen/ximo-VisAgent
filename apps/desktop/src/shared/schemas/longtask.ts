@@ -255,3 +255,23 @@ export const LongTaskCheckpointSummarySchema = z.object({
   createdAt: z.number().int(),
 });
 export type LongTaskCheckpointSummary = z.infer<typeof LongTaskCheckpointSummarySchema>;
+
+/* ---------------------------------------------------------------------------
+ * FR-012 度量聚合（B-M3 面板四数卡，SQL 正源 = main/orchestrator-audit.ts 埋点）
+ * ------------------------------------------------------------------------- */
+
+/** longtask:metrics 出参（全时累计口径；分母为 0 时比率记 0，见仓储注释） */
+export const LongTaskMetricsSchema = z.object({
+  /** 锚定任务数（anchor_attached 去重 taskId） */
+  anchoredTasks: z.number().int().min(0),
+  /** 发生过看门狗暂停的锚定任务数 / 锚定任务数（暂停率卡片的分子） */
+  pausedTasks: z.number().int().min(0),
+  /** anchor_pause 事件总次数（含同任务多次暂停） */
+  pauseCount: z.number().int().min(0),
+  /** preauth 放行数 / 审批决策总数（approval_decided 行） */
+  preauthCount: z.number().int().min(0),
+  approvalTotal: z.number().int().min(0),
+  /** 收口闸分布（task_gate_report.detail.gate；null = 埋点缺字段的历史行） */
+  gates: z.array(z.object({ gate: z.string().nullable(), count: z.number().int().min(0) })),
+});
+export type LongTaskMetrics = z.infer<typeof LongTaskMetricsSchema>;
