@@ -21,7 +21,7 @@
 
 ## 定位与回读增强（借鉴 agent-vision-toolkit，2 commit：c01da6b / d17ca93）
 
-1. **坐标表缓存** `agent-core/ground-cache.ts`：布局稳定元素一次定位后复用（窗口签名 + 整帧 pHash 距离 ≤6 + 20 步 TTL，LRU 64；换窗/滚动/任务终态失效，缺签名一律 miss）。只替代"定位"一步，点击守卫/校验/L0-L3 审批照旧。命中率进 ui_locate summary。loop.ts 有效行 352→357。
+1. **坐标表缓存** `agent-core/ground-cache.ts`：布局稳定元素一次定位后复用。**每次复用都必须重新看一眼那块区域**——整帧 pHash 距离 ≤6 且该 box 的局部裁剪指纹距离 ≤4 才命中（`c602f0e` 加固：用户指出整帧指纹对局部变化不敏感）；缺回调/越界/小框外扩到 16px 后仍取不到 → 一律 miss。用缓存坐标点击若校验为"无变化"→ 立即剔该条，同任务连败 2 次即停用缓存。TTL 8 步、LRU 64、换窗/滚动/终态失效；UIA 能实时解析就永远用实时 rect，缓存只兜底。只替代"定位"一步，点击守卫/校验/L0-L3 审批照旧，截图节奏未变（省的是 1–2 次视觉模型调用，约 2–4k token/次）。命中率与停用状态进 ui_locate summary。
 2. **变化区域定向读** `control-kit/changed-region.ts` + click-verify：多轮块 diff 取 ≥2 轮命中并集（minSide 12 滤噪），局部小变化（占比 ≤50%）只对该 bbox 跑 OCR，文本进 summary 供模型读回。
 3. **输入回读三态** keyboard-verify：UIA 无 value 时降级为字段区域 OCR；结论 verified/mismatch/unverifiable 结构化挂在 tool data（`inputVerify`/`clickVerify`），供后续断言消费。
 
