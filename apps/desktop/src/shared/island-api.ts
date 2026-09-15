@@ -94,6 +94,9 @@ import type {
   GrantAckRequest,
   GrantCreateRequest,
   GrantIdRequest,
+  LongTaskCheckpointSummary,
+  LongTaskQueryRequest,
+  LongTaskStatusPayload,
 } from "./schemas/longtask";
 
 /** 统一 IPC 返回 */
@@ -249,6 +252,12 @@ export interface IslandApi {
   grantAck(req: GrantAckRequest): Promise<IpcResult<{ acked: boolean }>>;
   /** 撤销（关闭未 ack 的授权卡 / B 期面板） */
   grantRevoke(req: GrantIdRequest): Promise<IpcResult<{ revoked: boolean }>>;
+
+  // ---- 锚定长任务聚合态（A-M7）----
+  /** 控制条数据源：锚定应用+进度+剩余预算+看门狗态（1s 轮询，非事件推流） */
+  longTaskStatus(req: LongTaskQueryRequest): Promise<IpcResult<LongTaskStatusPayload>>;
+  /** 任务检查点摘要（seq 降序）：恢复预览/B 期面板 */
+  longTaskCheckpoints(req: LongTaskQueryRequest): Promise<IpcResult<LongTaskCheckpointSummary[]>>;
 
   // ---- 员工域（M1 数据底座）----
   employeeListPositions(): Promise<IpcResult<PositionRowPayload[]>>;

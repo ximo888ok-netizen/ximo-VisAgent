@@ -64,7 +64,8 @@ export interface ApprovalGateOp {
 }
 
 interface ApprovalGateDeps {
-  audit: ZODB;
+  /** 只用到事件映射+落库两个口（装配级可测）；生产注入仍是 ZODB 实例 */
+  audit: Pick<ZODB, 'insert' | 'fromAgentEvent'>;
   /** 每次实时读档位（运行中即时生效；launch 时的配置快照不用于审批） */
   getConfigMode: () => unknown;
   isE2E: boolean;
@@ -146,7 +147,7 @@ function matchContextOf(op: ApprovalGateOp): { targetPath?: string; windowText?:
 
 /** 策略放行的留痕：持久记录在 approval_decided（decidedBy:'policy'|'preauth'），日志行只是实时 UI */
 function recordPolicyApproval(
-  audit: ZODB,
+  audit: Pick<ZODB, 'insert' | 'fromAgentEvent'>,
   taskId: string,
   approvalId: string,
   op: ApprovalGateOp,

@@ -7,12 +7,34 @@
  *    bootstrap 的 Electron/窗口/托盘等重依赖全部替身化，只观察恢复闸门的调用行为。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
 import { autoResumeInterrupted } from '../orchestrator-autoresume';
+import type { MigrationDb } from '../db-migrations';
 import type { Orchestrator } from '../orchestrator';
 import type { ZODB } from '../audit-store';
 import type { TaskRow } from '../audit-db/rows';
 
 const HOUR = 60 * 60_000;
+
+/** 长任务薄壳在 bootstrap 里真建表：node:sqlite 薄适配（同 checkpoint/preauth 用例口径） */
+function fakeMigrationDb(): MigrationDb {
+  const sync = new DatabaseSync(':memory:');
+  return {
+    exec: (sql) => sync.exec(sql),
+    prepare: (sql) => {
+      const st = sync.prepare(sql) as {
+        run: (...p: (string | number | null)[]) => unknown;
+        get: (...p: (string | number | null)[]) => unknown;
+        all: (...p: (string | number | null)[]) => unknown[];
+      };
+      return {
+        run: (...p) => st.run(...(p as (string | number | null)[])),
+        get: (...p) => st.get(...(p as (string | number | null)[])),
+        all: (...p) => st.all(...(p as (string | number | null)[])),
+      };
+    },
+  };
+}
 
 function mkTask(id: string, status: string, ageMs: number): TaskRow {
   return {
@@ -116,7 +138,12 @@ vi.mock('../tray', () => ({ createTray: vi.fn() }));
 vi.mock('../hotkeys', () => ({ registerHotkeys: vi.fn() }));
 vi.mock('../ipc/aura-handlers', () => ({ registerAuraHandlers: vi.fn() }));
 vi.mock('../ipc-registry', () => ({ registerIsland: vi.fn() }));
-vi.mock('../custom-tools', () => ({ loadApprovedTools: vi.fn(() => ({ loaded: [], failed: [] })) }));
+vi.mock('../custom-tools', () => ({
+  loadApprovedTools: vi.fn(() => ({ loaded: [], failed: [] })),
+  // A-M7：bootstrap 里的长任务薄壳会真调 registerCheckpointTool（替身记账即可，不建真运行时）
+  CHECKPOINT_TOOL_ID: 'builtin:checkpoint',
+  registerCheckpointTool: vi.fn(),
+}));
 vi.mock('../diagnostics', () => ({ scheduleStartupDiagnostics: vi.fn() }));
 vi.mock('../e2e-runner', () => ({ scheduleE2ERun: bootMocks.scheduleE2ERun }));
 vi.mock('../ipc/wechat-handlers', () => ({ registerWeChatHandlers: vi.fn() }));
@@ -127,14 +154,14 @@ import { bootstrap, type BootstrapDeps } from '../bootstrap';
 async function runBootstrap(flags: { isE2E?: boolean; isSelfTest?: boolean }) {
   const deps = {
     orchestrator: {
-      customTools: {},
+      customTools: { registerBuiltin: vi.fn(() => true), unregister: vi.fn() },
       resumeInterrupted: bootMocks.resumeInterrupted,
       findPendingApprovals: () => [],
       approve: vi.fn(),
       reject: vi.fn(),
       startTask: vi.fn(),
     },
-    auditDb: { listTasks: bootMocks.listTasks },
+    auditDb: { listTasks: bootMocks.listTasks, exposeDb: () => fakeMigrationDb() },
     experienceStore: { listCustomTools: () => [] },
     configStore: { get: () => ({ auraIntensity: 'full', approvalMode: 'auto', schedulerEnabled: false, agent: { autoResumeInterrupted: true } }) },
     memoryStore: {},

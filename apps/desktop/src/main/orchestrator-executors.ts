@@ -20,6 +20,11 @@ export interface ExecutorStack {
   executor: ToolExecutor;
 }
 
+/** R18 修复：确保 workspaceDir 非空，防止 FileOfficeExecutor 以 cwd 为工作目录（A-M7 起对外可比对同一口径） */
+export function workspaceDirOf(dir?: string): string {
+  return dir || path.join(process.env.APPDATA ?? process.cwd(), 'ximo-VisAgent', 'sandbox');
+}
+
 export function buildExecutorStack(input: {
   workspaceDir?: string;
   customTools: CustomToolRuntime;
@@ -36,7 +41,7 @@ export function buildExecutorStack(input: {
   setHost(createHostCapabilities());
   const computer = new ComputerToolExecutor({ grounding: input.grounding, somLookup: input.somLookup });
   // R18 修复：确保 workspaceDir 非空，防止 FileOfficeExecutor 以 cwd 为工作目录
-  const workspaceDir = input.workspaceDir || path.join(process.env.APPDATA ?? process.cwd(), 'ximo-VisAgent', 'sandbox');
+  const workspaceDir = workspaceDirOf(input.workspaceDir);
   const files = new FileOfficeExecutor(workspaceDir);
   const tools = input.customTools;
   const wechatBot = input.wechatBot;

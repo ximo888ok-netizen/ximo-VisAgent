@@ -24,9 +24,10 @@ import { registerEmployeeHandlers } from './ipc/island-employee-handlers';
 import { registerMissionHandlers } from './ipc/mission-handlers';
 import { registerAppsHandlers } from './ipc/apps-handlers';
 import { registerPreauthHandlers } from './ipc/preauth-handlers';
+import { registerLongTaskHandlers } from './ipc/longtask-handlers';
 import { getAppCatalogService } from './app-catalog-client';
 import { createAppRecentStore } from './app-recent-store';
-import { createPreauthStore } from './preauth-store';
+import { createPreauthStore, type PreauthStore } from './preauth-store';
 import { applyLongtaskSchema } from './longtask-db/migrations';
 import { applyLongtaskPreauthSchema } from './longtask-db/preauth-migrations';
 import { app } from 'electron';
@@ -34,6 +35,7 @@ import path from 'node:path';
 import { exportAuditToFile } from './audit-export';
 import { applyConfigUpdate, sanitizeConfig } from './config-sync';
 import { coerceArgs } from './island-bridge';
+import type { LongTaskRunner } from './longtask-runner';
 
 export interface IpcRegistryDeps {
   orchestrator: Orchestrator;
@@ -47,6 +49,20 @@ export interface IpcRegistryDeps {
   missionRepo: MissionRepo;
   missionRunRepo: MissionRunRepo;
   missionRunner: MissionRunner;
+  /** A-M7：锚定长任务薄壳（bootstrap 组合根装配；null = 未装配，两通道按未锚定降级） */
+  longTaskRunner: LongTaskRunner | null;
+}
+
+/**
+ * preauth_grants 仓储的装配级取用口（A-M7 清单 6）：实例仍由本组合根创建，
+ * orchestrator-launch 经此闭包注入 createApprovalGate 的 grantRepo——
+ * 审批门与 grant 通道共用同一连接/同一表，不落第二真源。
+ * 任务只会在 registerIsland 之后起跑（bootstrap 顺序保证），此前返回 null。
+ */
+let preauthGrantsInstance: PreauthStore | null = null;
+
+export function getPreauthGrants(): PreauthStore | null {
+  return preauthGrantsInstance;
 }
 
 /** 全量 IPC 注册（岛核心 + 面板 + 扩展通道） */
@@ -54,7 +70,7 @@ export function registerIsland(deps: IpcRegistryDeps): void {
   const {
     orchestrator, configStore, auditDb, memoryStore,
     conversationStore, scheduler, experienceStore, employeeStore, missionRepo,
-    missionRunRepo, missionRunner,
+    missionRunRepo, missionRunner, longTaskRunner,
   } = deps;
 
   // 应用目录服务（A-M1）：建表必须先于任何 app_recent store 创建（better-sqlite3
@@ -64,6 +80,7 @@ export function registerIsland(deps: IpcRegistryDeps): void {
   // 预授权作用域包（A-M6）：独立版本戳域 longtask-preauth，共库互不踩踏
   applyLongtaskPreauthSchema(auditDb.exposeDb());
   const preauthGrants = createPreauthStore(auditDb.exposeDb());
+  preauthGrantsInstance = preauthGrants;
 
   registerIslandHandlers({
     getMainWindow: () => null,
@@ -138,4 +155,13 @@ export function registerIsland(deps: IpcRegistryDeps): void {
   // 预授权作用域包（A-M6）：三通道 + 启动期过期清扫（状态迁移可审计，不做定时器）
   preauthGrants.sweepExpired();
   registerPreauthHandlers({ grants: preauthGrants });
+
+  // 锚定长任务聚合态（A-M7，§4.2/§4.4）：控制条 1s 轮询 status + 恢复预览 checkpoints；
+  // 已用步数取审计里有实际动作的步骤（与重试/自动恢复同口径）
+  if (longTaskRunner) {
+    registerLongTaskHandlers({
+      runner: longTaskRunner,
+      stepsUsed: (taskId) => orchestrator.getTaskSteps(taskId).filter((s) => s.actionName).length,
+    });
+  }
 }

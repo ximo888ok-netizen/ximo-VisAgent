@@ -9,6 +9,7 @@ import { MemoryStore } from './memory-store';
 import type { ExperienceStore } from './experience-store';
 import { runSop as runSopTemplate, saveSopFromTask as saveSopTemplate, type SopDeps } from './orchestrator-sop';
 import { CustomToolRuntime } from './custom-tools';
+import { notifyWriteToolSuccess } from './longtask-reconcile';
 import { ConversationStore } from './conversation-store';
 import { app } from 'electron';
 import { publishStep } from './windows/island';
@@ -63,6 +64,8 @@ export class Orchestrator {
   /** v3 M17: 自定义工具脚本的原子调用桥（晚绑定到当前任务的执行器） */
   private activeComputer: ComputerToolExecutor | null = null;
   private activeFiles: FileOfficeExecutor | null = null;
+  /** A-M7：当前任务沙箱目录（invokeAtom 的写工件钩子用它解析绝对路径） */
+  private activeWorkspaceDir = '';
   readonly customTools: CustomToolRuntime;
   readonly toolsDir: string;
 
@@ -83,7 +86,11 @@ export class Orchestrator {
     if (tool.startsWith('file_') || tool.startsWith('excel_')) {
       const files = this.activeFiles;
       if (!files) return { ok: false, summary: '无活动任务，文件类工具不可用', error: 'no-active-task' };
-      return files.execute(tool, args);
+      const res = await files.execute(tool, args);
+      // A-M7 遗留接线（M4 待装配清单一）：custom_* 脚本内 invoke 的文件写与直接调用
+      // 走同一条宿主自动登记钩子（钩子未装配时静默跳过，非锚定任务零回归）
+      if (res.ok && this.activeWorkspaceDir) notifyWriteToolSuccess(tool, args, this.activeWorkspaceDir);
+      return res;
     }
     const computer = this.activeComputer ?? new ComputerToolExecutor();
     this.activeComputer ??= computer;
@@ -145,9 +152,10 @@ export class Orchestrator {
       lastSteps: this.lastSteps,
       getApprovalTimeoutMs: () => this.approvalTimeoutMs,
       setApprovalTimeoutMs: (ms) => { this.approvalTimeoutMs = ms; },
-      setActiveExecutors: (computer, files) => {
+      setActiveExecutors: (computer, files, workspaceDir) => {
         this.activeComputer = computer;
         this.activeFiles = files;
+        this.activeWorkspaceDir = workspaceDir;
       },
       relaunch: (next) => void this.launch(next),
       dequeue: () => this.dequeue(),

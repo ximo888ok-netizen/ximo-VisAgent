@@ -23,6 +23,7 @@ import {
   AnchorWatchdog,
   type WatchdogSample,
   type WatchdogSignal,
+  type WatchdogReason,
   type WatchdogState,
   type WatchdogTick,
 } from './anchor-watchdog';
@@ -65,13 +66,17 @@ export interface AnchorWatchdogDeps {
   broadcast?: (status: AgentStatus, text: string) => void;
   /** 系统通知（缺省 electron Notification） */
   notify?: (title: string, body: string) => void;
+  /** 信号副作用（PAUSE/RESUME/FINISH）观测钩子：A-M7 FR-012 埋点用，绝不改变行为 */
+  onSignal?: (ev: { signal: WatchdogSignal; reason: WatchdogReason; awayMs: number; pausedMs: number }) => void;
 }
 
 export interface AnchorWatchdogHandle {
   /** 停表 + 收口状态机（幂等） */
   stop(): void;
   state(): WatchdogState;
-  /** 累计暂停时长（ms）：LongTaskRunner / 预算闸冻结计时用 */
+  /** 当前状态迁移原因（'' = 无；away-timeout | app-exited | task-finished） */
+  reason(): WatchdogReason;
+  /** 累计暂停时长（ms，含进行中暂停段）：LongTaskRunner / 预算闸冻结计时用 */
   pausedMs(): number;
   /** 驱动一格（缺省自采样；显式给 sample 供 selftest / 单测直驱） */
   tickOnce(sample?: ForegroundSample): WatchdogTick | null;
@@ -213,6 +218,13 @@ export function attachAnchorWatchdog(
     const tick = watchdog.tick(input);
     apply(tick.signal, tick);
     verifyPendingResume();
+    if (tick.signal !== 'NONE') {
+      try {
+        deps.onSignal?.({ signal: tick.signal, reason: tick.reason, awayMs: tick.awayMs, pausedMs: tick.pausedMs });
+      } catch (err) {
+        console.warn('[anchor-watchdog] onSignal 观测钩子异常（不影响任务）:', err instanceof Error ? err.message : err);
+      }
+    }
     return tick;
   }
 
@@ -227,6 +239,7 @@ export function attachAnchorWatchdog(
   const handle: AnchorWatchdogHandle = {
     stop,
     state: () => watchdog.state,
+    reason: () => watchdog.pauseReason,
     pausedMs: () => watchdog.pausedMs,
     tickOnce,
   };

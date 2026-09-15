@@ -16,6 +16,7 @@ import { buildScriptBody } from './tool-script';
 import { metaGuard, metaApprove, metaStatus } from './meta-gate';
 import { appConfigStore } from './config-store';
 import { applyApprovalModeChange } from './orchestrator-approval';
+import { createForegroundProbe, getForegroundProc } from './foreground-proc';
 
 export interface Check {
   name: string;
@@ -195,6 +196,23 @@ export async function runSelfTest(): Promise<Check[]> {
     }));
     const delta = audit.countApprovalDecisions(0) - before;
     return delta === 1 ? null : `人工干预计数差值 ${delta}，应为 1（策略行必须不计入）`;
+  });
+
+  // ---- 5. 前台探针真机门（A-M7，M3 清单）：koffi FFI 无纯逻辑替身，只在此处验真 ----
+  // selftest 只在有桌面的真机跑（--selftest 走 Electron 主进程），前台窗口必存在。
+  const fg = getForegroundProc();
+  record('前台探针（koffi）：getForegroundProc 返回非空前台进程', () => {
+    if (!fg) return 'GetForegroundWindow/pid→exe 链路返回 null（桌面会话异常）';
+    if (!fg.pid) return `前台 pid 为 0：${JSON.stringify(fg)}`;
+    if (!fg.basename) return '前台进程 exe 基名为空（QueryFullProcessImageNameW 失败或权限不足）';
+    return null;
+  });
+  record('前台探针（koffi）：以自身基名构族，sample() 判定族存活+前台在族内', () => {
+    if (!fg?.basename) return '前置探针未产出基名，跳过';
+    const sample = createForegroundProbe([fg.basename]).sample();
+    if (!sample.familyAlive) return `快照里找不到自身进程 ${fg.basename}（EnumProcesses 链路异常）`;
+    if (!sample.foregroundInFamily) return `前台是 ${fg.basename} 却判不在族内（pid→basename 匹配逻辑异常）`;
+    return null;
   });
 
   try {

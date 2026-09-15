@@ -11,6 +11,7 @@ import { getIslandWindow, showIsland, publishStep } from './windows/island';
 import { createStepEvent } from '../shared/island-contracts';
 import { pushApprovalRequest } from './island-bridge';
 import type { WeChatBot } from './wechat-bot';
+import type { TargetApp } from '../shared/schemas/longtask';
 import { formatTaskNotification, formatApprovalNotification } from './wechat-notify';
 import { resolveNotifyTarget } from './wechat-notify-target';
 
@@ -54,6 +55,13 @@ export interface ApprovalOperation {
   level?: number;
 }
 
+/** A-M7 收口卡附加数据（规划 §4.2）：触发闸 + 未完成清单 + 锚定应用（B 期「转为长期任务」的 payload 源） */
+export interface TaskFinishedExtras {
+  gate?: string;
+  remaining?: string[];
+  targetApp?: TargetApp;
+}
+
 /** 推送任务终态到岛 + stdout（E2E 归集用）+ 微信反向通知 */
 export function pushTaskFinished(
   taskId: string,
@@ -62,10 +70,16 @@ export function pushTaskFinished(
   steps: number,
   totalTokens: number,
   goal: string,
+  extras?: TaskFinishedExtras,
 ): void {
   const win = getIslandWindow();
   if (win && !win.webContents.isDestroyed()) {
-    win.webContents.send(ISLAND_CHANNELS.taskFinished, { taskId, status, finalAnswer, steps, totalTokens });
+    win.webContents.send(ISLAND_CHANNELS.taskFinished, {
+      taskId, status, finalAnswer, steps, totalTokens,
+      ...(extras?.gate ? { gate: extras.gate } : {}),
+      ...(extras?.remaining && extras.remaining.length > 0 ? { remaining: extras.remaining } : {}),
+      ...(extras?.targetApp ? { targetApp: extras.targetApp } : {}),
+    });
   }
   // 微信 Bot outbound：正文用任务目标（历史 bug：取的是岛窗口标题，恒为 "ximo-VisAgent Island"）
   if (wechatNotifier?.notifyOnFinish) sendWeChat(formatTaskNotification(goal, status, finalAnswer));

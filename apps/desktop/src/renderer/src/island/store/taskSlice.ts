@@ -3,6 +3,13 @@
  */
 import type { AppEntry, TargetApp, TaskFinishedPayload } from "@shared/island-contracts";
 
+/** A-M7 收口卡「转为长期任务」草稿（B-M1 接实现：路由到定时面板预填，A 期仅携带 payload） */
+export interface ConvertToLongTaskDraft {
+  goal: string;
+  sourceTaskId: string | null;
+  targetApp: TargetApp | null;
+}
+
 export interface TaskSliceState {
   currentTaskId: string | null;
   currentTaskGoal: string;
@@ -20,6 +27,8 @@ export interface TaskSliceState {
   appPickerOpen: boolean;
   /** apps:recent 缓存（冷启动空闲预热写入；面板打开时刷新，推荐组数据源） */
   recentApps: AppEntry[];
+  /** 「转为长期任务」草稿（A-M7 留路由；B-M1 接 job 载荷实现） */
+  convertDraft: ConvertToLongTaskDraft | null;
 
   setTaskStarted(taskId: string, goal: string, queuedIndex?: number): void;
   setTaskFinished(payload: TaskFinishedPayload): void;
@@ -29,6 +38,7 @@ export interface TaskSliceState {
   setTargetAppInvalid(invalid: boolean): void;
   setAppPickerOpen(open: boolean): void;
   setRecentApps(apps: AppEntry[]): void;
+  setConvertDraft(draft: ConvertToLongTaskDraft | null): void;
 }
 
 export function createTaskSlice(
@@ -45,6 +55,7 @@ export function createTaskSlice(
     targetAppInvalid: false,
     appPickerOpen: false,
     recentApps: [],
+    convertDraft: null,
 
     setTaskStarted(taskId, goal, queuedIndex) {
       set({
@@ -79,6 +90,10 @@ export function createTaskSlice(
 
     setRecentApps(apps) {
       set({ recentApps: apps });
+    },
+
+    setConvertDraft(draft) {
+      set({ convertDraft: draft });
     },
   };
 }

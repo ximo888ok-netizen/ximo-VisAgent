@@ -16,6 +16,7 @@ import { registerEmployeeApi, type EmployeePanelApi } from "./panels/employee";
 import { registerMissionApi, type MissionPanelApi } from "./panels/mission";
 import { registerAppsApi, type AppsPanelApi } from "./panels/apps";
 import { registerPreauthApi, type PreauthPanelApi } from "./panels/preauth";
+import { registerLongTaskApi, type LongTaskPanelApi } from "./panels/longtask";
 
 /** 面板 IPC = 基础各域通道 + v3 经验/演化层通道；全部切片自 IslandApi，无手抄签名（I2） */
 export type PanelApiMethods =
@@ -29,7 +30,8 @@ export type PanelApiMethods =
     EmployeePanelApi &
     MissionPanelApi &
     AppsPanelApi &
-    PreauthPanelApi;
+    PreauthPanelApi &
+    LongTaskPanelApi;
 
 export function registerPanelApi(
   safeInvoke: SafeInvoke,
@@ -47,5 +49,6 @@ export function registerPanelApi(
     ...registerMissionApi(safeInvoke),
     ...registerAppsApi(safeInvoke),
     ...registerPreauthApi(safeInvoke),
+    ...registerLongTaskApi(safeInvoke),
   };
 }

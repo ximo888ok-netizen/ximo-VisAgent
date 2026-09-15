@@ -94,6 +94,27 @@ describe('A. 状态机：回前台自动续跑（5s 内）', () => {
     expect(wd.pausedMs).toBe(30_000);
   });
 
+  it('A-M7 预算冻结：pausedMs getter 含进行中暂停段（暂停中每刻都在增长，时长闸不烧暂停）', () => {
+    // loop 暂停等待里每 250ms 轮询 BudgetGuard.check(step, now, tokens)，
+    // pauseProvider=watchdog.pausedMs 必须已含未结算的当前段，否则暂停期间仍烧时长
+    let clockNow = T0;
+    const wd = new AnchorWatchdog({ now: () => clockNow });
+    wd.tick(sample({ now: clockNow, inFamily: false }));
+    clockNow = T0 + DEFAULT_IDLE_MS;
+    expect(wd.tick(sample({ now: clockNow, inFamily: false })).signal).toBe('PAUSE');
+    clockNow = T0 + DEFAULT_IDLE_MS + 50_000; // 仍离开 50s（暂停中）
+    expect(wd.state).toBe('PAUSED');
+    expect(wd.pausedMs).toBe(50_000);
+    expect(wd.pauseReason).toBe('away-timeout');
+    clockNow = T0 + DEFAULT_IDLE_MS + 90_000;
+    expect(wd.pausedMs).toBe(90_000);
+    // 回到族内 RESUME：getter 与快照口径一致（结算后不再重复计）
+    const back = wd.tick(sample({ now: clockNow, inFamily: true }));
+    expect(back.signal).toBe('RESUME');
+    expect(wd.pausedMs).toBe(90_000);
+    expect(wd.pauseReason).toBe('');
+  });
+
   it('仍不在族内则保持 PAUSED，离开时长继续增长供播报/复盘标注', () => {
     const wd = paused();
     const stay = wd.tick(sample({ now: T0 + DEFAULT_IDLE_MS + 60_000, inFamily: false }));

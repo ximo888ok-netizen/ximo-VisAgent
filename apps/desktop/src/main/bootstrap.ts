@@ -35,6 +35,7 @@ import { createTray } from './tray';
 import { registerHotkeys } from './hotkeys';
 import { registerAuraHandlers } from './ipc/aura-handlers';
 import { registerIsland } from './ipc-registry';
+import { createLongTaskRunner, setLongTaskRunner } from './longtask-runner';
 import { loadApprovedTools } from './custom-tools';
 import { scheduleStartupDiagnostics } from './diagnostics';
 import { scheduleE2ERun } from './e2e-runner';
@@ -89,6 +90,16 @@ export async function bootstrap(deps: BootstrapDeps): Promise<void> {
     console.error('[main] 自定义工具恢复失败', err);
   }
 
+  // A-M7 装配（M4 清单）：长任务薄壳必须在 loadApprovedTools 之后创建——
+  // reload() 会清空非内置注册表，先建后载会把 checkpoint 工具洗掉；
+  // currentTaskId 走单并发恒 1 的纪律（§3.5），排队/未运行返回 null 即静默跳过登记
+  const longTaskRunner = createLongTaskRunner({
+    db: auditDb.exposeDb(),
+    customTools: orchestrator.customTools,
+    currentTaskId: () => orchestrator.runningTaskIds[0] ?? null,
+  });
+  setLongTaskRunner(longTaskRunner);
+
   updateSplashStage('启动感知服务', 0.65);
   try {
     await uiaClient.start();
@@ -117,6 +128,7 @@ export async function bootstrap(deps: BootstrapDeps): Promise<void> {
     missionRepo,
     missionRunRepo,
     missionRunner,
+    longTaskRunner,
   });
 
   auraSetFullscreenProbe(isForegroundFullscreen);

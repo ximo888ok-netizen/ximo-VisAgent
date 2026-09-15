@@ -1,12 +1,26 @@
 /**
- * FinishedCard.tsx — 终态卡（结论 + 存为 SOP 模板）
+ * FinishedCard.tsx — 终态收口卡（结论 + 触发闸 + 未完成清单 + 存为 SOP + 转长期任务）
  *
+ * A-M7（规划 §4.2）：收口卡显示触发闸（gate 字段，FR-006 口径）与工件对账出的
+ * 未完成清单；「转为长期任务」为 B 期入口——A 期只留 payload 与路由
+ * （草稿写入 store → 跳定时面板预填），job 携带锚位的实现在 B-M1 接线。
  * 终态 6s 后自动清除；SOP 输入聚焦或已填名称时暂停计时，给用户操作窗口（P1-7）。
  */
 import { useCallback, useEffect, useState } from "react";
 import type { TaskFinishedPayload } from "@shared/island-contracts";
 import { useIslandStore } from "../../../store/islandStore";
 import { statusLabel } from "../../common/labels";
+
+/** 触发闸人话（与 agent-core TaskEndGate / 审计 task_gate_report 同枚举） */
+const GATE_LABELS: Record<string, string> = {
+  "budget-steps": "预算闸 · 步数上限",
+  "budget-duration": "预算闸 · 时长上限",
+  "budget-tokens": "预算闸 · token 上限",
+  stall: "停滞闸 · 死局止损",
+  assertion: "断言闸 · 校验收口",
+  task_done: "模型自评完成",
+  error: "宿主异常收口",
+};
 
 export function FinishedCard({
   finished,
@@ -17,9 +31,13 @@ export function FinishedCard({
 }) {
   const clearTask = useIslandStore((s) => s.clearTask);
   const pushToast = useIslandStore((s) => s.pushToast);
+  const setConvertDraft = useIslandStore((s) => s.setConvertDraft);
+  const setPanelMode = useIslandStore((s) => s.setPanelMode);
   const [sopName, setSopName] = useState("");
   const [sopFocused, setSopFocused] = useState(false);
   const completed = finished.status === "COMPLETED";
+  const gateText = finished.gate ? GATE_LABELS[finished.gate] ?? `闸口 ${finished.gate}` : null;
+  const remaining = finished.remaining ?? [];
 
   const handleSaveSop = useCallback(async () => {
     // P1-7 修复：终态自动清除后 currentTaskId 为空，回退到终态 payload 中的 taskId
@@ -37,6 +55,18 @@ export function FinishedCard({
       onError(res.error);
     }
   }, [sopName, finished.taskId, pushToast, onError]);
+
+  // B 期入口（A-M7 留路由）：草稿携带目标 + 锚位 + 来源任务，跳定时面板预填创建表单
+  const handleConvertToLongTask = useCallback(() => {
+    const goal = useIslandStore.getState().currentTaskGoal;
+    if (!goal.trim()) {
+      pushToast("error", "任务目标已清除，无法转为长期任务");
+      return;
+    }
+    setConvertDraft({ goal, sourceTaskId: finished.taskId ?? null, targetApp: finished.targetApp ?? null });
+    setPanelMode("schedule");
+    pushToast("info", "已带目标跳转「定时任务」：确认后创建（B-M1 起自动携带锚位与授权）");
+  }, [finished.taskId, finished.targetApp, setConvertDraft, setPanelMode, pushToast]);
 
   useEffect(() => {
     if (sopFocused || sopName.trim()) return;
@@ -59,11 +89,29 @@ export function FinishedCard({
           </span>
           <span>{finished.steps} 步 · {finished.totalTokens} tokens</span>
         </div>
+        {/* 收口报告（FR-006）：终态由哪一闸触发（预算/停滞闸收口必然有值） */}
+        {gateText && (
+          <div className="mb-1 inline-flex items-center gap-1 rounded-full ig-bg-panel-hover px-2 py-0.5 text-[11px] t-muted" data-interactive>
+            收口闸 · {gateText}
+          </div>
+        )}
         <div className="text-[13px] leading-snug t-strong">
           {finished.finalAnswer || (completed ? "任务已完成" : "未返回详细结果，可在历史面板查看")}
         </div>
+        {/* 未完成清单（最新检查点工件对账；断点保留，续跑从这些项重做） */}
+        {remaining.length > 0 && (
+          <div className="mt-1.5 text-[12px] t-muted">
+            <div className="t-faint">未完成清单（{remaining.length} 项，工件核对）：</div>
+            <ul className="mt-0.5 max-h-20 list-inside list-disc overflow-y-auto pl-0.5 leading-snug">
+              {remaining.slice(0, 8).map((item) => (
+                <li key={item} className="truncate" title={item}>{item}</li>
+              ))}
+              {remaining.length > 8 && <li className="t-faint">…另 {remaining.length - 8} 项</li>}
+            </ul>
+          </div>
+        )}
       </div>
-      {/* 存为 SOP */}
+      {/* 存为 SOP / 转为长期任务（B 期入口） */}
       <div className="mt-2 flex gap-1.5">
         <input
           className="island-input h-7 flex-1 text-[12px]"
@@ -82,6 +130,14 @@ export function FinishedCard({
           data-interactive
         >
           存为模板
+        </button>
+        <button
+          className="island-btn island-btn--ghost h-7 px-3 text-[12px]"
+          onClick={handleConvertToLongTask}
+          data-interactive
+          title="带着本任务目标与锚位创建周期长期任务（B-M1 接通无人值守载荷）"
+        >
+          转为长期任务
         </button>
       </div>
     </div>

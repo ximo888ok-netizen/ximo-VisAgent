@@ -2,6 +2,7 @@
  * SchedulePanel.tsx — 定时任务面板（列表 + 新建：SOP 模板/自定义目标 + cron 预设）
  */
 import { useEffect, useState } from "react";
+import type { TargetApp } from "@shared/island-contracts";
 import { useIslandStore } from "../../store/islandStore";
 import { JobCard } from "./Schedule/JobCard";
 
@@ -27,6 +28,8 @@ export function SchedulePanel() {
   const loadSops = useIslandStore((s) => s.loadSops);
   const pushToast = useIslandStore((s) => s.pushToast);
   const setPanelMode = useIslandStore((s) => s.setPanelMode);
+  const convertDraft = useIslandStore((s) => s.convertDraft);
+  const setConvertDraft = useIslandStore((s) => s.setConvertDraft);
 
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -36,11 +39,24 @@ export function SchedulePanel() {
   const [cron, setCron] = useState(PRESETS[1]?.cron ?? "0 17 * * *");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** A-M7「转为长期任务」草稿携带的锚位/来源（B-M1 起随 job 触发下传；A 期透传存储侧忽略） */
+  const [convertAnchor, setConvertAnchor] = useState<{ targetApp: TargetApp | null; sourceTaskId: string | null } | null>(null);
 
   useEffect(() => {
     void loadJobs();
     if (sops.length === 0) void loadSops();
   }, [loadJobs, sops.length, loadSops]);
+
+  // A-M7 路由：收口卡点「转为长期任务」→ 带着目标与锚位预填新建表单（B-M1 接实现）
+  useEffect(() => {
+    if (!convertDraft) return;
+    setMode("goal");
+    setGoal(convertDraft.goal);
+    setName(`长期：${convertDraft.goal.slice(0, 14)}`);
+    setConvertAnchor({ targetApp: convertDraft.targetApp, sourceTaskId: convertDraft.sourceTaskId });
+    setCreating(true);
+    setConvertDraft(null);
+  }, [convertDraft, setConvertDraft]);
 
   const handleCreate = async () => {
     if (busy) return;
@@ -53,12 +69,16 @@ export function SchedulePanel() {
       name: name.trim(),
       ...(mode === "sop" ? { sopId } : { goal: goal.trim() }),
       cron,
+      // B-M1 预留载荷：转换草稿的锚位与来源任务（触发链 A 期忽略，不影响旧 job）
+      ...(convertAnchor?.targetApp ? { targetApp: convertAnchor.targetApp } : {}),
+      ...(convertAnchor?.sourceTaskId ? { sourceTaskId: convertAnchor.sourceTaskId } : {}),
     });
     setBusy(false);
     if (res.ok) {
       pushToast("success", `定时任务「${name.trim()}」已创建`);
       setName("");
       setGoal("");
+      setConvertAnchor(null);
       setCreating(false);
     } else {
       setError(res.error ?? "创建失败");
@@ -122,6 +142,11 @@ export function SchedulePanel() {
                 onChange={(e) => setGoal(e.target.value)}
                 data-interactive
               />
+            )}
+            {mode === "goal" && convertAnchor && (
+              <div className="mb-2 text-[11px] t-faint">
+                携带锚位：{convertAnchor.targetApp?.name ?? "无应用锚定"} · 来源任务已记录（B-M1 起触发时自动生效）
+              </div>
             )}
             {/* cron 预设 */}
             <div className="mb-2 flex flex-wrap gap-1">

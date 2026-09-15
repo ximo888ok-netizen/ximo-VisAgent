@@ -74,3 +74,67 @@ export function classifyFailure(status: string, finalAnswer: string): string | n
   if (/LLM|模型|连续失败|重试耗尽/.test(finalAnswer)) return 'LLM_ERROR';
   return 'UNKNOWN';
 }
+
+/* ---------------------------------------------------------------------------
+ * A-M7 FR-012 度量埋点（A 期口径，审计 kind 直查 SQL；B 期面板聚合前不进 UI）
+ *
+ * 事件形态（均带 taskId，detail JSON 内字段见各函数）：
+ *   anchor_attached     锚定起跑（targetAppId + 预算档位）
+ *   anchor_pause / anchor_resume / anchor_finish   看门狗信号（anchorPausedReason / awayMs / pausedMs）
+ *   approval_decided    decidedBy: 'preauth' | 'policy' |（人工行无该字段）
+ *   task_gate_report    触发闸 + 未完成清单（A-M5 已落，此处不重复）
+ * 一切写入失败只留日志，绝不影响任务主链路。
+ * ------------------------------------------------------------------------- */
+
+/** 锚定任务起跑登记（无 targetApp 的旧任务不产生任何行 = 零回归） */
+export function recordAnchorAttached(
+  audit: ZODB,
+  task: { taskId: string; targetApp?: { id: string } | null; longTask?: { watchdogIdleMs?: number } | null },
+  budget: { maxSteps: number; maxDurationMs: number; maxTokens: number } | null,
+): void {
+  if (!task.targetApp) return;
+  try {
+    audit.insert(audit.fromAgentEvent(task.taskId, {
+      type: 'anchor_attached',
+      targetAppId: task.targetApp.id,
+      ...(budget ? { maxSteps: budget.maxSteps, maxDurationMs: budget.maxDurationMs, maxTokens: budget.maxTokens } : {}),
+      watchdogIdleMs: task.longTask?.watchdogIdleMs ?? null,
+    }));
+  } catch (err) {
+    console.warn('[audit] anchor_attached 落库失败（不影响任务）:', err instanceof Error ? err.message : err);
+  }
+}
+
+/** 看门狗信号落审计（anchor-watchdog-host.onSignal 观测钩子的落库端） */
+export function recordAnchorWatchdogEvent(
+  audit: ZODB,
+  taskId: string,
+  ev: { signal: string; reason: string; awayMs: number; pausedMs: number },
+): void {
+  try {
+    const kind = `anchor_${ev.signal.toLowerCase()}`; // pause | resume | finish
+    audit.insert(audit.fromAgentEvent(taskId, {
+      type: kind,
+      anchorPausedReason: ev.reason,
+      awayMs: ev.awayMs,
+      pausedMs: ev.pausedMs,
+    }));
+  } catch (err) {
+    console.warn('[audit] 看门狗信号落库失败（不影响任务）:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * FR-012 A 期四项指标（audit 表直查；「SQL 可查」验收口径，B-M3 面板聚合前的正源）。
+ * detail 为 JSON 字符串列，用 json_extract 取字段。
+ */
+export const FR012_METRIC_SQL: Record<'anchoredTasks' | 'pauseCount' | 'preauthRate' | 'gateDist', string> = {
+  anchoredTasks: "SELECT COUNT(DISTINCT taskId) AS anchored_tasks FROM audit WHERE kind = 'anchor_attached'",
+  pauseCount: "SELECT COUNT(*) AS pauses FROM audit WHERE kind = 'anchor_pause'",
+  preauthRate: "SELECT SUM(CASE WHEN json_extract(detail,'$.decidedBy') = 'preauth' THEN 1 ELSE 0 END) AS preauth," +
+    " COUNT(*) AS total_approvals," +
+    " 1.0 * SUM(CASE WHEN json_extract(detail,'$.decidedBy') = 'preauth' THEN 1 ELSE 0 END) / COUNT(*) AS preauth_rate" +
+    " FROM audit WHERE kind = 'approval_decided'",
+  gateDist: "SELECT json_extract(detail,'$.gate') AS gate, COUNT(*) AS n FROM audit" +
+    " WHERE kind = 'task_gate_report' GROUP BY gate",
+};

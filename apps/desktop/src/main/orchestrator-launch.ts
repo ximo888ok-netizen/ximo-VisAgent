@@ -12,15 +12,17 @@ import { ApprovalEngine } from '@ximo-visagent/safety';
 import { ComputerToolExecutor, evaluateTaskAssertion, type FileOfficeExecutor } from '@ximo-visagent/control-kit';
 import { makeClassifier, makeClients } from './orchestrator-clients';
 import { withSomMarks } from './som-mark';
-import { buildExecutorStack } from './orchestrator-executors';
+import { buildExecutorStack, workspaceDirOf } from './orchestrator-executors';
 import { buildTaskInjections } from './orchestrator-context';
 import { createApprovalGate } from './orchestrator-approval';
 import { createRecoveryMatcher } from './orchestrator-recovery';
 import { announceApprovalRequest } from './e2e-runner';
 import { finalizeTaskExperience } from './orchestrator-experience';
-import { classifyFailure, toStepSkeleton, persistAgentEvent } from './orchestrator-audit';
+import { classifyFailure, toStepSkeleton, persistAgentEvent, recordAnchorAttached, recordAnchorWatchdogEvent } from './orchestrator-audit';
 import { pushTaskFinished, notifyTaskStarted, notifyTaskFinished, requestApprovalUI } from './orchestrator-notify';
 import { attachAnchorWatchdog, getAnchorWatchdog } from './anchor-watchdog-host';
+import { getLongTaskRunner } from './longtask-runner';
+import { getPreauthGrants } from './ipc-registry';
 import { createCheckpointStore } from './checkpoint-store';
 import { probeArtifact, reconcileCheckpoint } from './longtask-reconcile';
 import { initPerception } from './perception-host';
@@ -43,7 +45,7 @@ export interface LaunchHost {
   lastSteps: Map<string, StepDetail[]>;
   getApprovalTimeoutMs(): number;
   setApprovalTimeoutMs(ms: number): void;
-  setActiveExecutors(computer: ComputerToolExecutor, files: FileOfficeExecutor): void;
+  setActiveExecutors(computer: ComputerToolExecutor, files: FileOfficeExecutor, workspaceDir: string): void;
   /** 自动重试：以新 taskId 重新入列执行 */
   relaunch(t: QueuedTask): void;
   dequeue(): void;
@@ -85,7 +87,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     // 联网搜索复用主大脑（text LLM）的 provider/Key
     llmConfig: cfg.agent.textLLM,
   });
-  host.setActiveExecutors(stack.computer, stack.files);
+  host.setActiveExecutors(stack.computer, stack.files, workspaceDirOf(cfg.workspaceDir));
   const executor = stack.executor;
 
   // v3 M17: 已批准的自定义工具下发给模型
@@ -102,6 +104,9 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     maxDurationMs: t.longTask?.maxDurationMs ?? 4 * 60 * 60_000,
     maxTokens: t.longTask?.maxTokens ?? 8_000_000,
   } : undefined;
+  // A-M7 装配（M3 清单 1）：guard 与 longtask-runner 台账共用同一预算起点，
+  // pauseProvider 读看门狗累计暂停（含进行中暂停段）→ 暂停期间时长/步数/token 三维度均不烧
+  const budgetStartedAt = Date.now();
 
   const opts: AgentLoopOptions = {
     textLLM: text,
@@ -122,6 +127,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
         maxSteps: longTaskBudget.maxSteps,
         maxDurationMs: longTaskBudget.maxDurationMs,
         maxTokens: longTaskBudget.maxTokens,
+        startedAt: budgetStartedAt,
         pauseProvider: () => getAnchorWatchdog(t.taskId)?.pausedMs() ?? 0,
       })
       : undefined,
@@ -143,6 +149,9 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
           const w = getIslandWindow();
           return !!w && !w.isDestroyed();
         },
+        // A-M6→A-M7 装配（清单 6）：仓储只返回 acked ∧ active ∧ 未过期的 grant；
+        // 未 ack = 空表 = 真值表逐字节回落到既有 ask 路径（装配级用例见 approval-gate-assembly.test.ts）
+        grantRepo: { listActiveForTask: (taskId) => getPreauthGrants()?.listActiveForTask(taskId) ?? [] },
       },
       { taskId: t.taskId, interactive: t.interactive === true },
     ),
@@ -182,7 +191,19 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
 
   // A-M3 前台看门狗（纯注入接线）：仅带 targetApp 的锚定任务装配，其余任务返回 null 链路不变。
   // 判定/暂停/续跑/收口全在 anchor-watchdog*.ts 三文件内，这里不承载任何看门狗逻辑。
-  const watchdog = attachAnchorWatchdog(host, t);
+  const watchdog = attachAnchorWatchdog(host, t, {
+    // A-M7 FR-012 埋点：暂停/续跑/收口信号落审计（SQL 可查，见 orchestrator-audit）
+    onSignal: (ev) => recordAnchorWatchdogEvent(audit, t.taskId, ev),
+  });
+  // A-M7 装配（M3 清单 2 + §4.2 数据源）：仅锚定任务登记台账（无 chip 的旧任务/纯 longTask
+  // 任务保持 anchored=false，控制条呈现与现状逐字一致）；status() 经 getAnchorWatchdog 聚合看门狗态
+  if (t.targetApp) {
+    getLongTaskRunner()?.attachWatchdog(t.taskId, {
+      targetApp: t.targetApp,
+      budget: longTaskBudget ? { maxSteps: longTaskBudget.maxSteps, maxDurationMs: longTaskBudget.maxDurationMs, startedAt: budgetStartedAt } : null,
+    });
+  }
+  recordAnchorAttached(audit, t, longTaskBudget ?? null);
 
   // BUG-14 修复：通知 UI 任务已开始执行（对排队任务尤其重要）
   notifyTaskStarted(t.taskId, t.goal);
@@ -197,13 +218,14 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
       const failureKind = classifyFailure(result.status, result.finalAnswer);
       audit.insert(audit.fromAgentEvent(t.taskId, { type: 'task_result', status: result.status, finalAnswer: result.finalAnswer ?? '', steps: result.steps, totalTokens: result.totalTokens, gate: result.gate }));
       // A-M5 收口报告（FR-006）：终态由哪一闸触发 + 最新检查点工件对账出的未完成清单（断点保留由 A-M4 纪律兜底）
+      const gateRemaining = result.gate ? checkpointRedoItems(audit, t.taskId) : [];
       if (result.gate) {
         audit.insert(audit.fromAgentEvent(t.taskId, {
           type: 'task_gate_report',
           gate: result.gate,
           steps: result.steps,
           reason: (result.finalAnswer ?? '').slice(0, 160),
-          remaining: checkpointRedoItems(audit, t.taskId),
+          remaining: gateRemaining,
         }));
       }
       audit.finishTask(
@@ -211,7 +233,12 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
         failureKind ?? undefined,
       );
       notifyTaskFinished(t.goal, result.status);
-      pushTaskFinished(t.taskId, result.status, result.finalAnswer, result.steps, result.totalTokens, t.goal);
+      // A-M7 收口卡（§4.2）：触发闸 + 未完成清单 + 锚位（「转为长期任务」B 期入口的 payload 源）
+      pushTaskFinished(t.taskId, result.status, result.finalAnswer, result.steps, result.totalTokens, t.goal, {
+        gate: result.gate,
+        remaining: gateRemaining,
+        targetApp: t.targetApp,
+      });
 
       // 会话上下文记录（无论成败，本轮对话已发生）
       deps.conversation?.recordTurn(t.goal, result.finalAnswer);
@@ -261,7 +288,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
       audit.insert(audit.fromAgentEvent(t.taskId, { type: 'error', message: `任务崩溃: ${err.message}`, gate: 'error' }));
       audit.finishTask(t.taskId, 'FAILED', `任务崩溃: ${err.message}`, undefined, undefined, 'INTERNAL_ERROR');
       notifyTaskFinished(t.goal, 'FAILED');
-      pushTaskFinished(t.taskId, 'FAILED', `任务崩溃: ${err.message}`, 0, 0, t.goal);
+      pushTaskFinished(t.taskId, 'FAILED', `任务崩溃: ${err.message}`, 0, 0, t.goal, { gate: 'error', targetApp: t.targetApp });
       // 条目3.A：崩溃也自动重跑一次（与 .then 的失败重试同纪律：仅一次、可关、带教训 guidance）
       if (!t.isRetry && cfg.autoRetry !== false) {
         relaunched = true;
@@ -275,6 +302,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     })
     .finally(() => {
       watchdog?.stop();
+      getLongTaskRunner()?.untrack(t.taskId);
       host.loops.delete(t.taskId);
       auraTaskFinished(t.taskId);
       // lastSteps 保留（SOP 保存窗口期使用），容量封顶 20 条

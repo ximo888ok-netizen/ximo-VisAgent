@@ -12,9 +12,10 @@
  *   · 进程退出 = 任务收口（FINISH）。宽限：从未观测到存活（seenAlive=false）不判退出，
  *     防「应用还没拉起来」被误签。
  *
- * 暂停期间的任务计时冻结：本状态机累计 `pausedMs`（各段 PAUSED 起止之和）。注意
- * agent-core loop.ts 的墙钟在暂停等待中仍在走（loop.ts:145 判「暂停期间超过单任务时间上限」），
- * 真正冻结需 A-M5 BudgetGuard 以 `elapsed = now - startedAt - pausedMs` 计算 —— 见交付汇报待装配清单。
+ * 暂停期间的任务计时冻结：本状态机累计 `pausedMs`（已结算各段 PAUSED 之和 + 当前
+ * 未结算暂停段）。A-M7 起 A-M5 BudgetGuard 经 pauseProvider 读该值算
+ * `elapsed = now - startedAt - pausedMs()`，暂停中 loop 每 250ms 轮询预算闸，
+ * 必须含进行中的一段，否则暂停期间仍在烧时长预算。
  */
 
 export const DEFAULT_IDLE_MS = 120_000;
@@ -76,9 +77,15 @@ export class AnchorWatchdog {
     return this.current;
   }
 
-  /** 累计暂停时长（ms）：A-M5 预算闸 / UI「暂停 x 分钟」的唯一真源 */
+  /** 累计暂停时长（ms）：A-M5 预算闸 / UI「暂停 x 分钟」的唯一真源；含进行中的暂停段 */
   get pausedMs(): number {
-    return this.pausedTotal;
+    const openMs = this.pausedSince === null ? 0 : Math.max(0, this.clock() - this.pausedSince);
+    return this.pausedTotal + openMs;
+  }
+
+  /** 当前/最近一次状态迁移的原因（UI 横幅与 FR-012 埋点共用） */
+  get pauseReason(): WatchdogReason {
+    return this.reason;
   }
 
   /** 推进一格；now 缺省取注入时钟 */

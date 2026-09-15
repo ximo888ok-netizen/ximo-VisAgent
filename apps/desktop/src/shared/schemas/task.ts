@@ -39,13 +39,22 @@ export const CancelTaskSchema = z.object({
   taskId: z.string().min(1),
 });
 
-/** 任务终态推送 payload（main -> renderer） */
+/** 任务终态推送 payload（main -> renderer）；A-M7 收口卡扩展字段全部可选（零回归） */
 export const TaskFinishedSchema = z.object({
   taskId: z.string().min(1),
   status: z.string(),
   finalAnswer: z.string(),
   steps: z.number().int(),
   totalTokens: z.number().int(),
+  /** 触发闸（FR-006 收口口径）：预算/停滞/断言/模型完成/宿主异常；缺省 = 未标注的旧链路 */
+  gate: z.enum([
+    "budget-steps", "budget-duration", "budget-tokens",
+    "stall", "assertion", "task_done", "error",
+  ]).optional(),
+  /** 未完成清单（最新检查点工件对账出的重做项，"路径（原因）"人话形态；上限对齐 CheckpointArtifact.path 1024+后缀） */
+  remaining: z.array(z.string().max(1100)).max(50).optional(),
+  /** 锚定应用（「转为长期任务」B 期入口的 payload 源） */
+  targetApp: TargetAppSchema.optional(),
 });
 export type TaskFinishedPayload = z.infer<typeof TaskFinishedSchema>;
 

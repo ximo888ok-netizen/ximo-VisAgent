@@ -233,6 +233,12 @@ export const ISLAND_CHANNELS = {
   /** renderer -> main (invoke)：撤销（未 ack 关闭授权卡 / B 期面板） */
   grantRevoke: "grant:revoke",
 
+  // ---- 锚定长任务聚合态（A-M7，§4.2 控制条 / §3.6 恢复预览）----
+  /** renderer -> main (invoke)：锚定态+进度+剩余预算+看门狗态（控制条 1s 轮询） */
+  longtaskStatus: "longtask:status",
+  /** renderer -> main (invoke)：任务检查点列表（seq 降序，恢复预览/B 期面板） */
+  longtaskCheckpoints: "longtask:checkpoints",
+
   // ---- Agent 在场指示（极光边框）----
   /** main -> aura 窗口：状态变更 */
   auraState: "aura:state",

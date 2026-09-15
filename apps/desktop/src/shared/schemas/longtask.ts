@@ -199,3 +199,57 @@ export const GrantIdSchema = z.object({
   grantId: z.string().regex(/^g_[0-9a-f]{12}$/, "grantId 形态非法"),
 });
 export type GrantIdRequest = z.infer<typeof GrantIdSchema>;
+
+/* ---------------------------------------------------------------------------
+ * 锚定长任务聚合态（规划 §4.2/§4.4，A-M7：longtask:status / longtask:checkpoints）
+ * ------------------------------------------------------------------------- */
+
+/** 两通道共用的入参（单并发恒 1，taskId 即当前任务） */
+export const LongTaskQuerySchema = z.object({
+  taskId: z.string().min(1).max(64),
+});
+export type LongTaskQueryRequest = z.infer<typeof LongTaskQuerySchema>;
+
+/**
+ * 控制条聚合状态（数据源 = LongTaskRunner.status() + 审计步数拼装）：
+ * 「已锚定 [icon] 名称 · 进度 x/y · 剩余 时长/步数」+ PAUSED（看门狗来源）横幅。
+ */
+export const LongTaskStatusPayloadSchema = z.object({
+  /** 是否锚定任务（false = 非锚定旧任务，控制条仅显示运行中，零回归） */
+  anchored: z.boolean(),
+  /** 锚定应用（chip 发送即清空，运行期图标+名称唯一数据源） */
+  targetApp: TargetAppSchema.optional(),
+  /** 最新检查点游标（无检查点缺省 = 仅有步骤没有业务进度） */
+  progress: z.object({
+    done: z.number().int().min(0),
+    total: z.number().int().positive().optional(),
+    unit: z.string(),
+  }).optional(),
+  /** 检查点恢复文案素材（「已录入 17/30 张发票」） */
+  summary: z.string().default(""),
+  /** 工件对账后的重做项数（0 = 断点新鲜） */
+  redoCount: z.number().int().min(0).default(0),
+  /** 剩余预算（durationMs 已扣除看门狗暂停冻结；步数 = 档位上限 - 审计已用步数） */
+  budgetLeft: z.object({
+    durationMs: z.number().int().min(0).optional(),
+    steps: z.number().int().min(0).optional(),
+  }).optional(),
+  /** 看门狗态（纯逻辑状态机三态；未锚定/未装配缺省） */
+  watchdogState: z.enum(["RUNNING", "PAUSED", "STOPPED"]).optional(),
+  /** 暂停原因（watchdogState=PAUSED 时横幅文案源；away-timeout | app-exited | task-finished） */
+  pauseReason: z.enum(["away-timeout", "app-exited", "task-finished"]).optional(),
+});
+export type LongTaskStatusPayload = z.infer<typeof LongTaskStatusPayloadSchema>;
+
+/** 检查点摘要（seq 降序）：恢复预览/面板用，工件本体只报数不报路径（防爆行） */
+export const LongTaskCheckpointSummarySchema = z.object({
+  seq: z.number().int().min(1),
+  kind: CheckpointKindSchema,
+  done: z.number().int().min(0),
+  total: z.number().int().positive().optional(),
+  unit: z.string(),
+  summary: z.string(),
+  artifactCount: z.number().int().min(0),
+  createdAt: z.number().int(),
+});
+export type LongTaskCheckpointSummary = z.infer<typeof LongTaskCheckpointSummarySchema>;

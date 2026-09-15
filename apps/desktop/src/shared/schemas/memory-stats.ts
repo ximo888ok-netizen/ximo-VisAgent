@@ -2,6 +2,7 @@
  * 记忆 / 统计 / 定时 / 会话域 schema（island-smart-handlers 对应面板）
  */
 import { z } from "zod";
+import { TargetAppSchema } from "./longtask";
 
 /** 记忆条目（工作事实，自动提炼自完成任务） */
 export const MemoryRowSchema = z.object({
@@ -71,6 +72,10 @@ export const SchedulerCreateSchema = z.object({
   sopId: z.string().optional(),
   goal: z.string().max(2000).optional(),
   cron: z.string().min(1).max(60),
+  /** B-M1 预留（A-M7 留路由）：job 触发时随 startTask 下传的锚位；A 期存储侧忽略 */
+  targetApp: TargetAppSchema.optional(),
+  /** B-M1 预留：「转为长期任务」的来源任务 id（审计回链） */
+  sourceTaskId: z.string().max(64).optional(),
 });
 export type SchedulerCreateRequest = z.infer<typeof SchedulerCreateSchema>;
 
