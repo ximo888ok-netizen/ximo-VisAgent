@@ -45,7 +45,7 @@ export class EmployeeStore {
           confirmed INTEGER NOT NULL DEFAULT 0,
           createdAt INTEGER NOT NULL,
           updatedAt INTEGER NOT NULL,
-          FOREIGN KEY (positionId) REFERENCES positions(id)
+          FOREIGN KEY (positionId) REFERENCES positions(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_fact_cards_position ON fact_cards(positionId);
         CREATE INDEX IF NOT EXISTS idx_fact_cards_topic ON fact_cards(topic);
@@ -61,7 +61,7 @@ export class EmployeeStore {
           status TEXT NOT NULL DEFAULT 'in_progress',
           createdAt INTEGER NOT NULL,
           updatedAt INTEGER NOT NULL,
-          FOREIGN KEY (positionId) REFERENCES positions(id)
+          FOREIGN KEY (positionId) REFERENCES positions(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_reports_position ON onboarding_reports(positionId);
 
@@ -141,9 +141,20 @@ export class EmployeeStore {
     return this.db.prepare(`UPDATE positions SET ${sets.join(', ')} WHERE id = ?`).run(...params).changes > 0;
   }
 
+  /**
+   * 删除岗位（连带清理事实卡与入职报告）。
+   * 手动级联的原因：mission-db 迁移在同一连接上执行了 PRAGMA foreign_keys=ON，
+   * 而存量库的 fact_cards/onboarding_reports 建表时外键未带 ON DELETE CASCADE
+   * （SQLite 无法原地补改），直接删 positions 会抛 FOREIGN KEY 约束异常——
+   * 即「员工删不掉」的根因。新库建表已补 CASCADE，此处写法对两种库都正确。
+   */
   deletePosition(id: string): boolean {
-    const res = this.db.prepare('DELETE FROM positions WHERE id = ?').run(id);
-    return res.changes > 0;
+    const tx = this.db.transaction((pid: string) => {
+      this.db.prepare('DELETE FROM onboarding_reports WHERE positionId = ?').run(pid);
+      this.db.prepare('DELETE FROM fact_cards WHERE positionId = ?').run(pid); // ad 触发器同步 FTS
+      return this.db.prepare('DELETE FROM positions WHERE id = ?').run(pid).changes > 0;
+    });
+    return tx(id);
   }
 
   // ---------- 事实卡 CRUD ----------

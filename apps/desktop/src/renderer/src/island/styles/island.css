@@ -178,6 +178,7 @@ html.light {
 .ig-bg-warning { background: var(--tone-warning); }
 .ig-bg-success { background: var(--tone-success); }
 .ig-bg-info    { background: var(--tone-info); }
+.ig-fg-on-accent { color: #fff; } /* 实心 tone 底色之上的通用前景（武装态按钮等，双主题一致） */
 
 /* hover 变体（Tailwind v4 不为自定义类生成 hover:，需手动定义） */
 .hover\:ig-fg-danger:hover  { color: var(--tone-danger-fg); }

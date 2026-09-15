@@ -4,6 +4,7 @@
  * 岗位列表 → 创建/编辑岗位 → 入职流程 → 报告确认 → 事实卡浏览
  */
 import { useEffect, useState, useCallback } from "react";
+import { useIslandStore } from "../../../store/islandStore";
 import { PositionForm } from "./PositionForm";
 import { OnboardingView } from "./OnboardingView";
 import { FactCardList } from "./FactCardList";
@@ -36,6 +37,9 @@ export function EmployeePanel() {
   const [editTarget, setEditTarget] = useState<PositionRowPayload | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reports, setReports] = useState<OnboardingReportRowPayload[]>([]);
+  /** 两步删除确认：记录待二次点击确认的岗位 id */
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const pushToast = useIslandStore((s) => s.pushToast);
 
   const loadPositions = useCallback(async () => {
     if (!api) return;
@@ -100,9 +104,13 @@ export function EmployeePanel() {
     if (!api) return;
     const res = await api.employeeDeletePosition(id);
     if (res.ok) {
+      pushToast("success", "已删除岗位");
       void loadPositions();
       if (selectedId === id) setSelectedId(null);
+    } else {
+      pushToast("error", res.error || "删除失败");
     }
+    setPendingDeleteId(null);
   };
 
   const selected = positions.find((p) => p.id === selectedId);
@@ -174,10 +182,17 @@ export function EmployeePanel() {
               </button>
               <button
                 data-interactive
-                className="text-[12px] ig-fg-danger hover:ig-fg-danger"
-                onClick={() => void handleDelete(pos.id)}
+                className={
+                  pendingDeleteId === pos.id
+                    ? "rounded-md ig-bg-danger px-1.5 py-0.5 text-[12px] ig-fg-on-accent"
+                    : "text-[12px] ig-fg-danger hover:ig-fg-danger"
+                }
+                onClick={() => {
+                  if (pendingDeleteId === pos.id) void handleDelete(pos.id);
+                  else setPendingDeleteId(pos.id);
+                }}
               >
-                删除
+                {pendingDeleteId === pos.id ? "确认删除?" : "删除"}
               </button>
             </div>
 
