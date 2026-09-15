@@ -77,6 +77,7 @@ export class AgentLoop {
     this.cancelled = false;
     this.stopped = false;
     this.paused = false;
+    groundCache?.beginTask(); // 自愈停用/连败计数不跨任务（缓存坐标点击连败 2 次 → 上一任务停用）
     // R3: 连续被拒计数器（阈值见 loop-approval.ts MAX_CONSECUTIVE_REJECTIONS）
     let consecutiveRejections = 0;
     // P0-5 修复：LLM 连续失败熔断（避免无 Key/断网时空烧步数）

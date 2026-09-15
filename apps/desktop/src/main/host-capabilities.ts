@@ -7,6 +7,7 @@ import { withCoordinateGrid } from './perception-grid';
 import { activateWindow, listWindows } from '@ximo-visagent/control-kit';
 import { pHash64 } from '@ximo-visagent/perception';
 import { setPassthrough } from './windows/island';
+import type { RegionFingerprint } from '@ximo-visagent/agent-core';
 import type { HostCapabilities, OverlayEvent } from '@ximo-visagent/control-kit';
 
 /** 可见窗口列表注入上限（注入太多浪费 token） */
@@ -274,6 +275,44 @@ async function captureNative() {
   if (!source) throw new Error('no screen source');
   return source.thumbnail;
 }
+
+/**
+ * 坐标表缓存的局部外观复核指纹：在原生净帧上裁出 box 区域（截图像素坐标）取 pHash64。
+ * 与 frameSignature 同口径（缩到 64 宽的感知哈希，抗 JPEG/光标噪声）。
+ * 保守铁律：越出屏幕边界 / 截图或解码失败 → null（GroundCache 一律按 miss/不记表处理）。
+ * 由 desktop 组装根注入 GroundCache——agent-core 禁止 import 本包与 perception，依赖方向不破。
+ */
+export const regionFingerprint: RegionFingerprint = async (box) => {
+  try {
+    const img = await captureNative();
+    const full = img.getSize();
+    const phys = primaryPhysicalSize();
+    const scale = phys.width > 0 ? full.width / phys.width : 1;
+    const bx = box.x * scale;
+    const by = box.y * scale;
+    const bw = box.w * scale;
+    const bh = box.h * scale;
+    if (bx < 0 || by < 0 || bw < 1 || bh < 1 || bx + bw > full.width || by + bh > full.height) return null;
+    const x = Math.round(bx);
+    const y = Math.round(by);
+    const clip: Rectangle = {
+      x,
+      y,
+      width: Math.min(Math.max(1, Math.round(bw)), full.width - x),
+      height: Math.min(Math.max(1, Math.round(bh)), full.height - y),
+    };
+    const small = img.crop(clip).resize({
+      width: 64,
+      height: Math.max(1, Math.round((64 * clip.height) / Math.max(1, clip.width))),
+    });
+    const s = small.getSize();
+    const bmp = small.toBitmap();
+    if (!bmp || bmp.length < s.width * s.height * 4) return null;
+    return pHash64(bmp, s.width, s.height);
+  } catch {
+    return null;
+  }
+};
 
 /** 检测 Windows 版本（用于环境上下文注入，让模型知道是 Win10 还是 Win11） */
 function detectWindowsVersion(): string {

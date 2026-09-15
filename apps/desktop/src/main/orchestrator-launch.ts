@@ -26,7 +26,7 @@ import { getPreauthGrants } from './ipc-registry';
 import { createCheckpointStore } from './checkpoint-store';
 import { probeArtifact, reconcileCheckpoint } from './longtask-reconcile';
 import { initPerception } from './perception-host';
-import { createHostCapabilities } from './host-capabilities';
+import { createHostCapabilities, regionFingerprint } from './host-capabilities';
 import { CustomToolRuntime } from './custom-tools';
 import { Store } from './config-store';
 import { ZODB } from './audit-store';
@@ -76,8 +76,9 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
   const perception = initPerception();
   // SoM 基础闭包：先在截图上画编号标注再发给模型（真 Set-of-Mark，见 som-mark.ts）
   const somLookupBase = createSomLookup(vision ?? text);
-  // 布局稳定元素坐标表缓存：任务内共享一个实例（循环登记帧上下文，执行器包装查表/记表）
-  const groundCache = new GroundCache();
+  // 布局稳定元素坐标表缓存：任务内共享一个实例（循环登记帧上下文，执行器包装查表/记表）。
+  // 区域指纹回调在此注入（局部外观复核用：复用前必须重看目标那块地方；agent-core 不 import 宿主）
+  const groundCache = new GroundCache({ regionFingerprint });
   const stack = buildExecutorStack({
     workspaceDir: cfg.workspaceDir,
     customTools,

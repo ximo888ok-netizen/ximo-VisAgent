@@ -2,7 +2,11 @@ export * from './agent/loop';
 export { quickHash } from './agent/loop-llm';
 export { suggestToolName } from './agent/loop-helpers';
 export { createGroundingLookup, parseGroundingBox, type GroundingLookup, type GroundingMatch, createSomLookup, parseSomChoice, type SomLookup, type SomCandidate } from './agent/grounding';
-export { GroundCache, wrapExecutorWithGroundCache, normalizeLocateTarget, windowSignatureOf, hashDistance, type GroundCacheCtx, type GroundCacheEntry, type GroundCacheHit, type GroundCacheStats, type GroundBox, type GroundSource } from './agent/ground-cache';
+export {
+  GroundCache, wrapExecutorWithGroundCache, normalizeLocateTarget, normalizeCropBox, windowSignatureOf, hashDistance,
+  type GroundCacheCtx, type GroundCacheEntry, type GroundCacheHit, type GroundCacheStats,
+  type GroundCacheOptions, type GroundBox, type GroundSource, type RegionFingerprint,
+} from './agent/ground-cache';
 export type { TaskAssertion, AssertionResult, TaskEndGate } from './agent/types';
 export { BudgetGuard, type BudgetGate, type BudgetStop, type BudgetGuardOptions } from './agent/loop-budget';
 export * from './agent/memory';
