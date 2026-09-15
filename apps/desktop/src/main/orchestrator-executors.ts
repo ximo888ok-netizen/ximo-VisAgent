@@ -6,7 +6,7 @@
  */
 import path from 'node:path';
 import { ComputerToolExecutor, FileOfficeExecutor, setHost } from '@ximo-visagent/control-kit';
-import type { GroundingLookup, SomLookup, ToolExecutor } from '@ximo-visagent/agent-core';
+import { wrapExecutorWithGroundCache, type GroundCache, type GroundingLookup, type SomLookup, type ToolExecutor } from '@ximo-visagent/agent-core';
 import { WebSearchClient } from '@ximo-visagent/llm-providers';
 import type { LLMConfig } from '@ximo-visagent/shared-types';
 import { createHostCapabilities } from './host-capabilities';
@@ -36,6 +36,8 @@ export function buildExecutorStack(input: {
   wechatBot?: WeChatBot | null;
   /** LLM 配置（web_search 工具用；复用主大脑 Key） */
   llmConfig?: LLMConfig;
+  /** 布局稳定元素坐标表缓存（ui_locate 降级链查表/记表；可选，缺省不缓存） */
+  groundCache?: GroundCache;
 }): ExecutorStack {
   // 纯视觉方案：Agent 用 open_app 启动系统浏览器，鼠标键盘操作
   setHost(createHostCapabilities());
@@ -98,5 +100,6 @@ export function buildExecutorStack(input: {
       return computer.execute(name, args);
     },
   };
-  return { computer, files, executor };
+  // 坐标表缓存接线：ui_locate 在降级链前查表、成功后记表（UIA 命中也进表）
+  return { computer, files, executor: input.groundCache ? wrapExecutorWithGroundCache(executor, input.groundCache) : executor };
 }

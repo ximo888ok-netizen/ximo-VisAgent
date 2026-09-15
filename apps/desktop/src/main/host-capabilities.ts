@@ -95,6 +95,52 @@ export function createHostCapabilities(emitOverlay?: (ev: OverlayEvent) => void)
       return changed / a.gray.length;
     },
 
+    /** 区域分块 diff（变化区域定向读）：整体变化率 + 变化块列表（区域局部坐标）。
+     *  块尺寸取截图坐标 32px（一行小文字的高度量级）；单块变化像素占比 > 5% 记为
+     *  命中块——文字字形变化远超此值，光标闪烁/抗锯齿抖动远低于。 */
+    async regionDiffBlocks(x: number, y: number, w: number, h: number, prevJpeg: Buffer): Promise<{
+      ratio: number;
+      blocks: Array<{ x: number; y: number; w: number; h: number }>;
+    } | null> {
+      const after = await captureRegionJpeg(x, y, w, h);
+      const a = decodeGray(prevJpeg);
+      const b = decodeGray(after);
+      if (!a || !b || a.w !== b.w || a.h !== b.h || w <= 0 || h <= 0) return null;
+      const cols = Math.max(1, Math.ceil(w / DIFF_BLOCK_PX));
+      const rows = Math.max(1, Math.ceil(h / DIFF_BLOCK_PX));
+      const hit = new Uint32Array(cols * rows);
+      const total = new Uint32Array(cols * rows);
+      let changed = 0;
+      for (let py = 0; py < a.h; py++) {
+        const ry = Math.min(rows - 1, Math.floor((py * h) / a.h));
+        for (let px = 0; px < a.w; px++) {
+          const rx = Math.min(cols - 1, Math.floor((px * w) / a.w));
+          const bi = ry * cols + rx;
+          total[bi] = (total[bi] ?? 0) + 1;
+          if (Math.abs(a.gray[py * a.w + px]! - b.gray[py * a.w + px]!) > GRAY_PIXEL_DELTA) {
+            changed++;
+            hit[bi] = (hit[bi] ?? 0) + 1;
+          }
+        }
+      }
+      const blocks: Array<{ x: number; y: number; w: number; h: number }> = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const bi = r * cols + c;
+          const t = total[bi] ?? 0;
+          if (t > 0 && (hit[bi] ?? 0) / t > BLOCK_CHANGE_RATIO) {
+            blocks.push({
+              x: c * DIFF_BLOCK_PX,
+              y: r * DIFF_BLOCK_PX,
+              w: Math.min(DIFF_BLOCK_PX, w - c * DIFF_BLOCK_PX),
+              h: Math.min(DIFF_BLOCK_PX, h - r * DIFF_BLOCK_PX),
+            });
+          }
+        }
+      }
+      return { ratio: changed / a.gray.length, blocks };
+    },
+
     async captureZoom(x: number, y: number, w: number, h: number): Promise<{ jpeg: Buffer; origin: { x: number; y: number }; zoom: number }> {
       const img = await captureNative();
       const full = img.getSize();
@@ -191,6 +237,10 @@ export function createHostCapabilities(emitOverlay?: (ev: OverlayEvent) => void)
 
 /** 灰度像素变化阈值：单像素灰度差 > 此值算"变了"（抗 JPEG 压缩噪声） */
 const GRAY_PIXEL_DELTA = 12;
+/** 分块 diff 块尺寸（截图坐标 px） */
+const DIFF_BLOCK_PX = 32;
+/** 单块"命中"阈值：块内变化像素占比 > 此值记为变化块 */
+const BLOCK_CHANGE_RATIO = 0.05;
 
 /** JPEG → 灰度数组（BGRA 位图取三通道均值；通道顺序对"是否变化"的判定无影响） */
 function decodeGray(jpeg: Buffer): { gray: Uint8Array; w: number; h: number } | null {

@@ -1,10 +1,10 @@
 // 触手执行器：把 agent-core 的 Tools 映射到真实设备控制
 import type { SomCandidate, ToolExecutor, ToolResult } from '@ximo-visagent/agent-core';
-import { suggestToolName, TOOL_SCHEMA_MAP } from '@ximo-visagent/agent-core';
 import { getHost } from './host';
 import { getUiaClient } from './uia-client';
 import { collectCandidates, filterForegroundCandidates, flattenTree, searchMatches, zoomedBoxToScreen } from './ui-locate';
 import { captureBaseline, postClickVerify } from './click-verify';
+import { inputVerifyData, unknownToolError, verifyResultData } from './executor-result';
 import { ClickGuard } from './click-guard';
 import { clickWithSelfPassthrough, ensureTargetForeground } from './click-focus';
 import { ocrLookupTool } from './ocr-lookup';
@@ -17,7 +17,7 @@ import {
   mouseScroll,
 } from './win32';
 import { keyboardPress, keyboardType } from './win32-keyboard';
-import { verifyTypedInputNote } from './keyboard-verify';
+import { verifyTypedInput } from './keyboard-verify';
 import { activateWindow, listWindows } from './win32-window';
 /** 双击后等待前台窗口变化（覆盖冷启动 >300ms，防误报未变化） */
 const OPEN_EFFECT_WAIT_MS = 400;
@@ -101,18 +101,16 @@ export class ComputerToolExecutor implements ToolExecutor {
     let summary = `真实光标${actionName} @(${Math.round(x)},${Math.round(y)}) (${button})`;
     if (times >= 2) summary += await this.foregroundDelta(fgBefore);
     if (focus.note) summary += focus.note;
-    if (baseline) {
-      const verify = await postClickVerify(baseline);
-      if (verify) {
-        summary += verify.note;
-        // 验证生效 → 清零熔断计数，避免正常重复交互被误熔断
-        if (verify.changed) this.guard.noteEffective();
-      }
+    const verify = baseline ? await postClickVerify(baseline) : null;
+    if (verify) {
+      summary += verify.note;
+      // 验证生效 → 清零熔断计数，避免正常重复交互被误熔断
+      if (verify.changed) this.guard.noteEffective();
     }
     const hint = this.guard.hintAt(x, y);
     if (hint) summary += hint;
 
-    return { ok: true, summary };
+    return { ok: true, summary, ...(verify ? { data: verifyResultData(verify) } : {}) };
   }
 
   /** 双击后的前台窗口变化反馈（无变化 = 可能被遮挡或没打开，模型不必盲试） */
@@ -195,7 +193,10 @@ export class ComputerToolExecutor implements ToolExecutor {
     const text = String(args.text ?? '');
     const intervalMs = typeof args.intervalMs === 'number' && Number.isFinite(args.intervalMs) ? args.intervalMs : undefined;
     await keyboardType(text, intervalMs);
-    return { ok: true, summary: `已输入 ${text.length} 字符${await verifyTypedInputNote(text)}` };
+    // 三态回读结论（仅告警不阻塞）：note 进 summary，结构化结论进 data 供上层断言/观察使用
+    const verified = await verifyTypedInput(text);
+    const data = verified ? { inputVerify: inputVerifyData(verified) } : undefined;
+    return { ok: true, summary: `已输入 ${text.length} 字符${verified?.note ?? ''}`, ...(data ? { data } : {}) };
   }
 
   private async keyboardPress(args: Record<string, unknown>): Promise<ToolResult> {
@@ -429,17 +430,15 @@ export class ComputerToolExecutor implements ToolExecutor {
       let summary = `真实点击元素 "${hit.name}" 中心 @(${Math.round(hit.center.x)},${Math.round(hit.center.y)}) [${hit.window}]`;
       if (times >= 2) summary += await this.foregroundDelta(fgBefore);
       if (focus.note) summary += focus.note;
-      if (baseline) {
-        const verify = await postClickVerify(baseline);
-        if (verify) {
-          summary += verify.note;
-          if (verify.changed) {
-            this.guard.noteEffective();
-            this.uiClickCounts.delete(id);
-          }
+      const verify = baseline ? await postClickVerify(baseline) : null;
+      if (verify) {
+        summary += verify.note;
+        if (verify.changed) {
+          this.guard.noteEffective();
+          this.uiClickCounts.delete(id);
         }
       }
-      return { ok: true, summary };
+      return { ok: true, summary, ...(verify ? { data: verifyResultData(verify) } : {}) };
     } catch (err) {
       return { ok: false, summary: '', error: `UIA 不可用(${(err as Error).message})，请回退为看图点击` };
     }
@@ -455,12 +454,4 @@ export class ComputerToolExecutor implements ToolExecutor {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-/** 未知工具的错误文案：带编辑距离候选，无候选时列出全部可用工具 */
-function unknownToolError(name: string): string {
-  const hint = suggestToolName(name);
-  return hint
-    ? `未知工具: ${name}。你可能想调用 "${hint}"，请改用正确工具名重试`
-    : `未知工具: ${name}。可用工具: ${Object.keys(TOOL_SCHEMA_MAP).join(', ')}`;
 }

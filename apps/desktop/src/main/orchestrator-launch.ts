@@ -6,7 +6,7 @@
  * 需要改写编排器内部状态的四处（审批超时、活动执行器、循环表、排队推进）
  * 通过 LaunchHost 显式注入，公共 API 不变。
  */
-import { AgentLoop, BudgetGuard, shouldPlan, createGroundingLookup, createSomLookup, type AgentLoopOptions, type StepDetail } from '@ximo-visagent/agent-core';
+import { AgentLoop, BudgetGuard, shouldPlan, createGroundingLookup, createSomLookup, GroundCache, type AgentLoopOptions, type StepDetail } from '@ximo-visagent/agent-core';
 import { supportsWebSearch } from '@ximo-visagent/llm-providers';
 import { ApprovalEngine } from '@ximo-visagent/safety';
 import { ComputerToolExecutor, evaluateTaskAssertion, type FileOfficeExecutor } from '@ximo-visagent/control-kit';
@@ -76,6 +76,8 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
   const perception = initPerception();
   // SoM 基础闭包：先在截图上画编号标注再发给模型（真 Set-of-Mark，见 som-mark.ts）
   const somLookupBase = createSomLookup(vision ?? text);
+  // 布局稳定元素坐标表缓存：任务内共享一个实例（循环登记帧上下文，执行器包装查表/记表）
+  const groundCache = new GroundCache();
   const stack = buildExecutorStack({
     workspaceDir: cfg.workspaceDir,
     customTools,
@@ -86,6 +88,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     wechatBot: deps.wechatBot,
     // 联网搜索复用主大脑（text LLM）的 provider/Key
     llmConfig: cfg.agent.textLLM,
+    groundCache,
   });
   host.setActiveExecutors(stack.computer, stack.files, workspaceDirOf(cfg.workspaceDir));
   const executor = stack.executor;
@@ -112,6 +115,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     textLLM: text,
     visionLLM: vision,
     executor,
+    groundCache,
     perception,
     classifier: makeSafetyClassifier(),
     approval: approvals,

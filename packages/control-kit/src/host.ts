@@ -27,6 +27,12 @@ export interface HostCapabilities {
   /** 区域变化率（0-1）：宿主现场截取同一矩形并与 prevJpeg 逐像素比较（JPEG 解码在宿主侧，
    *  control-kit 无图像库）。缺省时调用方回退字节抽样比较。 */
   regionDiff?(x: number, y: number, w: number, h: number, prevJpeg: Buffer): Promise<number | null>;
+  /** 区域分块 diff（变化区域定向读）：整体变化率 + 变化块列表（区域局部像素坐标，
+   *  即相对 (x,y) 原点、以 (w,h) 为全幅）。缺省时 click-verify 退回 regionDiff 整帧判定。 */
+  regionDiffBlocks?(x: number, y: number, w: number, h: number, prevJpeg: Buffer): Promise<{
+    ratio: number;
+    blocks: Array<{ x: number; y: number; w: number; h: number }>;
+  } | null>;
   /** 感知帧指纹（可选）：位图分块灰度哈希。整图 JPEG 字节哈希对光标闪烁/时钟跳秒过于敏感，
    *  "画面没变"几乎判不出来；分块均值能滤掉这类噪声，供循环判定停滞。 */
   frameSignature?(jpeg: Buffer): Promise<string | null>;
