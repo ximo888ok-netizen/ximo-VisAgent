@@ -233,9 +233,13 @@ namespace UiaSidecar
             var release = (k.GetValue("ReleaseType") as string ?? "").ToLowerInvariant();
             if (release.Contains("security update") || release == "hotfix" || release == "updatedefinitions") return;
             name = name.Trim();
+            // 卸载器入口不是可启动应用（与 AddLnkEntry 的 Uninstall 前缀规则对齐；中文机多为「卸载X」，含无空格形态）
+            if (name.StartsWith("Uninstall", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("卸载") || name.StartsWith("Remove", StringComparison.OrdinalIgnoreCase)) return;
 
             string exePath = ResolveRegistryExe(k, name);
             if (exePath.Length == 0) return;                                      // 无落盘可执行文件的路径不进选择器
+            if (IsUninstallerPath(exePath)) return;                               // 名字正常但目标就是 uninst.exe
             string keyPath = JsonExtract.NormalizePath(exePath);
             if (!seenPath.Add(keyPath)) return;
             if (!seenName.Add(name)) return;
@@ -245,12 +249,12 @@ namespace UiaSidecar
             apps.Add(e);
         }
 
-        /// <summary>exePath = DisplayIcon（去 ",index" 后缀）或 InstallLocation 下同名 exe；均须实际存在。</summary>
+        /// <summary>exePath = DisplayIcon（去 ",index" 后缀）或 InstallLocation 下同名 exe；均须实际存在且为可启动 GUI 载体。</summary>
         private static string ResolveRegistryExe(RegistryKey k, string name)
         {
             string icon = (k.GetValue("DisplayIcon") as string ?? "").Trim();
             string candidate = StripIconIndex(icon);
-            if (candidate.Length > 0 && File.Exists(candidate)) return candidate;
+            if (candidate.Length > 0 && File.Exists(candidate) && IsLaunchable(candidate)) return candidate;
             string loc = (k.GetValue("InstallLocation") as string ?? "").Trim().Trim('"');
             if (loc.Length > 0 && Directory.Exists(loc))
             {
@@ -258,6 +262,25 @@ namespace UiaSidecar
                 if (File.Exists(guess)) return guess;
             }
             return "";
+        }
+
+        /// <summary>
+        /// 选择器只收可启动的 GUI 载体：exe / lnk / ClickOnce 入口。
+        /// DisplayIcon 很多指向 setup.bat、.msi、.url 之类脚本或安装包——Agent 无法用
+        /// UIA 驱动控制台窗口，看门狗的 pid→exe 锚定也会落在 conhost 上，收进来全是噪音，
+        /// 因此一律剔除（2026-09-14 用户反馈"bat 都扫出来了"后定下的过滤口径）。
+        /// </summary>
+        internal static bool IsLaunchable(string path)
+        {
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            return ext == ".exe" || ext == ".lnk" || ext == ".appref-ms";
+        }
+
+        /// <summary>卸载器判据（路径级，比显示名前缀可靠）：文件名含 uninst / 「卸载」即剔除。</summary>
+        internal static bool IsUninstallerPath(string path)
+        {
+            string stem = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
+            return stem.Contains("uninst") || stem.Contains("卸载");
         }
 
         private static string StripIconIndex(string displayIcon)
@@ -329,7 +352,13 @@ namespace UiaSidecar
                 || name.Equals("Programs", StringComparison.OrdinalIgnoreCase)) return;
 
             string target = ResolveLnkTarget(shell, lnk);
+            // 解析成功但目标是脚本/安装包 → 整个丢弃：回退启动 .lnk 本体等于照样启动 bat，噪音照旧
+            if (target.Length > 0 && File.Exists(target))
+            {
+                if (!IsLaunchable(target) || IsUninstallerPath(target)) return;
+            }
             string exePath = target.Length > 0 && File.Exists(target) ? target : lnk; // 解析失败回 .lnk 本体（openAppSafe 现成 lnk 分支）
+            if (IsUninstallerPath(lnk) || IsUninstallerPath(exePath)) return; // 「卸载微信.lnk」「微信卸载.exe」等本体命名也命中
             string keyPath = JsonExtract.NormalizePath(exePath);
             if (!seenPath.Add(keyPath)) return;
             if (!seenName.Add(name)) return;
