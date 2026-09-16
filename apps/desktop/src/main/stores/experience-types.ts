@@ -72,6 +72,9 @@ export interface EnvFactRow {
 
 // ---------- P9: 恢复规则 ----------
 
+/** 规则来源：轨迹提炼（自动，需宪法门批准才生效）/ 人工录入 */
+export type RecoveryRuleOrigin = 'mined' | 'human';
+
 export interface RecoveryRuleRow {
   id: string;
   name: string;
@@ -82,7 +85,30 @@ export interface RecoveryRuleRow {
   successCount: number;
   failCount: number;
   createdAt: number;
+  /** 触发特征指纹（tool|errorPattern|windowTitlePattern|argPattern）：同特征去重合并的键 */
+  signature: string | null;
+  origin: RecoveryRuleOrigin;
+  /** 提炼自哪次任务（证据回溯用） */
+  sourceTaskId: string | null;
+  /** 来源证据：[{step, tool, error, remedy}] 的 JSON，审批面板与审计都读它 */
+  evidenceJson: string;
+  /** 被 matcher 命中的次数（可观测：规则到底有没有在用） */
+  hitCount: number;
+  /** 该特征被观测到的次数（同特征重复撞墙 = 合并计数，不新建规则） */
+  timesObserved: number;
+  lastSeenAt: number | null;
 }
+
+/** 提炼侧写入的草稿形状（id/createdAt 可缺省，计数列由库默认值给） */
+export type RecoveryRuleDraft = Omit<
+  RecoveryRuleRow,
+  'id' | 'createdAt' | 'successCount' | 'failCount' | 'hitCount' | 'timesObserved' | 'lastSeenAt'
+> & {
+  id?: string;
+  createdAt?: number;
+  timesObserved?: number;
+  lastSeenAt?: number | null;
+};
 
 // ---------- P9: Prompt 版本 ----------
 

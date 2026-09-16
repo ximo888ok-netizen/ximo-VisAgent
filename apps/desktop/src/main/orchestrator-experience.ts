@@ -9,6 +9,7 @@ import type { ILLMClient } from '@ximo-visagent/llm-providers';
 import type { ZODB } from './audit-store';
 import type { MemoryStore } from './memory-store';
 import type { ExperienceStore } from './experience-store';
+import type { RecoveryMiner } from './experience/recovery-miner';
 import { distillAndSaveSop } from './sop-distiller';
 import { publishStep } from './windows/island';
 import { createStepEvent } from '../shared/island-contracts';
@@ -21,6 +22,8 @@ export interface ExperienceHooks {
   audit: ZODB;
   memory?: MemoryStore;
   experience?: ExperienceStore;
+  /** 条目6 写入侧：任务终态（失败 / 超步数 / 被中止）补一次失败归因提炼 */
+  recoveryMiner?: RecoveryMiner | null;
   recordConversation?: (goal: string, answer: string) => void;
   text: ILLMClient;
   memoryEnabled: boolean;
@@ -29,6 +32,9 @@ export interface ExperienceHooks {
 /** 会话记录 + 记忆 + 世界模型（均异步，不阻塞终态） */
 export function finalizeTaskExperience(t: ExperienceHooks, result: AgentRunResult): void {
   t.recordConversation?.(t.goal, result.finalAnswer);
+
+  // 失败归因 → 恢复规则草稿（同步写库、只登记提案，不改变模型行为）
+  t.recoveryMiner?.finish(result);
 
   // SOP 蒸馏：成功任务自动提取可复用骨架（异步，不阻塞主流程）
   if (result.status === 'COMPLETED' && t.audit) {

@@ -143,6 +143,26 @@ export class ExperienceStore {
     return this.evolution.insertRecoveryRule(row);
   }
 
+  findRecoveryRuleBySignature(signature: string): RecoveryRuleRow | null {
+    return this.evolution.findRecoveryRuleBySignature(signature);
+  }
+
+  bumpRecoveryObservation(id: string, evidenceJson: string, lastSeenAt: number): void {
+    this.evolution.bumpRecoveryObservation(id, evidenceJson, lastSeenAt);
+  }
+
+  recordRecoveryHit(id: string): void {
+    this.evolution.recordRecoveryHit(id);
+  }
+
+  countRecoveryRules(): number {
+    return this.evolution.countRecoveryRules();
+  }
+
+  deleteStaleRecoveryDrafts(cutoffMs: number): number {
+    return this.evolution.deleteStaleDrafts(cutoffMs);
+  }
+
   toggleRecoveryRule(id: string, enabled: boolean): boolean {
     return this.evolution.toggleRecoveryRule(id, enabled);
   }

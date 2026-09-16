@@ -91,6 +91,20 @@ async function approveCustomTool(deps: MetaApplyDeps, toolId: string, proposalId
   deps.experience.toggleCustomTool(tool.id, true);
 }
 
+/** 恢复规则执行器需要的窄依赖（单测可独立注入，同 CapabilityApplyDeps 纪律） */
+export interface RecoveryRuleApplyDeps {
+  experience: ExperienceStore;
+}
+
+/**
+ * recovery_rule_enable：宪法门批准后才把规则置为生效。
+ * 提炼侧写入的草稿一律 enabled=false，本函数是它变成模型可见提示的唯一出口。
+ */
+export function applyRecoveryRuleEnable(deps: RecoveryRuleApplyDeps, payload: Record<string, unknown>): void {
+  const ruleId = str(payload, 'ruleId');
+  if (!deps.experience.toggleRecoveryRule(ruleId, true)) throw new Error('恢复规则不存在');
+}
+
 /** 能力写入执行器需要的窄依赖（单测可独立注入，不牵连其余元层存储） */
 export interface CapabilityApplyDeps {
   mission?: CapabilityWriter;
@@ -146,10 +160,7 @@ export const META_APPLIERS: Record<MetaActionType, MetaApplier> = {
     deps.experience.activatePromptVersion(id, str(payload, 'proposalId'));
   },
 
-  recovery_rule_enable: (deps, payload) => {
-    const id = str(payload, 'ruleId');
-    if (!deps.experience.toggleRecoveryRule(id, true)) throw new Error('恢复规则不存在');
-  },
+  recovery_rule_enable: (deps, payload) => applyRecoveryRuleEnable(deps, payload),
 
   recovery_rule_disable: (deps, payload) => {
     deps.experience.toggleRecoveryRule(str(payload, 'ruleId'), false);

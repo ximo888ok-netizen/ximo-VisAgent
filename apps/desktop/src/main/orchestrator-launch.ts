@@ -16,6 +16,7 @@ import { buildExecutorStack, workspaceDirOf } from './orchestrator-executors';
 import { buildTaskInjections } from './orchestrator-context';
 import { createApprovalGate } from './orchestrator-approval';
 import { createRecoveryMatcher } from './orchestrator-recovery';
+import { createRecoveryMiner } from './experience/recovery-miner';
 import { announceApprovalRequest } from './e2e-runner';
 import { finalizeTaskExperience } from './orchestrator-experience';
 import { classifyFailure, toStepSkeleton, persistAgentEvent, recordAnchorAttached, recordAnchorWatchdogEvent } from './orchestrator-audit';
@@ -112,6 +113,17 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
   // pauseProvider 读看门狗累计暂停（含进行中暂停段）→ 暂停期间时长/步数/token 三维度均不烧
   const budgetStartedAt = Date.now();
 
+  // 条目6 写入侧：把失败归因接上经验本（提炼出 enabled=0 草稿 + 宪法门提案，不就地生效）
+  const recoveryMiner = deps.experience
+    ? createRecoveryMiner({ experience: deps.experience, audit, taskId: t.taskId })
+    : null;
+  const recoveryMatcher = deps.experience && recoveryMiner
+    ? createRecoveryMatcher(deps.experience, {
+      argsAt: (i) => recoveryMiner.argsAt(i),
+      onHit: (rule, reason) => recoveryMiner.onHit(rule, reason),
+    })
+    : undefined;
+
   const opts: AgentLoopOptions = {
     textLLM: text,
     visionLLM: vision,
@@ -138,7 +150,10 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
       : undefined,
     approvalTimeoutMs: cfg.agent.approvalTimeoutSec * 1000,
     llmMaxRetries: cfg.agent.maxRetries,
-    onEvent: (ev) => persistAgentEvent(audit, t.taskId, ev),
+    onEvent: (ev) => {
+      persistAgentEvent(audit, t.taskId, ev);
+      recoveryMiner?.observeEvent(ev);
+    },
     // 审批门：E2E 外抛 stdin 应答；否则按档位判自动放行或走岛 UI（S11）
     requestApproval: createApprovalGate(
       {
@@ -170,12 +185,14 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     extraTools,
     // 条目2：web_search 仅 qwen 支持（复用主大脑 textLLM 的 provider）；其他 provider 从目录剔除，避免提示引导必失败调用
     disabledOptionalTools: supportsWebSearch(cfg.agent.textLLM.provider) ? undefined : ['web_search'],
-    // 条目6：历史经验恢复（仅 hint 提示）+ 记账闭环
-    recoveryMatcher: deps.experience ? createRecoveryMatcher(deps.experience) : undefined,
-    onRecoveryResult: (ruleId, success) => {
-      if (success) deps.experience?.incrementRecoverySuccess(ruleId);
-      else deps.experience?.incrementRecoveryFail(ruleId);
-    },
+    // 条目6：历史经验恢复（仅 hint 提示）+ 记账闭环；matcher 与提炼器共用同一份失败步参数表
+    recoveryMatcher,
+    onRecoveryResult: recoveryMiner
+      ? (ruleId, success) => recoveryMiner.onResult(ruleId, success)
+      : (ruleId, success) => {
+        if (success) deps.experience?.incrementRecoverySuccess(ruleId);
+        else deps.experience?.incrementRecoveryFail(ruleId);
+      },
     // L1 机器断言：任务提交方声明（e2e/人工），task_done 后确定性校验优先于模型自评
     assertions: t.assertions,
     evaluateAssertion: (a) => evaluateTaskAssertion(a, cfg.workspaceDir),
@@ -259,6 +276,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
         audit,
         memory: deps.memory,
         experience: deps.experience,
+        recoveryMiner,
         recordConversation: deps.conversation
           ? (goal, answer) => deps.conversation!.recordTurn(goal, answer)
           : undefined,

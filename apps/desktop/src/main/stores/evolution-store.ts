@@ -6,8 +6,10 @@ import type {
   MetaProposalStatus,
   MetaState,
   PromptVersionRow,
+  RecoveryRuleDraft,
   RecoveryRuleRow,
 } from './experience-types';
+import { applyRecoveryMigrations } from './recovery-migrations';
 
 export class EvolutionStore {
   constructor(private db: Database.Database) {
@@ -68,6 +70,12 @@ export class EvolutionStore {
       `);
     } catch (err) {
       console.error('[experience-store] init failed (v3 降级，核心执行链路不受影响)', err);
+    }
+    // 列演进走版本戳域机制（domain=recovery_rules）：表由上面的 CREATE 拥有，本步只补列建索引
+    try {
+      applyRecoveryMigrations(this.db);
+    } catch (err) {
+      console.error('[experience-store] recovery_rules 迁移失败（提炼链路将降级）', err);
     }
   }
 
@@ -144,13 +152,57 @@ export class EvolutionStore {
     return rows.map((r) => ({ ...r, enabled: r.enabled === 1 }));
   }
 
-  insertRecoveryRule(row: Omit<RecoveryRuleRow, 'id' | 'createdAt' | 'successCount' | 'failCount' | 'enabled'> & { id?: string; createdAt?: number }): string {
+  /**
+   * 写入一条规则。提炼链路一律 enabled=false 起步：
+   * 「启用恢复规则」在宪法门里属提权类（meta-gate.ts META_ESCALATING_ACTIONS），
+   * 只有人工批准后由 recovery_rule_enable 执行器置 1，未审核规则不可能改变模型行为。
+   */
+  insertRecoveryRule(row: RecoveryRuleDraft): string {
     const id = row.id ?? crypto.randomUUID();
     this.db.prepare(`
-      INSERT INTO recovery_rules (id, name, detectJson, actionJson, sourceAttributionId, enabled, successCount, failCount, createdAt)
-      VALUES (?, ?, ?, ?, ?, 1, 0, 0, ?)
-    `).run(id, row.name, row.detectJson, row.actionJson, row.sourceAttributionId, row.createdAt ?? Date.now());
+      INSERT INTO recovery_rules (id, name, detectJson, actionJson, sourceAttributionId, enabled,
+        successCount, failCount, createdAt, signature, origin, sourceTaskId, evidenceJson,
+        hitCount, timesObserved, lastSeenAt)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, 0, ?, ?)
+    `).run(
+      id, row.name, row.detectJson, row.actionJson, row.sourceAttributionId,
+      row.enabled ? 1 : 0, row.createdAt ?? Date.now(),
+      row.signature ?? null, row.origin ?? 'mined', row.sourceTaskId, row.evidenceJson ?? '[]',
+      row.timesObserved ?? 1, row.lastSeenAt ?? null,
+    );
     return id;
+  }
+
+  /** 同特征去重合并的查表入口（signature 命中即视为已有规则） */
+  findRecoveryRuleBySignature(signature: string): RecoveryRuleRow | null {
+    const row = this.db
+      .prepare('SELECT * FROM recovery_rules WHERE signature = ? ORDER BY createdAt ASC LIMIT 1')
+      .get(signature) as (Omit<RecoveryRuleRow, 'enabled'> & { enabled: number }) | undefined;
+    return row ? { ...row, enabled: row.enabled === 1 } : null;
+  }
+
+  /** 同特征再次撞墙：合并进已有规则（观测计数 + 证据/时点刷新），不新建第二行 */
+  bumpRecoveryObservation(id: string, evidenceJson: string, lastSeenAt: number): void {
+    this.db
+      .prepare('UPDATE recovery_rules SET timesObserved = timesObserved + 1, evidenceJson = ?, lastSeenAt = ? WHERE id = ?')
+      .run(evidenceJson, lastSeenAt, id);
+  }
+
+  /** matcher 命中计数（可观测：规则有没有真的在用） */
+  recordRecoveryHit(id: string): void {
+    this.db.prepare('UPDATE recovery_rules SET hitCount = hitCount + 1, lastSeenAt = ? WHERE id = ?').run(Date.now(), id);
+  }
+
+  countRecoveryRules(): number {
+    return (this.db.prepare('SELECT COUNT(*) AS c FROM recovery_rules').get() as { c: number }).c;
+  }
+
+  /** 容量淘汰：删除从未被采纳、且早于 cutoff 的未启用草稿（不碰已生效规则） */
+  deleteStaleDrafts(cutoffMs: number): number {
+    const res = this.db
+      .prepare('DELETE FROM recovery_rules WHERE enabled = 0 AND hitCount = 0 AND successCount = 0 AND createdAt < ?')
+      .run(cutoffMs);
+    return res.changes;
   }
 
   toggleRecoveryRule(id: string, enabled: boolean): boolean {
