@@ -156,11 +156,11 @@ export const E2E_TASKS = [
   {
     id: 'J',
     name: '慢加载窗口的条件等待（wait_for 画面稳定）',
-    goal: `用资源管理器打开 C:\\Windows 目录（文件多、加载需数秒）。不要固定长时间空等：先用 request_tools 加载 wait_for，再用 wait_for(condition=screen_stable) 等到文件列表渲染稳定，然后用鼠标右键点击空白处并点击「排序方式→名称」，最后用 screen_ocr 或看图读出窗口中前几个文件名并完成任务。禁止用 file_list/file_read 工具代替界面读取。`,
+    goal: `用资源管理器打开 C:\\Windows 目录（文件多、加载需数秒）。不要固定长时间空等：直接用常驻工具 wait_for(condition=screen_stable) 等到文件列表渲染稳定，然后用鼠标右键点击空白处并点击「排序方式→名称」，最后用 screen_ocr 或看图读出窗口中前几个文件名并完成任务。禁止用 file_list/file_read 工具代替界面读取。`,
     expect: '出现 wait_for 条件等待且轨迹为纯界面操作，finalAnswer 报出真实读到的文件名',
     keyTag: 'wait+gui',
     track: 'real-gui',
-    mustHitTools: ['open_app', 'request_tools', 'wait_for'],
+    mustHitTools: ['open_app', 'wait_for'],
     forbidTools: ['file_list', 'file_read'],
     timeoutMs: 6 * 60_000,
     maxSteps: 25,
