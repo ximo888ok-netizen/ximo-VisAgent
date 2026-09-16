@@ -30,6 +30,9 @@ export const DEFAULT_TOOL_POLICY: Record<string, ToolPolicy> = {
   mouse_hold: { level: 1 },
   mouse_drag_hold: { level: 1 },
   mouse_scroll: { level: 1 },
+  // hover = L1 不是 L0：注入真实光标移动（设备写操作），且会展开 tooltip/悬停菜单改变界面状态；
+  // L0 保留给纯观察（截图/OCR/读 UIA 树），任何输入注入事件都不是只读。
+  mouse_hover: { level: 1 },
   keyboard_type: { level: 1 },
   keyboard_press: { level: 1 },
   wait: { level: 1 },
@@ -39,6 +42,7 @@ export const DEFAULT_TOOL_POLICY: Record<string, ToolPolicy> = {
   set_clipboard: { level: 1 },
   ui_locate: { level: 0 }, // 只读 UIA 树查询，无输入注入
   ui_click: { level: 1 }, // 等价 mouse_click（前台窗口规则命中时同样被 override）
+  ui_scroll_to: { level: 1 }, // ScrollItemPattern 滚动视图：改变界面状态但不点击/不改选中
 
   file_write: { level: 2 },
   excel_write_cell: { level: 2 }, // 落盘写文件，与 file_write 同级

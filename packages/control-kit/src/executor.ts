@@ -6,16 +6,12 @@ import { collectCandidates, filterForegroundCandidates, flattenTree, searchMatch
 import { captureBaseline, postClickVerify } from './click-verify';
 import { inputVerifyData, unknownToolError, verifyResultData } from './executor-result';
 import { ClickGuard } from './click-guard';
-import { clickWithSelfPassthrough, ensureTargetForeground } from './click-focus';
+import { clickElementWithModifiers, clickWithSelfPassthrough, ensureTargetForeground } from './click-focus';
+import { mouseHoverTool } from './mouse-hover';
+import { uiScrollTo } from './uia-scroll';
 import { ocrLookupTool } from './ocr-lookup';
 import { screenOcr, waitFor, lookClose } from './screen-ocr';
-import {
-  mouseClick,
-  mouseDrag,
-  mouseHold,
-  mouseDragHold,
-  mouseScroll,
-} from './win32';
+import { mouseDrag, mouseHold, mouseDragHold, mouseScroll } from './win32';
 import { keyboardPress, keyboardType } from './win32-keyboard';
 import { verifyTypedInput } from './keyboard-verify';
 import { activateWindow, listWindows } from './win32-window';
@@ -47,6 +43,8 @@ export class ComputerToolExecutor implements ToolExecutor {
         case 'mouse_hold': return await this.mouseHold(args);
         case 'mouse_drag_hold': return await this.mouseDragHold(args);
         case 'mouse_scroll': return await this.mouseScroll(args);
+        case 'mouse_hover': return await mouseHoverTool(args);
+        case 'ui_scroll_to': return await uiScrollTo(args);
         case 'keyboard_type': return await this.keyboardType(args);
         case 'keyboard_press': return await this.keyboardPress(args);
         case 'open_app': return await this.openApp(args);
@@ -95,7 +93,7 @@ export class ComputerToolExecutor implements ToolExecutor {
     // 点击前抓同区域基线，点击后比对：这是模型判断"点没点中"的唯一可信信号
     const baseline = await captureBaseline(x, y);
 
-    await clickWithSelfPassthrough(x, y, button, times, focus.selfOccluded);
+    await clickWithSelfPassthrough(x, y, button, times, focus.selfOccluded, args.modifiers);
     this.overlay({ type: 'click', x, y });
     const actionName = times === 2 ? '双击' : times > 2 ? `${times}击` : '点击';
     let summary = `真实光标${actionName} @(${Math.round(x)},${Math.round(y)}) (${button})`;
@@ -296,7 +294,7 @@ export class ComputerToolExecutor implements ToolExecutor {
     if (!hit) return g;
     const cx = Math.round(hit.x + hit.w / 2);
     const cy = Math.round(hit.y + hit.h / 2);
-    const clicked = await this.mouseClick({ x: cx, y: cy, button: args.button ?? 'left', times: Number(args.times ?? 1) });
+    const clicked = await this.mouseClick({ x: cx, y: cy, button: args.button ?? 'left', times: Number(args.times ?? 1), modifiers: args.modifiers });
     const located = (g.summary ?? '').slice(0, 120);
     return clicked.ok
       ? { ok: true, summary: `${located}；已点击中心 (${cx},${cy}) → ${clicked.summary}` }
@@ -425,7 +423,7 @@ export class ComputerToolExecutor implements ToolExecutor {
       // ui_click 的目标是模型按名字选中的控件，即使它属于自家窗口也应如实点击（不穿透）
       const focus = await ensureTargetForeground(hit.center.x, hit.center.y);
       const baseline = await captureBaseline(hit.center.x, hit.center.y);
-      await mouseClick(hit.center.x, hit.center.y, button, times);
+      await clickElementWithModifiers(hit.center.x, hit.center.y, button, times, args.modifiers);
       this.overlay({ type: 'click', x: hit.center.x, y: hit.center.y });
       let summary = `真实点击元素 "${hit.name}" 中心 @(${Math.round(hit.center.x)},${Math.round(hit.center.y)}) [${hit.window}]`;
       if (times >= 2) summary += await this.foregroundDelta(fgBefore);

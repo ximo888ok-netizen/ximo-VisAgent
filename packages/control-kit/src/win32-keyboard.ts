@@ -1,5 +1,8 @@
 // koffi FFI 绑定：键盘注入（SendInput），自 win32.ts 拆出（win32.ts 预算只降不升）
+// 按键字符串→VK 序列的纯逻辑在 combo-keys.ts（可单测）；本文件只负责真机发送
 import { kbdInput, sendInputBatch, KEYEVENTF_UNICODE, KEYEVENTF_KEYUP } from './win32';
+import { parseComboKeys } from './combo-keys';
+import { runWithHeldKeys, type PointerModifier } from './modifiers';
 
 /** 逐字符注入的默认键间隔（ms）；调用方可传 intervalMs 覆盖（0=不等待） */
 export const DEFAULT_TYPE_INTERVAL_MS = 10;
@@ -17,42 +20,9 @@ export async function keyboardType(text: string, intervalMs = DEFAULT_TYPE_INTER
   }
 }
 
-const VK_MAP: Record<string, number> = {
-  CTRL: 0x11, CONTROL: 0x11, ALT: 0x12, SHIFT: 0x10,
-  WIN: 0x5b, LWIN: 0x5b, RWIN: 0x5c,
-  ENTER: 0x0d, RETURN: 0x0d, ESC: 0x1b, ESCAPE: 0x1b, TAB: 0x09, SPACE: 0x20,
-  BACKSPACE: 0x08, BKSP: 0x08, DELETE: 0x2e, DEL: 0x2e, INSERT: 0x2d, INS: 0x2d,
-  UP: 0x26, DOWN: 0x28, LEFT: 0x25, RIGHT: 0x27,
-  HOME: 0x24, END: 0x23, PAGEUP: 0x21, PGDN: 0x22, PAGEDOWN: 0x22,
-  CAPSLOCK: 0x14, NUMLOCK: 0x90, SCROLLLOCK: 0x91,
-  APPS: 0x5d, MENU: 0x5d, PRINTSCREEN: 0x2c, PAUSE: 0x13,
-  F1: 0x70, F2: 0x71, F3: 0x72, F4: 0x73, F5: 0x74, F6: 0x75,
-  F7: 0x76, F8: 0x77, F9: 0x78, F10: 0x79, F11: 0x7a, F12: 0x7b,
-  A: 0x41, B: 0x42, C: 0x43, D: 0x44, E: 0x45, F: 0x46, G: 0x47, H: 0x48,
-  I: 0x49, J: 0x4a, K: 0x4b, L: 0x4c, M: 0x4d, N: 0x4e, O: 0x4f, P: 0x50,
-  Q: 0x51, R: 0x52, S: 0x53, T: 0x54, U: 0x55, V: 0x56, W: 0x57, X: 0x58,
-  Y: 0x59, Z: 0x5a, ZERO: 0x30, ONE: 0x31, TWO: 0x32, THREE: 0x33, FOUR: 0x34,
-  FIVE: 0x35, SIX: 0x36, SEVEN: 0x37, EIGHT: 0x38, NINE: 0x39,
-  NUMPAD0: 0x60, NUMPAD1: 0x61, NUMPAD2: 0x62, NUMPAD3: 0x63, NUMPAD4: 0x64,
-  NUMPAD5: 0x65, NUMPAD6: 0x66, NUMPAD7: 0x67, NUMPAD8: 0x68, NUMPAD9: 0x69,
-  MULTIPLY: 0x6a, ADD: 0x6b, SUBTRACT: 0x6d, DECIMAL: 0x6e, DIVIDE: 0x6f,
-};
-
-function parseCombo(combo: string): number[] {
-  const parts = combo.split('+').map((p) => p.trim().toUpperCase()).filter(Boolean);
-  const out: number[] = [];
-  for (const p of parts) {
-    if (VK_MAP[p]) out.push(VK_MAP[p]);
-    else if (/^[0-9]$/.test(p)) out.push(0x30 + parseInt(p, 10));
-    else throw new Error(`未知按键: ${p}`);
-  }
-  if (out.length === 0) throw new Error('空组合键');
-  return out;
-}
-
 export function keyboardPress(combo: string): void {
-  const keys = parseCombo(combo);
-  // 按下和释放各用一次 batch SendInput，保证原子性
+  const keys = parseComboKeys(combo);
+  // 按下和释放各用一次 batch SendInput，保证原子性；释放严格按按下逆序
   const downs: ArrayBuffer[] = [];
   for (const k of keys) downs.push(kbdInput(k, 0, 0));
   sendInputBatch(downs);
@@ -62,6 +32,17 @@ export function keyboardPress(combo: string): void {
     if (k !== undefined) ups.push(kbdInput(k, 0, KEYEVENTF_KEYUP));
   }
   sendInputBatch(ups);
+}
+
+/**
+ * 按住修饰键执行动作（鼠标点击/悬停共用）：修饰键 down 批次先行，
+ * 动作抛错也必须在 finally 发逆序 up 批次——卡住的 Ctrl 会让用户桌面瞬间不可用。
+ * 单批 SendInput 保原子；up 批次本身失败属于 FFI 级设备故障，让其上浮并由调用方记录。
+ */
+export async function withHeldModifiers<T>(mods: PointerModifier[], action: () => Promise<T>): Promise<T> {
+  return runWithHeldKeys(mods, action, (events) => {
+    sendInputBatch(events.map((e) => kbdInput(e.vk, 0, e.up ? KEYEVENTF_KEYUP : 0)));
+  });
 }
 
 function sleep(ms: number): Promise<void> {

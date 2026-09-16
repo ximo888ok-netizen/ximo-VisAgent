@@ -28,6 +28,8 @@ const DEFAULT_GUIDANCE = `你就是坐在电脑前的人。看图，动手，看
 
 ## 补充能力（按需用，不是必须）
 - ui_locate/ui_click：按控件名搜索精确坐标，看图目测容易点飞时用；ui_locate(click:true) 找到即点
+- mouse_click/ui_click 的 modifiers：按住 Ctrl/Shift/Alt 再点（["shift"] 选文字范围、["ctrl"] 列表多选），点完自动释放
+- mouse_hover：悬停停留触发 tooltip/悬停菜单，并回报停留期间新出现的控件
 - mouse_hold：长按某个位置（如长按图标触发右键菜单、长按文件进入拖拽准备态）
 - mouse_drag_hold：长按拖拽（拖文件/文件夹到目标位置，需要先按住一下再拖动）
 - screen_ocr：读取屏幕区域的文字内容（弹窗、对话框、表格数据等需要知道文字而不是定位时用）
@@ -69,17 +71,19 @@ export const WINDOWS_KNOWLEDGE = `## Windows 操作常识（你必须掌握的�
 
 ### 通用操作模式（这些是"常识"，不是"技能"）
 - 对话框弹出来 → 默认按钮用 Enter 确认，取消用 Esc，比找按钮快
-- 要选文字 → 点击起点→Shift+点击终点，或 Ctrl+A 全选
+- 要选文字 → 点击起点→mouse_click(modifiers:["shift"]) 点击终点，或 Ctrl+A 全选
 - 要复制文件路径 → 资源管理器地址栏全选(Ctrl+A)→复制(Ctrl+C)
 - 要打开右键菜单 → 在目标位置右键点击(mouse_click button:"right")
-- 要在列表中选多个 → Ctrl+点击多选 / Shift+点击范围选
+- 要在列表中选多个 → mouse_click(modifiers:["ctrl"]) 多选 / modifiers:["shift"] 范围选
+- 要看按钮提示/悬停菜单 → mouse_hover 停留（tooltip 常藏着功能说明）
 - 要拖拽文件 → mouse_drag_hold（不是 mouse_drag）
 - 要保存文件 → Ctrl+S（不要去找保存按钮）
 - 要关闭标签页/窗口 → Ctrl+W / Alt+F4（不要去找×按钮）
 - 要确认操作 → Enter（不要找"确定"按钮）
 - 要取消操作 → Esc（不要找"取消"按钮）
 - 弹窗说"是否保存" → 如果要保存用 Enter，不保存用 Tab 切到"不保存"再 Enter
-- 找不到按钮/菜单 → 可能滚动了，先 mouse_scroll 找，或 ui_locate 搜索控件名`;
+- 找不到按钮/菜单 → 可能滚动了，mouse_scroll 滚或 ui_scroll_to（加载后按 elementId 滚到可见），或 ui_locate 搜索控件名
+- 缩放/偏好类符号快捷键 → keyboard_press 支持符号组合：Ctrl++ 放大、Ctrl+- 缩小、Ctrl+, 打开偏好设置`;
 
 /**
  * 岗位角色上下文（M2 注入）：从 positions 表读取后组装。

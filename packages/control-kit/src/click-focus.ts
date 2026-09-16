@@ -6,6 +6,8 @@
 //      —— 截图里没有自家窗口，所以模型点这里时意图必然是"点它下面的东西"
 import { getHost } from './host';
 import { mouseClick, screenshotToPhysical, type MouseButton } from './win32';
+import { withHeldModifiers } from './win32-keyboard';
+import { normalizeModifiers } from './modifiers';
 import { activateWindow, getForegroundWindow, windowAtPoint } from './win32-window';
 
 /** 穿透生效等待：setIgnoreMouseEvents 经 IPC 到窗口线程，给一拍再点 */
@@ -45,23 +47,34 @@ export async function ensureTargetForeground(x: number, y: number): Promise<Clic
   }
 }
 
-/** 执行点击：被自家窗口遮挡时临时让自家窗口鼠标穿透，点完恢复 */
+/** 执行点击：被自家窗口遮挡时临时让自家窗口鼠标穿透，点完恢复。
+ *  modifiers（可选，如 ["ctrl"]）在点击前按住、点击后逆序释放（含异常路径，见 withHeldModifiers）。 */
 export async function clickWithSelfPassthrough(
   x: number, y: number, button: MouseButton, times: number, selfOccluded: boolean,
+  modifiers?: unknown,
 ): Promise<void> {
+  const mods = normalizeModifiers(modifiers);
+  const click = () => withHeldModifiers(mods, () => mouseClick(x, y, button, times));
   if (!selfOccluded) {
-    await mouseClick(x, y, button, times);
+    await click();
     return;
   }
   const host = getHost();
   await host.setSelfWindowsPassthrough?.(true);
   await sleep(PASSTHROUGH_SETTLE_MS);
   try {
-    await mouseClick(x, y, button, times);
+    await click();
   } finally {
     // 必须恢复：否则岛永久失去点击能力（用户点不动）
     await host.setSelfWindowsPassthrough?.(false);
   }
+}
+
+/** ui_click 路径：按元素中心点击并支持修饰键（无穿透需求，前台保证由 ensureTargetForeground 完成） */
+export async function clickElementWithModifiers(
+  x: number, y: number, button: MouseButton, times: number, modifiers: unknown,
+): Promise<void> {
+  await withHeldModifiers(normalizeModifiers(modifiers), () => mouseClick(x, y, button, times));
 }
 
 function sleep(ms: number): Promise<void> {

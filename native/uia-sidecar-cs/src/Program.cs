@@ -250,6 +250,7 @@ namespace UiaSidecar
                     {
                         case "getUiTree": result = BuildTree(payload); break;
                         case "elementRect": result = ElementRect(payload); break;
+                        case "scrollIntoView": result = ScrollActions.ScrollIntoView(payload); break;
                         case "focusedElement": result = Focused(); break;
                         case "listApps": result = AppCatalogActions.ListApps(payload); break;
                         case "getAppIcon": result = IconActions.GetIcon(payload); break;

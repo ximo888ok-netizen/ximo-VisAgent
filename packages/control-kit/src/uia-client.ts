@@ -200,6 +200,12 @@ export class UiaClient extends EventEmitter {
     return JSON.parse(raw) as ElementRectResult;
   }
 
+  /** UIA ScrollItemPattern.ScrollIntoView()：把元素滚入视口，回报滚动后的物理像素矩形 */
+  async scrollIntoView(elementId: number): Promise<{ ok: boolean; x?: number; y?: number; w?: number; h?: number; error?: string }> {
+    const raw = await this.request('scrollIntoView', { elementId });
+    return JSON.parse(raw) as { ok: boolean; x?: number; y?: number; w?: number; h?: number; error?: string };
+  }
+
   async focusedElement(): Promise<Record<string, unknown>> {
     const raw = await this.request('focusedElement', {});
     return JSON.parse(raw) as Record<string, unknown>;

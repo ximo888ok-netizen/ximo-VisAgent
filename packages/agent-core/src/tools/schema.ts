@@ -7,15 +7,31 @@ const geoProps = {
   y: { type: 'number', description: 'Y 坐标（截图中看到的像素位置）' },
 };
 
+/** 点击类工具共用的修饰键参数：按下鼠标前按住，松开后逆序释放（异常路径也保证释放） */
+const modifiersProp = {
+  modifiers: {
+    type: 'array',
+    items: { type: 'string', enum: ['ctrl', 'shift', 'alt'] },
+    description: '点击时按住修饰键：范围选/文字选填 ["shift"]，列表多选填 ["ctrl"]，右键菜单组合填 ["shift"] 等；点击完成自动释放',
+  },
+};
+
 /** 常驻工具：核心操作 + 完成申报 + 按需加载入口（每步全量随 schema 下发） */
 export const TOOL_SCHEMAS: ToolSchema[] = [
   // ---------- 鼠标 ----------
   {
     name: 'mouse_click',
-    description: '点击屏幕坐标：从截图网格读目标位置直接点。坐标精确到±5px 以内——看准刻度线逐像素插值，禁止粗略估计。times=2 为双击（如打开桌面图标）。',
+    description: '点击屏幕坐标：从截图网格读目标位置直接点。坐标精确到±5px 以内——看准刻度线逐像素插值，禁止粗略估计。times=2 为双击（如打开桌面图标）。modifiers 按住 Ctrl/Shift/Alt 再点（Shift+点击选文字范围、Ctrl+点击多选）。',
     level: 1,
     source: 'computer',
-    parameters: { type: 'object', properties: { ...geoProps, button: { type: 'string', enum: ['left', 'right', 'middle'] }, times: { type: 'integer', description: '点击次数，默认1；2=双击' } }, required: ['x', 'y'] },
+    parameters: { type: 'object', properties: { ...geoProps, button: { type: 'string', enum: ['left', 'right', 'middle'] }, times: { type: 'integer', description: '点击次数，默认1；2=双击' }, ...modifiersProp }, required: ['x', 'y'] },
+  },
+  {
+    name: 'mouse_hover',
+    description: '悬停：把光标移到坐标并停留 hoverMs（默认500ms），触发 tooltip、悬停展开菜单等只有指针驻留才出现的 UI；返回停留期间新出现的控件清单。看按钮提示文字/展开悬停菜单用，不产生点击。',
+    level: 1,
+    source: 'computer',
+    parameters: { type: 'object', properties: { ...geoProps, hoverMs: { type: 'integer', description: '停留毫秒数，默认500；tooltip 约1秒出现，等不到可加大' } }, required: ['x', 'y'] },
   },
   {
     name: 'mouse_drag',
@@ -98,14 +114,14 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     description: '按名称子串搜索屏幕控件（按钮、菜单项、桌面图标、对话框元素等），返回精确中心坐标与 elementId。桌面图标、系统设置/对话框等原生 UI 首选此工具；纯视觉目标（图片内容/自绘画布）才用看图直点。click:true 时找到即点（省一步）。',
     level: 0,
     source: 'computer',
-    parameters: { type: 'object', properties: { query: { type: 'string', description: '名称子串（大小写不敏感），如 "360安全卫士"、"保存"' }, limit: { type: 'integer', description: '最多返回几个，默认 8' }, click: { type: 'boolean', description: '找到即点首个候选（省一步；目标唯一时用，多个候选时先看列表再 ui_click）' }, button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'click:true 时的鼠标键' }, times: { type: 'integer', description: 'click:true 时的点击次数，2=双击' } }, required: ['query'] },
+    parameters: { type: 'object', properties: { query: { type: 'string', description: '名称子串（大小写不敏感），如 "360安全卫士"、"保存"' }, limit: { type: 'integer', description: '最多返回几个，默认 8' }, click: { type: 'boolean', description: '找到即点首个候选（省一步；目标唯一时用，多个候选时先看列表再 ui_click）' }, button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'click:true 时的鼠标键' }, times: { type: 'integer', description: 'click:true 时的点击次数，2=双击' }, ...modifiersProp }, required: ['query'] },
   },
   {
     name: 'ui_click',
     description: '点击 ui_locate 返回的元素（elementId）。按元素真实中心点击，无视觉误差，双击 times=2（如打开桌面图标）。若报「元素已不存在」说明界面变了，需重新 ui_locate。',
     level: 1,
     source: 'computer',
-    parameters: { type: 'object', properties: { elementId: { type: 'number', description: 'ui_locate 返回的 #id' }, button: { type: 'string', enum: ['left', 'right', 'middle'] }, times: { type: 'integer', description: '点击次数，默认1；2=双击' } }, required: ['elementId'] },
+    parameters: { type: 'object', properties: { elementId: { type: 'number', description: 'ui_locate 返回的 #id' }, button: { type: 'string', enum: ['left', 'right', 'middle'] }, times: { type: 'integer', description: '点击次数，默认1；2=双击' }, ...modifiersProp }, required: ['elementId'] },
   },
   // ---------- 文件（工作目录沙箱） ----------
   {
@@ -168,6 +184,13 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
 
 /** 可选工具：Agent 判断需要时经 request_tools 加载后才进入工具列表（自定义 custom_* 工具同属此类） */
 export const OPTIONAL_TOOL_SCHEMAS: ToolSchema[] = [
+  {
+    name: 'ui_scroll_to',
+    description: '滚动使 ui_locate 找到的元素（elementId）进入视口（UIA ScrollIntoView），返回其滚动后的中心坐标，可直接 ui_click/mouse_click。目标在长列表/文档里被滚出视野看不见时用；自绘滚动区不支持时会报错，改回 mouse_scroll。',
+    level: 1,
+    source: 'computer',
+    parameters: { type: 'object', properties: { elementId: { type: 'number', description: 'ui_locate 返回的 #id' } }, required: ['elementId'] },
+  },
   {
     name: 'web_search',
     description: '联网搜索：向搜索引擎查询最新信息（新闻、天气、汇率、股价、技术文档等）。返回搜索结果摘要。当任务需要实时信息或你不确定的事实时用此工具，不要凭记忆猜测。',
