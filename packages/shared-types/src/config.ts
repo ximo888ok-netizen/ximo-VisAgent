@@ -9,15 +9,16 @@
 export type ThinkingEffort = 'off' | 'low' | 'high' | 'max';
 
 /**
- * 思考模式四档（qwen/glm 生效；kimi 无开关字段、deepseek 走 thinkingEffort，均不受此影响）：
- * - auto  评分制弹性判定：历史深度/上下文规模/失败密度/画面停滞 加权打分，软阈值带内按步种子概率开启
- * - daily  恒关（默认）——日常直操最快
+ * 思考模式四档（auto/daily/long/deep 驱动 qwen/glm 开关与 deepseek thinking 字段）：
+ * - auto   按步自适应（默认）：agent-core 每步判定「地板信号（首步/失败/停滞/审批/歧义/里程碑…）
+ *          + 上一步模型自请」，把结论经 ThinkingHint.think 下发；评分器只在无逐步判定的内部调用兜底
+ * - daily  恒关——日常直操最快（旧默认档，语义不变）
  * - long   前 2 步关（开局流程化），此后恒开——长任务中途防一步走歪
  * - deep   全程恒开——调研/复杂分析类目标
  */
 export type ThinkingMode = 'auto' | 'daily' | 'long' | 'deep';
 
-/** auto 档评分器的运行时信号（loop 层采集，随 chat 调用传入；internal 调用缺省 = 恒关） */
+/** 思考判定的运行时信号（loop 层采集，随 chat 调用传入；internal 调用缺省 = 由评分器兜底） */
 export interface ThinkingHint {
   /** 已执行的循环步数（批执行算 1 步） */
   step: number;
@@ -27,6 +28,8 @@ export interface ThinkingHint {
   noChangeCount: number;
   /** 软阈值带概率种子（taskId hash 即可，同一步内判定稳定不抖动） */
   seed: number;
+  /** auto 档的逐步结论（agent-core thinking-policy 判定）。缺省 = 未判定，供应商按评分器/档位语义 */
+  think?: boolean;
 }
 
 export interface LLMConfig {
@@ -48,7 +51,7 @@ export interface AgentConfig {
   maxRetries: number; // 默认 3
   emergencyHotkey: string; // 默认 Ctrl+Alt+Q
   thinkingEffort?: ThinkingEffort; // 思考强度（默认 'high'，随审批档位选择器旁的下拉配置）
-  thinkingMode?: ThinkingMode; // 思考模式（默认 'daily'）
+  thinkingMode?: ThinkingMode; // 思考模式（默认 'auto'：按步自适应）
   /** 任务规划器总开关：缺省=按目标启发式（shouldPlan）；显式 false=永不规划 */
   planFirst?: boolean;
   /** 应用重启后自动恢复最近的未完成任务（默认 true；e2e/selftest 下强制不恢复） */

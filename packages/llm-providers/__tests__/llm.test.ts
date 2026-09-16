@@ -235,6 +235,66 @@ describe('思考四档（qwen/glm）', () => {
   });
 });
 
+describe('auto 档逐步思考意图 → 各供应商真实参数', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  async function captureBody(provider: string, options: Parameters<OpenAIClient['chat']>[2], thinkingMode: string, thinkingEffort?: 'off' | 'low' | 'high' | 'max'): Promise<Record<string, unknown>> {
+    let body: Record<string, unknown> = {};
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return { ok: true, json: async () => ({ choices: [{ message: { content: 'c' } }] }) } as Response;
+    });
+    const client = new OpenAIClient({ provider, baseUrl: 'https://api.example.com', apiKey: 'k', model: 'm', enabled: true, thinkingMode, thinkingEffort } as never);
+    await client.chat([{ role: 'user' as const, content: 'go' }], undefined, options);
+    return body;
+  }
+
+  const lowScoreHint = { step: 1, recentFailures: 0, noChangeCount: 0, seed: 1 };
+  const highScoreHint = { step: 20, recentFailures: 6, noChangeCount: 5, seed: 1 };
+
+  it('qwen：每步意图压过评分（评分该开但本步判关 → enable_thinking=false）', async () => {
+    const body = await captureBody('qwen', { thinkingHint: { ...highScoreHint, think: false } }, 'auto');
+    expect(body.enable_thinking).toBe(false);
+    const on = await captureBody('qwen', { thinkingHint: { ...lowScoreHint, think: true } }, 'auto');
+    expect(on.enable_thinking).toBe(true);
+  });
+
+  it('glm：每步意图映射为 thinking.type', async () => {
+    expect((await captureBody('glm', { thinkingHint: { ...highScoreHint, think: false } }, 'auto')).thinking).toEqual({ type: 'disabled' });
+    expect((await captureBody('glm', { thinkingHint: { ...lowScoreHint, think: true } }, 'auto')).thinking).toEqual({ type: 'enabled' });
+  });
+
+  it('deepseek：auto 下失败步开、例行步关（映射到 thinking + reasoning_effort）', async () => {
+    const on = await captureBody('deepseek', { thinkingHint: { ...lowScoreHint, think: true } }, 'auto', 'high');
+    expect(on.thinking).toEqual({ type: 'enabled' });
+    expect(on.reasoning_effort).toBe('high');
+    expect((await captureBody('deepseek', { thinkingHint: { ...lowScoreHint, think: false } }, 'auto', 'high')).thinking).toEqual({ type: 'disabled' });
+  });
+
+  it('deepseek：非 auto 档与 effort=off 的老语义零回归', async () => {
+    // daily + effort=high：过去恒开，现在仍是恒开（老用户配置行为不变）
+    expect((await captureBody('deepseek', { thinkingHint: lowScoreHint }, 'daily', 'high')).thinking).toEqual({ type: 'enabled' });
+    // effort=off 是用户硬开关，auto 档下也不被逐步意图覆盖
+    expect((await captureBody('deepseek', { thinkingHint: { ...lowScoreHint, think: true } }, 'auto', 'off')).thinking).toEqual({ type: 'disabled' });
+  });
+
+  it('kimi：无思考开关 → 安全降级为无操作（不下发参数），每实例只说明一次', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const bodies: Record<string, unknown>[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return { ok: true, json: async () => ({ choices: [{ message: { content: 'c' } }] }) } as Response;
+    });
+    const client = new OpenAIClient({ provider: 'kimi', baseUrl: 'https://api.example.com', apiKey: 'k', model: 'm', enabled: true, thinkingMode: 'auto' } as never);
+    const ask = { thinkingHint: { ...lowScoreHint, think: true } };
+    await client.chat([{ role: 'user' as const, content: 'go' }], undefined, ask);
+    await client.chat([{ role: 'user' as const, content: 'go' }], undefined, ask);
+    expect(bodies).toHaveLength(2);
+    expect(bodies.every((b) => b.enable_thinking === undefined && b.thinking === undefined)).toBe(true);
+    expect(log.mock.calls.filter((c) => String(c[0]).includes('无思考开关'))).toHaveLength(1);
+  });
+});
+
 describe('complexityScore（auto 评分器）', () => {
   it('四信号加权求和：深度35 + 规模25 + 失败30 + 停滞10', () => {
     const msgs = [

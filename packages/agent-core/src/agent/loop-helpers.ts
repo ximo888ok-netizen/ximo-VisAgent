@@ -3,6 +3,7 @@ import { imageDetailFor, readImageSize } from '@ximo-visagent/llm-providers';
 import type { ContentPart, ILLMClient, ToolDef } from '@ximo-visagent/llm-providers';
 import type { ToolSchema } from '@ximo-visagent/shared-types';
 import { OPTIONAL_TOOL_SCHEMAS, TOOL_SCHEMA_MAP, TOOL_SCHEMAS } from '../tools/schema';
+import { extractThinkRequest } from './thinking-policy';
 
 export interface PerceptionSnap {
   screenshot?: Buffer;
@@ -125,10 +126,21 @@ export interface ParsedOutput {
   actions: { name: string; args: Record<string, unknown> }[];
   done: boolean;
   finalAnswer?: string;
+  /** 模型自请「下一步需要思考」（thought 里的 [需思考] 标记，解析后已从正文剥离） */
+  needThink?: boolean;
 }
 
 /** 兼容三种协议：function calling toolCalls（多个全收）/ 内联 JSON（含 actions[]）/ 纯文本结束 */
 export function parseModelOutput(content: string | null, toolCalls: { name: string; args: string }[]): ParsedOutput {
+  const parsed = rawParseModelOutput(content, toolCalls);
+  // 自请标记协议无关：三条协议的 thought 都已归一到 parsed.thought
+  const ask = extractThinkRequest(parsed.thought);
+  parsed.thought = ask.text;
+  parsed.needThink = ask.ask;
+  return parsed;
+}
+
+function rawParseModelOutput(content: string | null, toolCalls: { name: string; args: string }[]): ParsedOutput {
   // 协议 1: 原生 tool_calls —— 全收成批（task_done/chat_reply 优先并短路）
   if (toolCalls && toolCalls.length > 0) {
     const terminal = toolCalls.find((t) => t.name === 'task_done' || t.name === 'chat_reply');

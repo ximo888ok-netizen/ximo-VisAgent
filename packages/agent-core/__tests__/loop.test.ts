@@ -1,21 +1,25 @@
 import { describe, expect, it, vi} from 'vitest';
 import { AgentLoop } from '../src/agent/loop';
 import { defaultAgentConfig } from '@ximo-visagent/llm-providers';
-import type { ILLMClient, ChatMessage, ToolDef, ChatResult, ToolCallResult } from '@ximo-visagent/llm-providers';
+import type { ILLMClient, ChatMessage, ChatOptions, ToolDef, ChatResult, ToolCallResult } from '@ximo-visagent/llm-providers';
 
 // ---------- Fake LLM（可脚本化的单步响应） ----------
 class FakeLLM implements ILLMClient {
-  readonly config = defaultAgentConfig().textLLM;
+  readonly config: ReturnType<typeof defaultAgentConfig>['textLLM'];
   responses: Array<string | { toolCalls: ToolCallResult[]; content?: string }> = [];
   calls: ChatMessage[][] = [];
+  /** 每次调用收到的思考信号（按步思考预算的可观测面） */
+  options: ChatOptions[] = [];
   private idx = 0;
 
-  constructor(script: Array<string | { toolCalls: ToolCallResult[]; content?: string }>) {
+  constructor(script: Array<string | { toolCalls: ToolCallResult[]; content?: string }>, thinkingMode?: 'auto' | 'daily' | 'long' | 'deep') {
     this.responses = script;
+    this.config = { ...defaultAgentConfig().textLLM, thinkingMode };
   }
 
-  async chat(messages: ChatMessage[], tools?: ToolDef[]): Promise<ChatResult> {
+  async chat(messages: ChatMessage[], tools?: ToolDef[], options?: ChatOptions): Promise<ChatResult> {
     this.calls.push(messages);
+    this.options.push(options ?? {});
     const r = this.responses[this.idx];
     this.idx++;
     if (r === undefined) throw new Error('fake LLM 响应脚本已用尽');
@@ -250,5 +254,53 @@ describe('AgentLoop（直操模式对话门控）', () => {
     expect(result.status).toBe('COMPLETED');
     // 前 3 步执行；第 4、5 步画面连续停滞且动作签名相同 → 被拦截
     expect(execute).toHaveBeenCalledTimes(3);
+  });
+
+  it('auto 档按步自适应：首步开、例行步关、失败步的下一步自动开思考', async () => {
+    let shot = 0;
+    let n = 0;
+    const execute = vi.fn(async () => {
+      n += 1;
+      return n === 2 ? { ok: false, summary: '', error: 'boom' } : { ok: true, summary: 'ok' };
+    });
+    const llm = new FakeLLM([
+      toolCall('mouse_click', { x: 10, y: 10 }),
+      toolCall('mouse_click', { x: 20, y: 20 }),
+      toolCall('mouse_click', { x: 30, y: 30 }),
+      { toolCalls: [], content: '{"thought":"done","done":true,"finalAnswer":"ok"}' },
+    ], 'auto');
+    const loop = new AgentLoop({
+      textLLM: llm,
+      executor: { execute },
+      // 每步画面都在变 → 排除停滞地板，只留「首步/失败」两条信号参与判定
+      perception: { async snapshot() { return { screenshot: Buffer.from(`frame-${++shot}`) }; } },
+      planFirst: false,
+      acceptance: { enabled: false }});
+    const result = await loop.run('连续点击三处', 't-think');
+    expect(result.status).toBe('COMPLETED');
+    // 步1 首步地板 → 开；步2 上一步成功且无歧义 → 关（省钱）；步3 上一步失败 → 开；步4 恢复成功 → 关
+    expect(llm.options.map((o) => o.thinkingHint?.think)).toEqual([true, false, true, false]);
+    expect(result.stepsDetail[0]?.thinking).toBe('开·首步');
+    expect(result.stepsDetail[1]?.thinking).toBe('关·例行');
+    expect(result.stepsDetail[2]?.thinking).toBe('开·上一步失败');
+    expect(result.thinking).toEqual({ on: 2, total: 4, reasons: { 首步: 1, 上一步失败: 1 } });
+  });
+
+  it('非 auto 档（daily）不产出逐步判定，思考信号与步骤标签保持原样', async () => {
+    const llm = new FakeLLM([
+      toolCall('mouse_click', { x: 10, y: 10 }),
+      { toolCalls: [], content: '{"thought":"done","done":true,"finalAnswer":"ok"}' },
+    ], 'daily');
+    const loop = new AgentLoop({
+      textLLM: llm,
+      executor: { async execute() { return { ok: true, summary: 'ok' }; } },
+      perception: { async snapshot() { return {}; } },
+      planFirst: false,
+      acceptance: { enabled: false }});
+    const result = await loop.run('点一下', 't-think-daily');
+    expect(result.status).toBe('COMPLETED');
+    expect(llm.options.every((o) => o.thinkingHint?.think === undefined)).toBe(true);
+    expect(result.stepsDetail[0]?.thinking).toBeUndefined();
+    expect(result.thinking).toEqual({ on: 0, total: 0, reasons: {} });
   });
 });

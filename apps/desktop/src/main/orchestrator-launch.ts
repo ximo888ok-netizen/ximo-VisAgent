@@ -242,7 +242,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     .then((result) => {
       host.lastSteps.set(t.taskId, result.stepsDetail);
       const failureKind = classifyFailure(result.status, result.finalAnswer);
-      audit.insert(audit.fromAgentEvent(t.taskId, { type: 'task_result', status: result.status, finalAnswer: result.finalAnswer ?? '', steps: result.steps, totalTokens: result.totalTokens, gate: result.gate }));
+      audit.insert(audit.fromAgentEvent(t.taskId, { type: 'task_result', status: result.status, finalAnswer: result.finalAnswer ?? '', steps: result.steps, totalTokens: result.totalTokens, gate: result.gate, thinking: result.thinking }));
       // A-M5 收口报告（FR-006）：终态由哪一闸触发 + 最新检查点工件对账出的未完成清单（断点保留由 A-M4 纪律兜底）
       const gateRemaining = result.gate ? checkpointRedoItems(audit, t.taskId) : [];
       if (result.gate) {

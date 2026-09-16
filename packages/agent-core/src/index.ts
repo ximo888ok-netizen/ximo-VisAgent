@@ -8,6 +8,10 @@ export {
   type GroundCacheOptions, type GroundBox, type GroundSource, type RegionFingerprint,
 } from './agent/ground-cache';
 export type { TaskAssertion, AssertionResult, TaskEndGate } from './agent/types';
+export {
+  createThinkingBudget, ThinkingBudget, decideThinkingStep, floorReason, extractThinkRequest,
+  type ThinkingDecision, type ThinkingStats, type ThinkSignals, type ThinkStepContext,
+} from './agent/thinking-policy';
 export { BudgetGuard, type BudgetGate, type BudgetStop, type BudgetGuardOptions } from './agent/loop-budget';
 export * from './agent/memory';
 export { StateTracker, type StateEntry } from './agent/state-tracker';

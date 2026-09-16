@@ -1,9 +1,10 @@
 /**
  * ThinkingModeSelect.tsx — 思考模式四档选择器（Agent 输入框工具条，审批档位旁）
  *
- * qwen/glm 生效（kimi 无开关字段、deepseek 走设置面板的 thinkingEffort，不在此控件范围）：
- * - auto  评分制弹性判定：按任务复杂度自动开关
- * - daily 恒关（默认）——日常直操最快
+ * 档位决定「这一步开不开思考」，再由各供应商映射成真实参数（qwen enable_thinking /
+ * glm+deepseek thinking.type；kimi 无开关字段 → 安全降级为无操作）：
+ * - auto  按步自适应（默认）：失败/停滞/审批/歧义/里程碑等节点强制思考，例行动作不思考，模型也可自请
+ * - daily 恒关——日常直操最快
  * - long  前 2 步关，之后恒开——长任务中途防走歪
  * - deep  全程恒开——调研/复杂分析
  */
@@ -19,8 +20,8 @@ const OPTIONS = [
 type Mode = (typeof OPTIONS)[number]["value"];
 
 const TITLES: Record<Mode, string> = {
-  auto: "自动：按任务复杂度评分决定是否思考（历史深度/失败/停滞加权）",
-  daily: "日常：不思考，最快（默认）",
+  auto: "自动（默认）：按步自适应——失败/停滞/审批/多候选/里程碑等节点强制思考，例行动作不思考",
+  daily: "日常：全程不思考，最快",
   long: "长任务：前 2 步不思考，之后每步思考",
   deep: "深度研究：全程深度思考",
 };
@@ -29,7 +30,7 @@ export function ThinkingModeSelect() {
   const config = useIslandStore((s) => s.config);
   const saveConfig = useIslandStore((s) => s.saveConfig);
   const pushToast = useIslandStore((s) => s.pushToast);
-  const mode = config?.agent.thinkingMode ?? "daily";
+  const mode = config?.agent.thinkingMode ?? "auto";
 
   async function onChange(next: Mode) {
     if (next === mode) return;

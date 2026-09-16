@@ -29,6 +29,7 @@ import { applyMilestoneCheck } from './milestone';
 import { runRequestToolsRound } from './loop-request-tools';
 import { runApprovalGate } from './loop-approval';
 import { onTaskDone } from './acceptance';
+import { createThinkingBudget } from './thinking-policy';
 
 // 契约类型集中在 types.ts / recovery.ts；此处转出以保持既有导入路径可用
 export type { RecoveryContext, RecoveryHit } from './recovery';
@@ -94,7 +95,9 @@ export class AgentLoop {
       ? budgetGuard.check(step, Date.now(), totalTokens)
       : (Date.now() - startedAt > maxDurationMs ? { gate: 'budget-duration', detail: '任务失败：超过单任务时间上限' } : null);
 
-    const emit = (e: AgentEvent) => onEvent?.(e);
+    const thinking = createThinkingBudget(taskId);
+    // 旁路观测：思考地板规则要看的「上一步出现的提示」都在事件流里（停滞/熔断/里程碑/审批/无工具调用…）
+    const emit = (e: AgentEvent) => { thinking.observe(e); onEvent?.(e); };
     const stepsDetail: StepDetail[] = [];
 
     // 直操模式：无独立意图识别调用——纯对话由模型第一步调 chat_reply 完成（见批执行前的拦截）。
@@ -208,7 +211,9 @@ export class AgentLoop {
         if (pendingToolImage) { parts.push(pendingToolImage); pendingToolImage = null; }
         // 思考档信号：近期失败数（最近 6 条动作结果）+ 画面停滞（loop 层才能感知的运行时状态）
         const recentFailures = stepsDetail.slice(-6).filter((s) => s.ok === false).length;
-        const thinkingHint = { step: index, recentFailures, noChangeCount, seed: hashString(taskId) };
+        // 按步思考预算（auto 档：地板信号 + 上一步模型自请）；其余档不表态 → 沿用既有四档语义
+        const thinkDecision = thinking.decide({ mode: model.config.thinkingMode, step: index, recentFailures, noChangeCount, trail: stepsDetail, planned: tasks.length > 1 });
+        const thinkingHint = { step: index, recentFailures, noChangeCount, seed: hashString(taskId), think: thinkDecision?.think };
         // P1-13：LLM 指数退避重试
         const res = await chatWithRetry(model, [...messages, ...memory.buildHistoryMessages(), { role: 'user', content: parts }], buildToolDefs(activeTools, this.opts.extraTools), llmMaxRetries, emit, { thinkingHint });
         if (!res) {
@@ -237,6 +242,7 @@ export class AgentLoop {
           }, { index, stepStart, memory, stepsDetail, messages, emit });
         }
 
+        thinking.noteAsk(parsed.needThink); // 自请只作用于下一步（本步判定已在本步请求前做出）
         const thoughtClamped = clampThought(parsed.thought);
         if (thoughtClamped.overthink) {
           messages.push({ role: 'system', content: '你刚才的思考过长。直操模式：不解释，直接给动作（坐标从截图网格读）。' });
@@ -371,6 +377,7 @@ export class AgentLoop {
             ok: execResult.ok,
             resultSummary: execResult.summary || (execResult.ok ? '(成功)' : `失败: ${execResult.error ?? '未知错误'}`),
             durationMs: Date.now() - actionStart,
+            thinking: thinking.label(),
           };
           stepsDetail.push(stepDetail);
           emit({ type: 'step', step: stepDetail });
@@ -443,6 +450,6 @@ export class AgentLoop {
     }
     groundCache?.invalidateAll('task-end'); // 任务终态：坐标表不跨任务复用
     emit({ type: 'status', status });
-    return { status, finalAnswer, steps: index, totalTokens, stepsDetail, acceptance: runAcceptance, gate };
+    return { status, finalAnswer, steps: index, totalTokens, stepsDetail, acceptance: runAcceptance, gate, thinking: thinking.summary() };
   }
 }

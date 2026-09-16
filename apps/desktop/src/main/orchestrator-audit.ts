@@ -35,6 +35,7 @@ function toPayload(ev: AgentEvent): Record<string, unknown> {
         ok: ev.step.ok,
         level: ev.step.level,
         durationMs: ev.step.durationMs,
+        thinking: ev.step.thinking,
       };
     case 'llm_usage':
       return { promptTokens: ev.promptTokens, completionTokens: ev.completionTokens };

@@ -6,6 +6,8 @@ const OPENAI_CHAT_ENDPOINT = '/chat/completions';
 
 export class OpenAIClient implements ILLMClient {
   readonly config: LLMConfig;
+  /** 无思考开关的供应商只说明一次（避免逐步刷屏） */
+  private thinkingNoOpNoticed = false;
 
   constructor(config: LLMConfig) {
     this.config = { ...config };
@@ -29,24 +31,28 @@ export class OpenAIClient implements ILLMClient {
       stream: false,
     };
     if (tools && tools.length > 0) body.tools = tools;
-    // 思考四档（qwen/glm 生效；kimi 无开关字段；deepseek 走自己的 thinkingEffort）
+    // 思考参数映射：auto 档听 agent-core 的每步判定（thinkingHint.think），其余档沿用四档语义
     const provider = this.config.provider;
+    const mode = this.config.thinkingMode ?? 'daily';
+    const intent = options?.thinkingHint?.think;
+    const deep = intent ?? decideThinking(messages, mode, options?.thinkingHint);
     // Qwen 视觉高分辨率：默认 false 会将截图缩到 ~2621440 像素（≈1620×1620），
     // 小字和小按钮会糊掉导致坐标飘移。开启后使用固定分辨率策略（16384 Token 上限，
     // 像素上限 16777216），不降采样，保留截图细节。OpenAI 兼容模式下可作顶层参数传递。
     if (provider === 'qwen') body.vl_high_resolution_images = true;
-    if (provider === 'qwen' || provider === 'glm') {
-      const deep = decideThinking(messages, this.config.thinkingMode ?? 'daily', options?.thinkingHint);
-      if (provider === 'qwen') body.enable_thinking = deep;
-      else body.thinking = { type: deep ? 'enabled' : 'disabled' };
-    } else if (provider === 'deepseek' && this.config.thinkingEffort) {
-      // DeepSeek 思考模式（OpenAI 格式）：'off' → thinking disabled；其余 → enabled + reasoning_effort
-      if (this.config.thinkingEffort === 'off') {
+    if (provider === 'qwen') body.enable_thinking = deep;
+    else if (provider === 'glm') body.thinking = { type: deep ? 'enabled' : 'disabled' };
+    else if (provider === 'deepseek' && this.config.thinkingEffort) {
+      // DeepSeek：effort=off 是用户硬开关（恒关）；auto 档听每步意图，其余档维持既有「enabled + reasoning_effort」语义
+      const think = this.config.thinkingEffort === 'off' ? false : mode === 'auto' ? deep : true;
+      if (!think) {
         body.thinking = { type: 'disabled' };
       } else {
         body.thinking = { type: 'enabled' };
         body.reasoning_effort = this.config.thinkingEffort;
       }
+    } else if (intent === true) {
+      this.noteThinkingNoOp(provider);
     }
 
     let res: Response;
@@ -107,14 +113,23 @@ export class OpenAIClient implements ILLMClient {
     };
   }
 
+  /** 无思考开关参数的供应商（kimi / openai / custom 等）：逐步思考要求安全降级为无操作，每实例说明一次 */
+  private noteThinkingNoOp(provider: string): void {
+    if (this.thinkingNoOpNoticed) return;
+    this.thinkingNoOpNoticed = true;
+    console.log(`[thinking] 供应商 ${provider} 无思考开关参数，自适应思考降级为无操作（不影响正确性，仅少一层保险）`);
+  }
+
 }
 
 // ---------- 思考四档判定（详见 shared-types/config.ts 的 ThinkingMode 注释） ----------
 
 /**
- * 四档总入口：本次调用是否开思考。
+ * 四档总入口：本次调用是否开思考（调用方已给出每步意图时优先听意图，本函数是无意图时的兜底）。
  * - daily：恒关；long：step>2 恒开（前 2 步流程化关）；deep：恒开
- * - auto：评分制（complexityScore），软阈值带内按步种子 50% 概率
+ * - auto ：评分制（complexityScore），软阈值带内按步种子 50% 概率——
+ *          agent-core 的按步判定（地板信号 + 模型自请）经 ThinkingHint.think 下发后不再走这里，
+ *          只有不带逐步判定的内部调用（规划/里程碑/验收/压缩）才落到评分兜底
  * thinkingHint 缺省时（internal 调用），auto 退化为仅按消息静态信号评分。
  */
 export function decideThinking(

@@ -32,7 +32,7 @@ export const AgentConfigSchema = z.object({
   emergencyHotkey: z.string(),
   /** DeepSeek 思考强度：'off' 关闭思考；low/high/max 对应 reasoning_effort（缺省=模型默认 high） */
   thinkingEffort: z.enum(["off", "low", "high", "max"]).optional(),
-  /** 思考四档（qwen/glm 生效）：auto=评分制弹性 / daily=恒关 / long=前2步关后恒开 / deep=恒开 */
+  /** 思考模式四档：auto=按步自适应(默认) / daily=恒关 / long=前2步关后恒开 / deep=恒开 */
   thinkingMode: z.enum(["auto", "daily", "long", "deep"]).optional(),
   /** 任务规划器总开关：缺省=按目标启发式；false=永不规划 */
   planFirst: z.boolean().optional(),

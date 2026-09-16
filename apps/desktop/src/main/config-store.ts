@@ -71,7 +71,7 @@ const DEFAULT_CONFIG: AppConfig = {
     maxRetries: 3,
     emergencyHotkey: 'Ctrl+Alt+Q',
     thinkingEffort: 'high', // DeepSeek 思考模式默认开启且 effort=high
-    thinkingMode: 'daily', // 思考四档默认日常（恒关，最快）
+    thinkingMode: 'auto', // 默认按步自适应：失败/停滞/审批/歧义/里程碑等节点强制思考，例行步骤关思考（旧配置显式的 daily/long/deep 语义不变）
   },
   safetyRules: [
     { id: 'block-cmd', appPattern: '(cmd|powershell|pwsh|terminal)\\.exe', levelOverride: 3, enabled: true },

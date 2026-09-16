@@ -113,6 +113,7 @@ export function createAuditRepo(db: Database.Database): AuditRepo {
             ok: typeof d.ok === 'boolean' ? d.ok : undefined,
             level: typeof d.level === 'number' ? (d.level as StepDetail['level']) : undefined,
             durationMs: typeof d.durationMs === 'number' ? d.durationMs : undefined,
+            thinking: typeof d.thinking === 'string' ? d.thinking : undefined,
           };
           out.push(step);
         } catch { /* 跳过损坏行 */ }

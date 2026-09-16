@@ -6,6 +6,7 @@ import type { PerceptionProvider, ToolExecutor } from '../tools/registry';
 import type { GroundCache } from './ground-cache';
 import type { RecoveryContext, RecoveryHit } from './recovery';
 import type { BudgetGuard } from './loop-budget';
+import type { ThinkingStats } from './thinking-policy';
 
 /** 机器断言（L1 验收门）：task_done 后由宿主执行确定性校验，替代模型自评。
  *  断言由任务提交方（e2e 计划/SOP/人工）声明，属可信数据，不经模型之手。
@@ -99,6 +100,8 @@ export interface StepDetail {
   ok?: boolean;
   durationMs?: number;
   tokens?: number;
+  /** 本步思考预算判定标签（auto 档才有，例：`开·上一步失败` / `关·例行`） */
+  thinking?: string;
 }
 
 export interface AgentRunResult {
@@ -112,4 +115,6 @@ export interface AgentRunResult {
   acceptance?: { passed: boolean | null; attempts: number };
   /** A-M5 三闸收口报告：终态由哪一闸触发（取消/审批挂起等非闸路径缺省） */
   gate?: TaskEndGate;
+  /** 思考预算汇总（auto 档）：思考步数/判定步数/原因分布，供终态量收益 */
+  thinking?: ThinkingStats;
 }
