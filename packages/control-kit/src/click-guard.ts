@@ -40,6 +40,12 @@ export class ClickGuard {
     this.located = elements.slice(0, MAX_LOCATED);
   }
 
+  /** 任务边界清理：清空跨步登记的候选与重复查询统计（上一任务的元素不该再提示给下一任务） */
+  forget(): void {
+    this.located = [];
+    this.locateStats.clear();
+  }
+
   /** ui_locate 重复查询检测：同 query 短时间内返回同一结果时给出升级警告（null = 首次/结果已变化）。
    *  sig 为本次首个命中元素签名（id@中心坐标）：界面真变了 sig 会变，计数自动重置，不误伤合法重查。 */
   locateRepeatNote(query: string, sig: string): string | null {

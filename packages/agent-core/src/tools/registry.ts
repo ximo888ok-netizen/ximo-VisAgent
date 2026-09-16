@@ -27,5 +27,7 @@ export interface PerceptionProvider {
       os?: string;
       windows?: string[];
     };
+    /** 每步可交互元素清单（宿主 UIA 裁剪的紧凑文本；关闭开关/UIA 降级/前台无候选 = 缺省） */
+    interactiveList?: string;
   }>;
 }

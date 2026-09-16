@@ -8,17 +8,22 @@ import type { ExperienceStore } from './experience-store';
 import type { MemoryStore } from './memory-store';
 import type { ConversationStore } from './conversation-store';
 import type { EmployeeStore } from './stores/employee-store';
-import type { RoleContext } from '@ximo-visagent/agent-core';
+import type { MissionRepo } from './mission-db/mission-repo';
+import type { RoleContext, CapabilityBrief } from '@ximo-visagent/agent-core';
 
 /** 世界模型注入条数与置信度下限（过低会把偶发结论当事实喂给模型） */
 const ENV_FACT_TOP_K = 15;
 const ENV_FACT_MIN_CONFIDENCE = 0.3;
+/** 能力卡 top-k：与 agent-core CAPABILITY_TOP_K 同值（FTS 召回本身已按 rank 取前 5） */
+const CAPABILITY_TOP_K = 5;
 
 export interface InjectionDeps {
   experience?: ExperienceStore;
   memory?: MemoryStore;
   conversation?: ConversationStore;
   employee?: EmployeeStore;
+  /** 能力库仓储（能力卡 top-k 常驻注入；缺省 = 不注入，行为兼容） */
+  mission?: MissionRepo;
 }
 
 export interface TaskInjections {
@@ -27,11 +32,14 @@ export interface TaskInjections {
   conversationContext?: { role: 'user' | 'assistant'; content: string }[];
   /** M2: 岗位角色上下文（身份/职责/边界/目标） */
   roleContext?: RoleContext;
+  /** 相似任务能力卡 top-k（FTS trigram 召回；无命中不注入） */
+  capabilityCards?: CapabilityBrief[];
 }
 
 export function buildTaskInjections(
   deps: Omit<InjectionDeps, 'memoryEnabled'>,
   memoryEnabled: boolean,
+  goal = '',
 ): TaskInjections {
   return {
     guidance: readActiveGuidance(deps.experience),
@@ -40,7 +48,26 @@ export function buildTaskInjections(
       ? deps.conversation.getContext()
       : undefined,
     roleContext: readRoleContext(deps.employee),
+    capabilityCards: readCapabilityCards(deps.mission, goal),
   };
+}
+
+/** 能力卡常驻：目标 → FTS trigram 召回 top-k → 取整卡（描述/工具/前提/验收）映射为注入形态 */
+function readCapabilityCards(mission: MissionRepo | undefined, goal: string): CapabilityBrief[] | undefined {
+  if (!mission || !goal.trim()) return undefined;
+  try {
+    const hits = mission.matchCapabilities(goal).items.slice(0, CAPABILITY_TOP_K);
+    const cards: CapabilityBrief[] = [];
+    for (const hit of hits) {
+      const c = mission.getCapability(hit.capabilityId);
+      if (!c) continue;
+      cards.push({ title: c.title, description: c.description, tools: c.tools, precondition: c.precondition, acceptance: c.acceptance });
+    }
+    return cards.length > 0 ? cards : undefined;
+  } catch (err) {
+    console.error('[mission] 能力卡匹配失败（降级：不注入）', err);
+    return undefined;
+  }
 }
 
 /** M2: 从员工域读取活跃岗位，组装为 RoleContext 注入 prompt 固定段 */

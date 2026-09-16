@@ -1,12 +1,20 @@
-// 宿主感知实现：截图 + 前台窗口 + 环境上下文
+// 宿主感知实现：截图 + 前台窗口 + 环境上下文 + 每步可交互元素清单
 import type { PerceptionProvider } from '@ximo-visagent/agent-core';
+import { buildInteractiveListSection } from './interactive-list';
 import { getHost } from './host';
 import { listWindows, getSystemDpi } from './win32-window';
 
 /** 可见窗口列表最大数量（注入太多 token 浪费，6 个足够让模型知道有哪些窗口可切换） */
 const MAX_VISIBLE_WINDOWS = 6;
 
+export interface HostPerceptionOptions {
+  /** 每步交互元素清单开关（配置项，默认开）；传运行时 getter 以支持改配置即时生效 */
+  interactiveListEnabled?: () => boolean;
+}
+
 export class HostPerception implements PerceptionProvider {
+  constructor(private opts: HostPerceptionOptions = {}) {}
+
   async snapshot(): Promise<{
     screenshot?: Buffer;
     signature?: string;
@@ -17,18 +25,22 @@ export class HostPerception implements PerceptionProvider {
       os?: string;
       windows?: string[];
     };
+    interactiveList?: string;
   }> {
     const host = getHost();
-    const [screenshot, foreground, envContext] = await Promise.all([
+    const listOn = this.opts.interactiveListEnabled ? this.opts.interactiveListEnabled() : true;
+    const [screenshot, foreground, envContext, interactiveList] = await Promise.all([
       host.captureScreen(),
       host.getForegroundInfo(),
       this.collectEnvContext(host),
+      listOn ? buildInteractiveListSection() : Promise.resolve(undefined),
     ]);
     // 指纹用于判定"画面是否真的没变"：整图字节哈希对光标闪烁过于敏感，优先用宿主分块哈希
     const signature = screenshot && host.frameSignature
       ? (await host.frameSignature(screenshot).catch(() => null)) ?? undefined
       : undefined;
-    return { screenshot, signature, foreground, envContext };
+    // 开关关闭/清单缺席时对象形状与旧实现逐字节一致（回归红线）
+    return { screenshot, signature, foreground, envContext, ...(interactiveList ? { interactiveList } : {}) };
   }
 
   /** 采集环境上下文：优先用宿主实现（Electron 有权威值），缺省用 FFI 兜底 */

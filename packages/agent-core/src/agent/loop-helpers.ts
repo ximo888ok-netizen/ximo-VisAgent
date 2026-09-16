@@ -13,6 +13,8 @@ export interface PerceptionSnap {
   domain?: string;
   /** 结构化环境上下文（每步注入，让模型知道自己在什么环境里） */
   envContext?: EnvContext;
+  /** 前台窗口可交互元素清单（宿主 UIA 裁剪；缺省 = 开关关闭/UIA 降级/无候选，整段不出现） */
+  interactiveList?: string;
 }
 
 /** 画面变化判定：宿主分块指纹（64bit 二进制串）按汉明距离，整图字节哈希按严格不等。
@@ -71,6 +73,10 @@ export function buildPerceptionText(snap: PerceptionSnap, tasks: string[], step:
       lines.push(`可见窗口: ${snap.envContext.windows.join(' | ')}`);
     }
   }
+
+  // 主动观察：前台窗口可交互元素清单（宿主 UIA 裁剪）。开关关闭/UIA 降级时字段缺席，
+  // 感知文本与现状逐字节一致（回归红线）；绝不用空清单占位误导模型。
+  if (snap.interactiveList) lines.push(snap.interactiveList);
 
   // 关键状态追踪：注入结构化关键状态（窗口/文件/剪贴板等），让模型不丢线索
   if (stateLines && stateLines.length > 0) {
@@ -335,8 +341,14 @@ export function applyRequestTools(
     : [];
   const valid = requested.filter((n) => catalog.some((t) => t.name === n));
   for (const n of valid) active.add(n);
-  const invalid = requested.filter((n) => !valid.includes(n));
-  const summary = valid.length > 0 ? `已加载工具: ${valid.join(', ')}（下一步起可用）` : '未加载任何工具';
+  // 已常驻的工具不算非法：模型可能凭旧记忆 request 已转常驻的工具（wait_for/look_close），给明确指引。
+  // 判据只查常驻表：被禁用的可选工具（如非 qwen 的 web_search）仍走非法提示，引导模型放弃该路径。
+  const resident = requested.filter((n) => !valid.includes(n) && TOOL_SCHEMAS.some((t) => t.name === n));
+  const invalid = requested.filter((n) => !valid.includes(n) && !resident.includes(n));
+  const summaryParts: string[] = [];
+  if (valid.length > 0) summaryParts.push(`已加载工具: ${valid.join(', ')}（下一步起可用）`);
+  if (resident.length > 0) summaryParts.push(`无需加载（常驻可直接调用）: ${resident.join(', ')}`);
+  const summary = summaryParts.length > 0 ? summaryParts.join('；') : '未加载任何工具';
   const invalidHint = invalid.length > 0
     ? `未知工具名: ${invalid.join(', ')}。可选目录: ${catalog.map((t) => t.name).join(', ')}`
     : undefined;

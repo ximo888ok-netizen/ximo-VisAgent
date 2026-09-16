@@ -1,4 +1,4 @@
-// 直操模式单测：actions[] 批解析 / 批内 L2 截断 / thought 截断 / 5 步滑窗
+// 直操模式单测：actions[] 批解析 / 批内 L2 截断 / thought 截断 / 8 步滑窗
 import { describe, expect, it } from 'vitest';
 import type { ILLMClient, ChatMessage, ToolDef, ChatResult, ToolCallResult } from '@ximo-visagent/llm-providers';
 import { defaultAgentConfig } from '@ximo-visagent/llm-providers';
@@ -63,18 +63,18 @@ describe('clampThought（思考最小化）', () => {
   });
 });
 
-describe('ContextManager（5 步滑窗一行式）', () => {
+describe('ContextManager（8 步滑窗一行式）', () => {
   it('历史消息为一行式动作记录，参数只留关键值', () => {
     const mem = new ContextManager(async () => '摘要');
     mem.setTasks(['目标']);
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 12; i++) {
       mem.addStep({ thought: `第${i}步思考`, actionName: 'mouse_click', actionArgs: { x: 100 + i, y: 200 }, resultSummary: `点击成功 ${i}` });
     }
     const msgs = mem.buildHistoryMessages();
-    // 滑窗 5：8 步只留最后 5 步（x=104..108），最新一步是第 8 步
-    expect(msgs).toHaveLength(5);
-    expect(msgs.at(-1)!.content).toContain('mouse_click(107,200)');
-    expect(msgs.at(-1)!.content).toContain('点击成功 7');
+    // 滑窗 8：12 步只留最后 8 步（x=104..111），最新一步是第 12 步
+    expect(msgs).toHaveLength(8);
+    expect(msgs.at(-1)!.content).toContain('mouse_click(111,200)');
+    expect(msgs.at(-1)!.content).toContain('点击成功 11');
     expect(msgs.at(-1)!.content).not.toContain('思考'); // thought 不进历史（人只记动作不记独白）
   });
 

@@ -64,10 +64,10 @@ function findUiaNode(node: UiNode, text: string): boolean {
   return false;
 }
 
-export function initPerception(): HostPerception {
+export function initPerception(interactiveListEnabled?: () => boolean): HostPerception {
   registerWindowAssertions();
   if (!perception) {
-    perception = new HostPerception();
+    perception = new HostPerception({ interactiveListEnabled });
   }
   return perception;
 }

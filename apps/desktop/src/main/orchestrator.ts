@@ -53,6 +53,8 @@ export interface OrchestratorDeps {
   employee?: import('./stores/employee-store').EmployeeStore;
   /** 微信 Bot 通讯渠道（wechat_send 工具用） */
   wechatBot?: import('./wechat-bot').WeChatBot | null;
+  /** 能力库仓储（能力卡 top-k 随任务常驻注入用；缺省 = 不注入） */
+  mission?: import('./mission-db/mission-repo').MissionRepo;
 }
 
 export class Orchestrator {

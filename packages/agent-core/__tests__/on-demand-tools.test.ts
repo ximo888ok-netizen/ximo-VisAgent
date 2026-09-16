@@ -3,23 +3,24 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ILLMClient, ChatMessage, ToolDef, ChatResult, ToolCallResult } from '@ximo-visagent/llm-providers';
 import { defaultAgentConfig } from '@ximo-visagent/llm-providers';
 import { AgentLoop } from '../src/agent/loop';
-import { buildToolDefs } from '../src/agent/loop-helpers';
+import { applyRequestTools, buildOptionalCatalog, buildToolDefs } from '../src/agent/loop-helpers';
 import { buildSystemPrompt } from '../src/prompts/system';
 import { OPTIONAL_TOOL_SCHEMAS, TOOL_SCHEMA_MAP, TOOL_SCHEMAS } from '../src/tools/schema';
 
 const FIXED_NAMES = TOOL_SCHEMAS.map((t) => t.name);
 
 describe('常驻/可选工具拆分', () => {
-  it('直操模式：常驻含鼠标键盘/剪贴板/UIA定位/文件 + 元工具；look_close/wait/excel 可选', () => {
+  it('直操模式：常驻含鼠标键盘/剪贴板/UIA定位/强观察(wait_for/look_close)/文件 + 元工具；wait/screen_ocr/excel 可选', () => {
     for (const n of ['mouse_click', 'mouse_drag', 'mouse_scroll', 'keyboard_type', 'keyboard_press',
-      'ui_locate', 'ui_click',
+      'ui_locate', 'ui_click', 'wait_for', 'look_close',
       'open_app', 'activate_window', 'get_clipboard', 'set_clipboard',
       'file_read', 'file_write', 'file_list', 'chat_reply', 'task_done', 'request_tools']) {
       expect(FIXED_NAMES).toContain(n);
     }
     // ui_locate/ui_click 升回常驻（2026-09-07 飘移修复）：桌面图标/系统对话框走 UIA 像素级定位，
     // flash 模型目测直点误差 ±20-50px 大于图标间距，按需加载模式导致模型从不调用 → 必点飞。
-    for (const n of ['wait', 'look_close', 'excel_read_range', 'excel_write_cell']) {
+    // wait_for/look_close 同理转常驻（弱模型经常不知道要 request_tools）；screen_ocr 低频仍可选。
+    for (const n of ['wait', 'screen_ocr', 'excel_read_range', 'excel_write_cell']) {
       expect(FIXED_NAMES).not.toContain(n);
       expect(OPTIONAL_TOOL_SCHEMAS.map((t) => t.name)).toContain(n);
     }
@@ -30,17 +31,35 @@ describe('常驻/可选工具拆分', () => {
   });
 });
 
+describe('applyRequestTools（常驻工具豁免）', () => {
+  it('request 已转常驻的 wait_for：不报未知工具名，给出"无需加载"指引', () => {
+    const active = new Set<string>();
+    const r = applyRequestTools({ names: ['wait_for', 'screen_ocr'] }, buildOptionalCatalog(), active);
+    expect(r.ok).toBe(true);
+    expect(r.summary).toContain('已加载工具: screen_ocr');
+    expect(r.summary).toContain('无需加载（常驻可直接调用）: wait_for');
+    expect(active.has('screen_ocr')).toBe(true);
+  });
+
+  it('被 provider 能力禁用的可选工具（web_search）仍按未知反馈，不被常驻豁免误伤', () => {
+    const catalog = buildOptionalCatalog(undefined, ['web_search']);
+    const r = applyRequestTools({ names: ['web_search'] }, catalog, new Set());
+    expect(r.ok).toBe(false);
+    expect(r.invalidHint).toContain('未知工具名: web_search');
+  });
+});
+
 describe('buildToolDefs（激活集过滤）', () => {
   it('未加载任何可选工具时只含常驻集', () => {
     const defs = buildToolDefs(new Set());
     expect(defs.map((d) => d.function.name)).toEqual(FIXED_NAMES);
   });
 
-  it('加载 wait 后包含 wait，未加载的 look_close 仍缺席', () => {
+  it('加载 wait 后包含 wait，未加载的 screen_ocr 仍缺席', () => {
     const defs = buildToolDefs(new Set(['wait']));
     const names = defs.map((d) => d.function.name);
     expect(names).toContain('wait');
-    expect(names).not.toContain('look_close');
+    expect(names).not.toContain('screen_ocr');
   });
 
   it('custom_* 工具也按需：未激活不进列表，激活后进入', () => {

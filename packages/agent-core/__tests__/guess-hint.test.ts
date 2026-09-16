@@ -72,7 +72,7 @@ describe('buildOptionalCatalog（按 provider 能力过滤）', () => {
   it('禁用 web_search 后目录不含它，其余可选工具与自定义工具保留', () => {
     const names = buildOptionalCatalog([custom], ['web_search']).map((t) => t.name);
     expect(names).not.toContain('web_search');
-    expect(names).toContain('look_close');
+    expect(names).toContain('screen_ocr');
     expect(names).toContain('custom_hello');
   });
 

@@ -79,6 +79,8 @@ export interface AgentLoopOptions {
   roleContext?: import('../prompts/system').RoleContext;
   /** 布局稳定元素坐标表缓存（ground-cache.ts）：宿主创建，注入循环登记帧上下文与失效时机 */
   groundCache?: GroundCache;
+  /** 常识与能力卡常驻：宿主按目标 FTS 召回的 top-k 相似任务能力卡，随 system prompt 注入；空/缺省不注入 */
+  capabilityCards?: import('../prompts/capability-inject').CapabilityBrief[];
 }
 
 export type AgentEvent =

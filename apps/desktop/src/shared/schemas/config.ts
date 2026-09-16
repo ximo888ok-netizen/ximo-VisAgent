@@ -38,6 +38,8 @@ export const AgentConfigSchema = z.object({
   planFirst: z.boolean().optional(),
   /** 应用重启后自动恢复最近的未完成任务（默认 true） */
   autoResumeInterrupted: z.boolean().optional(),
+  /** 每步感知附带可交互元素清单（默认开；false=关闭，回到纯截图观察） */
+  interactiveListEnabled: z.boolean().optional(),
 });
 export type AgentConfigPayload = z.infer<typeof AgentConfigSchema>;
 

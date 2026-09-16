@@ -29,7 +29,7 @@ const CLICKABLE_TYPES = new Set([
 ]);
 
 /** 控件类型短名：sidecar 输出 "ControlType.Button"，单测树用 "Button"，统一去前缀 */
-function shortType(type: string): string {
+export function shortType(type: string): string {
   return type.startsWith('ControlType.') ? type.slice('ControlType.'.length) : type;
 }
 
@@ -89,6 +89,11 @@ function sameWindow(win: string, fgLower: string): boolean {
   return a !== '' && (a === fgLower || a.includes(fgLower) || fgLower.includes(a));
 }
 
+/** 判定某窗口名是否属于前台窗口标题（供每步元素清单裁剪用；清单只要前台，不做全量回退） */
+export function windowMatches(win: string, fgTitle: string): boolean {
+  return sameWindow(win, fgTitle.trim().toLowerCase());
+}
+
 /** 放大图定位框映射回截图坐标（origin/zoom 来自 host.captureZoom：截图坐标 = origin + 放大图像素 / zoom） */
 export function zoomedBoxToScreen(
   box: { x: number; y: number; w: number; h: number },
@@ -111,4 +116,54 @@ export function searchMatches(all: UiMatch[], query: string, limit = 8): UiMatch
         b.w * b.h - a.w * a.h,
     )
     .slice(0, limit);
+}
+
+// ---------- 给模型的定位摘要：候选必须带坐标，否则模型拿到的只是名字（坐标在 data 里等于没有） ----------
+
+/** 候选 ≤8（ui_locate 默认 limit）时每条都带坐标：一条 ~34 字符（≈25 token），8 条 ≈200 token，
+ *  换来的是模型能按位置消歧 + 可直接引用中心点。候选更多说明目标高度歧义，坐标表越长歧义不降反升
+ *  （模型该换更精确的词或按窗口消歧），故只给前 4 条坐标，其余留名字行控预算。 */
+const COORD_ALL_LIMIT = 8;
+const COORD_TOP_N = 4;
+
+/** 单条候选摘要：#id "名称"(类型) @(中心x,中心y 宽x高) [窗口]；withCoords=false 时省略坐标段 */
+export function formatLocateLine(m: UiMatch, withCoords: boolean): string {
+  const coords = withCoords
+    ? ` @(${Math.round(m.center.x)},${Math.round(m.center.y)} ${Math.round(m.w)}x${Math.round(m.h)})`
+    : '';
+  return `#${m.id} "${m.name}"(${m.type})${coords} [${m.window}]`;
+}
+
+/** 候选列表摘要（含 token 预算纪律，见 COORD_ALL_LIMIT 注释）：>8 个时前 4 带坐标 + 尾部提示 */
+export function formatLocateDetail(matches: UiMatch[]): string {
+  const coordLimit = matches.length <= COORD_ALL_LIMIT ? matches.length : COORD_TOP_N;
+  const detail = matches.map((m, i) => formatLocateLine(m, i < coordLimit)).join('；');
+  return matches.length <= COORD_ALL_LIMIT
+    ? detail
+    : `${detail}（候选较多：仅前 ${COORD_TOP_N} 条带坐标，请换更精确关键词或用窗口/位置消歧）`;
+}
+
+// ---------- 查询词与候选名相关性校验（防跨窗口/跨任务残留候选被盲点） ----------
+
+/** 三态结论：match=有共同字符依据；unknown=无名占位候选（SoM 主场景，名字无判据）；mismatch=零字符交集 */
+export function nameRelevance(query: string, name: string): 'match' | 'unknown' | 'mismatch' {
+  if (name.startsWith('(')) return 'unknown';
+  const q = query.trim().toLowerCase();
+  const n = name.trim().toLowerCase();
+  if (!q || !n) return 'unknown';
+  if (n.includes(q) || q.includes(n)) return 'match';
+  const qc = new Set(q);
+  for (const ch of n) if (qc.has(ch)) return 'match';
+  return 'mismatch';
+}
+
+/** SoM 选中的候选名与查询词毫不相干时的警示语（'' = 无需标注）。
+ *  取舍：标注而非直接过滤——SoM 服务的是无名图标场景（名字相关度天然低），且候选坐标来自
+ *  UIA 像素级矩形，风险在"选错候选"而非"坐标错"；直接过滤会让图标定位整档失效。
+ *  实测事故（查询「卸载」返回「番茄意面」「13.mp4」模型照点）由本警示 + 任务边界清理兜底。
+ *  拼音首字母比对未纳入：查询与候选名同为界面原文，拼音只帮"用户拼音输入"场景，边际收益小。 */
+export function somMismatchNote(query: string, name: string): string {
+  return nameRelevance(query, name) === 'mismatch'
+    ? `；⚠候选名"${name.slice(0, 16)}"与查询「${query}」毫不相干（疑似残留/错窗候选）：先对照截图核实再点，或换关键词`
+    : '';
 }

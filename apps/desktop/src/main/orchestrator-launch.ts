@@ -69,12 +69,13 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
   // S1：每次任务重建分类器
   const makeSafetyClassifier = () => makeClassifier(store.get().safetyRules, customTools.toolSchemas());
 
-  const injections = buildTaskInjections(deps, cfg.memoryEnabled !== false);
+  const injections = buildTaskInjections(deps, cfg.memoryEnabled !== false, t.goal);
 
   // 自动注入 distilled SOP：当任务没有手动 SOP 时，尝试按关键词匹配候选 SOP
   const autoSopSteps = t.sopSteps ?? matchDistilledSop(audit, t.goal);
 
-  const perception = initPerception();
+  // 每步可交互元素清单开关：配置项默认开，getter 让改配置对下一个任务感知步即时生效
+  const perception = initPerception(() => store.get().agent.interactiveListEnabled !== false);
   // SoM 基础闭包：先在截图上画编号标注再发给模型（真 Set-of-Mark，见 som-mark.ts）
   const somLookupBase = createSomLookup(vision ?? text);
   // 布局稳定元素坐标表缓存：任务内共享一个实例（循环登记帧上下文，执行器包装查表/记表）。
@@ -197,6 +198,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     assertions: t.assertions,
     evaluateAssertion: (a) => evaluateTaskAssertion(a, cfg.workspaceDir),
     memoryFacts: injections.memoryFacts,
+    capabilityCards: injections.capabilityCards,
     guidance: t.guidance ?? injections.guidance,
     conversationContext: injections.conversationContext,
     roleContext: injections.roleContext,
@@ -334,6 +336,8 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
       getLongTaskRunner()?.untrack(t.taskId);
       host.loops.delete(t.taskId);
       auraTaskFinished(t.taskId);
+      // 任务边界清理：视觉定位残留（守卫候选/重复查询统计/连点计数）不带入下一任务
+      stack.computer.resetVisualState();
       // lastSteps 保留（SOP 保存窗口期使用），容量封顶 20 条
       if (host.lastSteps.size > 20) {
         const oldest = host.lastSteps.keys().next().value;

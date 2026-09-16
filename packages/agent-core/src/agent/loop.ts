@@ -74,6 +74,8 @@ export class AgentLoop {
 
     const startedAt = Date.now();
     let totalTokens = 0;
+    // token 驱动压缩的输入：上一次请求的真实上下文占用（memory.needsCompression 用；首答前 = 不压）
+    let lastPromptTokens: number | undefined;
     let status: TaskStatus = 'RUNNING';
     this.cancelled = false;
     this.stopped = false;
@@ -124,7 +126,7 @@ export class AgentLoop {
     const guessHint = createGuessHintInjector(optionalCatalog.some((t) => t.name === 'web_search'));
 
     const messages: ChatMessage[] = [
-      { role: 'system', content: buildSystemPrompt(goal, this.opts.sopSteps, this.opts.memoryFacts, this.opts.guidance, this.opts.sopAuthority, optionalCatalog, this.opts.roleContext) },
+      { role: 'system', content: buildSystemPrompt(goal, this.opts.sopSteps, this.opts.memoryFacts, this.opts.guidance, this.opts.sopAuthority, optionalCatalog, this.opts.roleContext, undefined, this.opts.capabilityCards) },
       ...(this.opts.conversationContext ?? []),
     ];
 
@@ -228,6 +230,7 @@ export class AgentLoop {
         }
         llmFailStreak = 0;
         totalTokens += res.usage.totalTokens;
+        lastPromptTokens = res.usage.promptTokens;
         emit({ type: 'llm_usage', promptTokens: res.usage.promptTokens, completionTokens: res.usage.completionTokens });
 
         // 3) 解析输出 + 思考最小化（长 thought 截断，过度思考一次性纠正）
@@ -264,8 +267,8 @@ export class AgentLoop {
         const injectKnowledge = efficiency.shouldInjectKnowledge();
         if (bailoutWarn || injectKnowledge) {
           if (bailoutWarn) messages.push({ role: 'system', content: bailoutWarn });
-          if (injectKnowledge) messages.push({ role: 'system', content: `${WINDOWS_KNOWLEDGE}\n\n以上常识此前未随任务下发，现在补发。对照卡点换用快捷键/系统路径，通常比反复点击快得多。` });
-          emit({ type: 'step', step: { index, thought: bailoutWarn ? '[死局预警] 已注入强制收尾指令' : '[常识补发] 注入 Windows 操作常识', actionName: null, resultSummary: '', ok: !bailoutWarn } });
+          if (injectKnowledge) messages.push({ role: 'system', content: `${WINDOWS_KNOWLEDGE}\n\n以上为完整版常识（常驻注入时按任务裁剪过，可能省略应用路径段），困境时全量重发。对照卡点换用快捷键/系统路径，通常比反复点击快得多。` });
+          emit({ type: 'step', step: { index, thought: bailoutWarn ? '[死局预警] 已注入强制收尾指令' : '[常识补发] 注入 Windows 操作常识完整版', actionName: null, resultSummary: '', ok: !bailoutWarn } });
         }
 
         // 4) 完成判断 + 自动验收门（机器断言优先；LLM 评审条件触发：有实质动作才评审，评审用 textLLM 无图）
@@ -422,8 +425,8 @@ export class AgentLoop {
         }
         if (batchBroken && status !== 'RUNNING') break;
 
-        // 8) 触发压缩
-        if (memory.needsCompression()) {
+        // 8) 触发压缩（token 驱动：宿主回传上下文占用超阈值；步数为兜底上限）
+        if (memory.needsCompression(lastPromptTokens)) {
           await memory.compressNow().catch(() => {});
         }
 

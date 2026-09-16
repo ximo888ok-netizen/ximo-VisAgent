@@ -94,3 +94,17 @@ describe('ClickGuard 重复查询检测（场景复刻自同 query 27 次返回�
     expect(g.locateRepeatNote('取消', '1@1,1')).toBeNull();
   });
 });
+
+describe('ClickGuard.forget（任务边界清理）', () => {
+  it('forget 后候选提示与重复查询统计全部清零（上一任务残留不参与下一任务）', () => {
+    const g = new ClickGuard();
+    g.remember([{ id: 12, name: '保存', x: 900, y: 40, w: 60, h: 24 }]);
+    expect(g.locateRepeatNote('保存', '1@1,1')).toBeNull();
+    expect(g.locateRepeatNote('保存', '1@1,1')).toContain('已第 2 次');
+    expect(g.hintAt(930, 52)).toContain('ui_click(12)');
+    g.forget();
+    expect(g.hintAt(930, 52)).toBeNull();
+    // 重复计数回到首次语义：不再警告
+    expect(g.locateRepeatNote('保存', '1@1,1')).toBeNull();
+  });
+});

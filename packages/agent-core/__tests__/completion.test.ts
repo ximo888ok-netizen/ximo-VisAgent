@@ -47,6 +47,35 @@ describe('buildPerceptionText（步数预算提醒）', () => {
   });
 });
 
+describe('buildPerceptionText（可交互元素清单）', () => {
+  const tasks = ['打开设置卸载程序'];
+  const baseSnap = {
+    foreground: { title: '设置', className: 'Settings' },
+    envContext: { screen: '1920x1080', windows: ['设置', '资源管理器'] },
+  };
+  const list = '可交互元素清单[设置]（共 2 个）：\n1. 卸载 (Button) @(421,308)\n2. 返回 (Button) @(60,80)';
+
+  it('清单在场：整段注入，位于环境行之后、关键状态之前', () => {
+    const t = buildPerceptionText({ ...baseSnap, interactiveList: list }, tasks, 3, true, 0, [], 60, ['前台: 设置']);
+    expect(t).toContain('1. 卸载 (Button) @(421,308)');
+    expect(t.indexOf('可见窗口') < t.indexOf('可交互元素清单')).toBe(true);
+    expect(t.indexOf('可交互元素清单') < t.indexOf('关键状态')).toBe(true);
+  });
+
+  it('清单缺席（开关关闭 / sidecar 降级 / 前台无候选）：与现状逐字节一致（回归红线）', () => {
+    const t = buildPerceptionText(baseSnap, tasks, 3, true, 0, [], 60, ['前台: 设置']);
+    expect(t).toBe([
+      '[步 #3/60]',
+      '目标: 打开设置卸载程序',
+      '窗口: 设置',
+      '环境: 屏幕1920x1080',
+      '可见窗口: 设置 | 资源管理器',
+      '关键状态: 前台: 设置',
+      '(无截图)',
+    ].join('\n'));
+  });
+});
+
 describe('EfficiencyGuard（收尾守卫）', () => {
   const click = (x: number, y: number) => ({ name: 'mouse_click', args: { x, y } });
 

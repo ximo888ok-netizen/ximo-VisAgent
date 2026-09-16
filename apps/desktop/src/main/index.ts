@@ -87,6 +87,7 @@ const orchestrator = new Orchestrator(configStore, auditDb, {
   conversation: conversationStore,
   experience: experienceStore,
   employee: employeeStore,
+  mission: missionRepo,
 });
 
 // Mission 编排器：确认闸后按拓扑序复用 orchestrator.startTask 派发链（排队/审批语义不变），

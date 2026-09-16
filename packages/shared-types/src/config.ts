@@ -56,6 +56,8 @@ export interface AgentConfig {
   planFirst?: boolean;
   /** 应用重启后自动恢复最近的未完成任务（默认 true；e2e/selftest 下强制不恢复） */
   autoResumeInterrupted?: boolean;
+  /** 每步感知附带「可交互元素清单」（UIA 前台窗口裁剪；默认开，显式 false 关闭后与旧行为逐字节一致） */
+  interactiveListEnabled?: boolean;
 }
 
 export interface SafetyRule {

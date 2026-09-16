@@ -123,6 +123,23 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     source: 'computer',
     parameters: { type: 'object', properties: { elementId: { type: 'number', description: 'ui_locate 返回的 #id' }, button: { type: 'string', enum: ['left', 'right', 'middle'] }, times: { type: 'integer', description: '点击次数，默认1；2=双击' }, ...modifiersProp }, required: ['elementId'] },
   },
+  // ---------- 强观察（常驻） ----------
+  // 曾按需加载导致弱模型从不知道要 request_tools：条件等待/放大查看是"看得准"的主力手段，转常驻
+  // （token 增量约 260/步，见文件尾估算注释；screen_ocr 因 schema 最长、且每步清单已覆盖读名场景，仍保持可选）。
+  {
+    name: 'look_close',
+    description: '放大查看屏幕某区域：返回 2 倍放大图（附下一轮消息），看小字/小按钮用。x/y/w/h 为截图坐标，建议 200-600px 见方。',
+    level: 0,
+    source: 'computer',
+    parameters: { type: 'object', properties: { ...geoProps, w: { type: 'number', description: '区域宽（截图像素）' }, h: { type: 'number', description: '区域高（截图像素）' } }, required: ['x', 'y', 'w', 'h'] },
+  },
+  {
+    name: 'wait_for',
+    description: '等待条件满足后继续。支持四种条件：1) text_appear——屏幕上出现指定文字；2) window_title——前台窗口标题包含指定文本；3) screen_stable——画面停止变化（加载完成）；4) idle——固定等待（等同 wait）。条件满足返回，超时（默认 10s）也返回并标注超时。',
+    level: 1,
+    source: 'computer',
+    parameters: { type: 'object', properties: { condition: { type: 'string', enum: ['text_appear', 'window_title', 'screen_stable', 'idle'], description: '等待条件类型' }, text: { type: 'string', description: 'text_appear 时要匹配的文字（子串，大小写不敏感）' }, title: { type: 'string', description: 'window_title 时要匹配的窗口标题（子串，大小写不敏感）' }, timeoutMs: { type: 'integer', description: '超时毫秒数，默认 10000' } }, required: ['condition'] },
+  },
   // ---------- 文件（工作目录沙箱） ----------
   {
     name: 'file_read',
@@ -175,7 +192,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     parameters: {
       type: 'object',
       properties: {
-        names: { type: 'array', items: { type: 'string' }, description: '要加载的可选工具名数组，如 ["wait","look_close"]' },
+        names: { type: 'array', items: { type: 'string' }, description: '要加载的可选工具名数组，如 ["wait","screen_ocr"]' },
       },
       required: ['names'],
     },
@@ -197,13 +214,6 @@ export const OPTIONAL_TOOL_SCHEMAS: ToolSchema[] = [
     level: 0,
     source: 'meta',
     parameters: { type: 'object', properties: { query: { type: 'string', description: '搜索关键词（中文或英文，简洁明确，如"杭州今天天气"、"Python 3.13 新特性"' } }, required: ['query'] },
-  },
-  {
-    name: 'look_close',
-    description: '放大查看屏幕某区域：返回 2 倍放大图（附下一轮消息），看小字/小按钮用。x/y/w/h 为截图坐标，建议 200-600px 见方。',
-    level: 0,
-    source: 'computer',
-    parameters: { type: 'object', properties: { ...geoProps, w: { type: 'number', description: '区域宽（截图像素）' }, h: { type: 'number', description: '区域高（截图像素）' } }, required: ['x', 'y', 'w', 'h'] },
   },
   {
     name: 'wait',
@@ -240,16 +250,16 @@ export const OPTIONAL_TOOL_SCHEMAS: ToolSchema[] = [
     source: 'computer',
     parameters: { type: 'object', properties: { ...geoProps, w: { type: 'number', description: '区域宽（截图像素，可选，省略则读到屏幕右下）' }, h: { type: 'number', description: '区域高（截图像素，可选，省略则读到屏幕右下）' } }, required: [] },
   },
-  {
-    name: 'wait_for',
-    description: '等待条件满足后继续。支持四种条件：1) text_appear——屏幕上出现指定文字；2) window_title——前台窗口标题包含指定文本；3) screen_stable——画面停止变化（加载完成）；4) idle——固定等待（等同 wait）。条件满足返回，超时（默认 10s）也返回并标注超时。',
-    level: 1,
-    source: 'computer',
-    parameters: { type: 'object', properties: { condition: { type: 'string', enum: ['text_appear', 'window_title', 'screen_stable', 'idle'], description: '等待条件类型' }, text: { type: 'string', description: 'text_appear 时要匹配的文字（子串，大小写不敏感）' }, title: { type: 'string', description: 'window_title 时要匹配的窗口标题（子串，大小写不敏感）' }, timeoutMs: { type: 'integer', description: '超时毫秒数，默认 10000' } }, required: ['condition'] },
-  },
 ];
 
 /** 全量注册表：常驻 + 可选（拼错纠正、tool-script 校验等按名查 schema 用） */
 export const TOOL_SCHEMA_MAP: Record<string, ToolSchema> = Object.fromEntries(
   [...TOOL_SCHEMAS, ...OPTIONAL_TOOL_SCHEMAS].map((t) => [t.name, t]),
 );
+
+// 常驻工具 token 估算（2026-07 调整：look_close + wait_for 由可选转常驻）：
+// 两工具的 function schema（名称+描述+参数 JSON）按供应商口径 ≈260 token/步
+// （look_close ≈90，wait_for ≈170；中文≈1字1token、JSON 结构 3-4字符1token）。
+// 抵掉系统提示可选目录里对应两行（≈-60，一次性）后，每步净增 ≈260 token——
+// 弱模型不知道 request_tools 导致的整任务失败成本远高于此。screen_ocr（≈150，schema 最长）
+// 不转常驻：读文字场景已由每步「可交互元素清单」覆盖大半，剩余低频场景一次 request_tools 即得。

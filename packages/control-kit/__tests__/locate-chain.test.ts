@@ -77,10 +77,11 @@ beforeEach(() => {
 });
 
 describe('ui_locate 降级链（链级顺序与交棒）', () => {
-  it('UIA 命中 → 短路：不调 SoM/grounding/OCR', async () => {
+  it('UIA 命中 → 短路：不调 SoM/grounding/OCR；summary 带候选中心坐标与尺寸（模型可按位置消歧/直接引用）', async () => {
     const r = await ex.execute('ui_locate', { query: '保存' });
     expect(r.ok).toBe(true);
     expect(r.summary).toContain('找到1个');
+    expect(r.summary).toContain('#11 "保存"(Button) @(740,536 80x32) [记事本]');
     expect(somLookup).not.toHaveBeenCalled();
     expect(grounding).not.toHaveBeenCalled();
     expect(mocks.ocrLookupTool).not.toHaveBeenCalled();
@@ -157,5 +158,29 @@ describe('ui_locate 降级链（链级顺序与交棒）', () => {
     expect(r.ok).toBe(false);
     expect(mocks.ocrLookupTool).toHaveBeenCalledTimes(1);
     expect(grounding).not.toHaveBeenCalled();
+  });
+});
+
+describe('SoM 候选一致性与任务边界清理', () => {
+  it('选中的候选名与查询词毫不相干（残留/错窗候选事故）→ summary 带「疑似不匹配」警示；无名候选不标注', async () => {
+    somLookup.mockResolvedValue({ name: '番茄意面', x: 600, y: 520, w: 40, h: 32 });
+    const r = await ex.execute('ui_locate', { query: '卸载' });
+    expect(r.ok).toBe(true);
+    expect(r.summary).toContain('SoM 视觉选择');
+    expect(r.summary).toContain('毫不相干');
+    expect(r.summary).toContain('疑似残留');
+
+    somLookup.mockResolvedValue({ name: '(Button)', x: 600, y: 520, w: 40, h: 32 });
+    const anon = await ex.execute('ui_locate', { query: '另一个目标' });
+    expect(anon.summary).not.toContain('毫不相干'); // 无名图标是 SoM 正常场景，不该被标注
+  });
+
+  it('resetVisualState：重复查询计数清空，下一任务不被上一任务的统计误警告', async () => {
+    await ex.execute('ui_locate', { query: '保存' });
+    const second = await ex.execute('ui_locate', { query: '保存' });
+    expect(second.summary).toContain('已第 2 次查询');
+    ex.resetVisualState();
+    const afterReset = await ex.execute('ui_locate', { query: '保存' });
+    expect(afterReset.summary).not.toContain('次查询');
   });
 });

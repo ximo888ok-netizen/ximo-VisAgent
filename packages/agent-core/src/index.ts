@@ -19,3 +19,4 @@ export * from './agent/planner';
 export * from './tools/schema';
 export * from './tools/registry';
 export * from './prompts/system';
+export { formatCapabilityCards, CAPABILITY_TOP_K, type CapabilityBrief } from './prompts/capability-inject';

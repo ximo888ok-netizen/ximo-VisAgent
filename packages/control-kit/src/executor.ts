@@ -2,7 +2,7 @@
 import type { SomCandidate, ToolExecutor, ToolResult } from '@ximo-visagent/agent-core';
 import { getHost } from './host';
 import { getUiaClient } from './uia-client';
-import { collectCandidates, filterForegroundCandidates, flattenTree, searchMatches, zoomedBoxToScreen } from './ui-locate';
+import { collectCandidates, filterForegroundCandidates, flattenTree, formatLocateDetail, searchMatches, somMismatchNote, zoomedBoxToScreen } from './ui-locate';
 import { captureBaseline, postClickVerify } from './click-verify';
 import { inputVerifyData, unknownToolError, verifyResultData } from './executor-result';
 import { ClickGuard } from './click-guard';
@@ -37,6 +37,14 @@ export class ComputerToolExecutor implements ToolExecutor {
   private guard = new ClickGuard();
 
   constructor(private deps: ExecutorDeps = {}) {}
+
+  /** 任务边界清理（desktop 组装根在任务终态调用）：清空守卫登记的候选元素/重复查询统计与连点计数，
+   *  上一任务的视觉残留不参与下一任务的提示、熔断建议与候选提示（执行器可能被 activeComputer 复用）。 */
+  resetVisualState(): void {
+    this.guard.forget();
+    this.uiClickCounts.clear();
+  }
+
   async execute(name: string, args: Record<string, unknown>): Promise<ToolResult> {
     try {
       switch (name) {
@@ -275,9 +283,7 @@ export class ComputerToolExecutor implements ToolExecutor {
         if (g) return click ? this.clickAfterLocate(g, args) : g;
         return { ok: false, summary: '', error: `未找到名称含「${query}」的元素（扫描 ${all.length} 个节点）。换更短的关键词，或回退为看图点击` };
       }
-      const detail = matches
-        .map((m) => `#${m.id} "${m.name}"(${m.type}) [${m.window}]`)
-        .join('；');
+      const detail = formatLocateDetail(matches);
       // 登记给点击守卫：模型若拿坐标直点，会被提示改用 ui_click（UIA 中心无目测误差）
       this.guard.remember(matches.map((m) => ({ id: m.id, name: m.name, x: m.x, y: m.y, w: m.w, h: m.h })));
       // 重复查询检测：同 query 短时间内返回同一结果时升级警告，打断"locate→click→locate"空转
@@ -331,7 +337,7 @@ export class ComputerToolExecutor implements ToolExecutor {
           const cy = hit.y + Math.round(hit.h / 2);
           return {
             ok: true,
-            summary: `SoM 视觉选择: "${hit.name}" 中心(${cx},${cy})（${candidates.length} 个候选中选中）。目标无 UIA 元素 id，请直接 mouse_click 中心坐标（双击 times=2）`,
+            summary: `SoM 视觉选择: "${hit.name}" 中心(${cx},${cy})（${candidates.length} 个候选中选中）。目标无 UIA 元素 id，请直接 mouse_click 中心坐标（双击 times=2）${somMismatchNote(query, hit.name)}`,
             data: { matches: [hit] },
           };
         }
