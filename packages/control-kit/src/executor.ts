@@ -1,28 +1,28 @@
-// 触手执行器：把 agent-core 的 Tools 映射到真实设备控制
+// 触手执行器：把 agent-core 的 Tools 映射到真实设备控制。
+// 分工：本文件只做参数校验与直点/键鼠/窗口路由；#ref 寻址点击与视觉降级链在
+// ui-index-tool.ts / grounding-fallback.ts（行数上限拆分，语义与拆分前一致）。
 import type { SomCandidate, ToolExecutor, ToolResult } from '@ximo-visagent/agent-core';
 import { getHost } from './host';
 import { getUiaClient } from './uia-client';
-import { collectCandidates, filterForegroundCandidates, flattenTree, formatLocateDetail, searchMatches, somMismatchNote, zoomedBoxToScreen } from './ui-locate';
+import { flattenTree, formatLocateDetail, searchMatches } from './ui-locate';
 import { captureBaseline, postClickVerify } from './click-verify';
 import { inputVerifyData, unknownToolError, verifyResultData } from './executor-result';
 import { ClickGuard } from './click-guard';
-import { clickElementWithModifiers, clickWithSelfPassthrough, ensureTargetForeground } from './click-focus';
+import { clickWithSelfPassthrough, ensureTargetForeground } from './click-focus';
 import { mouseHoverTool } from './mouse-hover';
 import { uiScrollTo } from './uia-scroll';
-import { ocrLookupTool } from './ocr-lookup';
 import { screenOcr, waitFor, lookClose } from './screen-ocr';
 import { mouseDrag, mouseHold, mouseDragHold, mouseScroll } from './win32';
 import { keyboardPress, keyboardType } from './win32-keyboard';
 import { verifyTypedInput } from './keyboard-verify';
 import { STABLE_MAX_WAIT_MS, waitForStableFrame } from './stable-frame';
 import { activateWindow, listWindows } from './win32-window';
+import { clickAfterLocate, foregroundDelta, foregroundTitle, groundingLookup, type RefToolCtx } from './grounding-fallback';
+import { locateByRef, uiClickTool, uiIndexTool } from './ui-index-tool';
+import { getWindowIndex } from './window-index';
 /** 开应用/双击后等"见效"：稳定帧轮询取代固定等待——快路径 ~160-240ms（不劣于旧 400ms），
  *  上限 2.5s 有界（慢界面不误报未变化）；宿主无稳定观测能力时退回旧的固定 400ms。 */
 const OPEN_EFFECT_WAIT_MS = 400;
-
-/** SoM 候选上限与 label 截断 */
-const SOM_CANDIDATE_LIMIT = 200;
-const SOM_LABEL_MAX = 24;
 
 /** 视觉定位钩子：UIA 找不到目标时由宿主注入（SoM 编号选择 / DeepSeek grounding，见 agent-core/grounding.ts） */
 export interface ExecutorDeps {
@@ -31,8 +31,8 @@ export interface ExecutorDeps {
 }
 
 export class ComputerToolExecutor implements ToolExecutor {
-  /** 同元素连点计数（实例 = 每任务新建，状态不跨任务） */
-  private uiClickCounts = new Map<number, number>();
+  /** 同目标连点计数（实例 = 每任务新建，状态不跨任务）；键 = 'e<elementId>' / 'r<ref>' */
+  private uiClickCounts = new Map<string, number>();
   /** 点击守卫：同位置熔断 + UIA 命中提示 + 熔断候选建议（见 click-guard.ts） */
   private guard = new ClickGuard();
 
@@ -43,6 +43,19 @@ export class ComputerToolExecutor implements ToolExecutor {
   resetVisualState(): void {
     this.guard.forget();
     this.uiClickCounts.clear();
+  }
+
+  /** 传给拆分模块的上下文：状态仍归 executor 实例，模块不持有 executor 引用 */
+  private refCtx(): RefToolCtx {
+    return {
+      deps: this.deps,
+      uiTree: () => this.uiTree(),
+      mouseClick: (a) => this.mouseClick(a),
+      guard: this.guard,
+      clickCounts: this.uiClickCounts,
+      overlay: (e) => this.overlay(e),
+      host: () => getHost(),
+    };
   }
 
   async execute(name: string, args: Record<string, unknown>): Promise<ToolResult> {
@@ -61,15 +74,16 @@ export class ComputerToolExecutor implements ToolExecutor {
         case 'activate_window': return await this.activateWindow(args);
         case 'get_clipboard': return await this.getClipboard();
         case 'set_clipboard': return await this.setClipboard(args);
+        case 'ui_index': return await uiIndexTool(args);
         case 'ui_locate': return await this.uiLocate(args);
-        case 'ui_click': return await this.uiClick(args);
+        case 'ui_click': return await uiClickTool(this.refCtx(), args);
         case 'look_close': return await lookClose(args);
         case 'wait': return await this.wait(args);
         case 'screen_ocr': return await screenOcr(args);
         case 'wait_for': return await waitFor(args);
         default:
           // 拼错工具名时给出候选，让模型能自我纠正；否则它凭记忆重复输出同一个错名，
-          // 每步都拿不到输入注入，任务空转到 maxSteps 而鼠标始终不动。
+          // 每步都拿不到输入注入，任务空转到 maxSteps 而鼠标始终未移动。
           return {
             ok: false,
             summary: '',
@@ -97,7 +111,7 @@ export class ComputerToolExecutor implements ToolExecutor {
     const times = Number(args.times ?? 1);
     const blocked = this.guard.check(x, y);
     if (blocked) return { ok: false, summary: '', error: blocked };
-    const fgBefore = times >= 2 ? await this.foregroundTitle() : null;
+    const fgBefore = times >= 2 ? await foregroundTitle() : null;
     // 前台/遮挡保证：目标窗口不在前台先激活；被自家窗口遮挡则临时穿透（见 click-focus.ts）
     const focus = await ensureTargetForeground(x, y);
     // 点击前抓同区域基线，点击后比对：这是模型判断"点没点中"的唯一可信信号
@@ -107,7 +121,7 @@ export class ComputerToolExecutor implements ToolExecutor {
     this.overlay({ type: 'click', x, y });
     const actionName = times === 2 ? '双击' : times > 2 ? `${times}击` : '点击';
     let summary = `真实光标${actionName} @(${Math.round(x)},${Math.round(y)}) (${button})`;
-    if (times >= 2) summary += await this.foregroundDelta(fgBefore);
+    if (times >= 2) summary += await foregroundDelta(fgBefore);
     if (focus.note) summary += focus.note;
     const verify = baseline ? await postClickVerify(baseline) : null;
     if (verify) {
@@ -119,31 +133,6 @@ export class ComputerToolExecutor implements ToolExecutor {
     if (hint) summary += hint;
 
     return { ok: true, summary, ...(verify ? { data: verifyResultData(verify) } : {}) };
-  }
-
-  /** 双击后的前台窗口变化反馈（无变化 = 可能被遮挡或没打开，模型不必盲试）：
-   *  窗口已切换则提前结束等待；未切换时等到画面收敛再下"未变化"结论（上限 2.5s 有界） */
-  private async foregroundDelta(before: string | null): Promise<string> {
-    const st = await waitForStableFrame({
-      maxWaitMs: STABLE_MAX_WAIT_MS,
-      earlyExit: async () => {
-        const now = await this.foregroundTitle();
-        return now !== null && now !== before;
-      },
-    });
-    if (st.rounds === 0) await sleep(OPEN_EFFECT_WAIT_MS); // 无稳定观测能力 → 旧的固定等待
-    const after = await this.foregroundTitle();
-    if (after && after !== before) return `；前台窗口已切换: ${after}`;
-    return `；前台窗口未变化 (${after ?? '未知'})——目标可能被遮挡或未打开，勿原地重试`;
-  }
-
-  private async foregroundTitle(): Promise<string | null> {
-    try {
-      const info = await getHost().getForegroundInfo();
-      return info?.title ?? null;
-    } catch {
-      return null;
-    }
   }
 
   private async mouseDrag(args: Record<string, unknown>): Promise<ToolResult> {
@@ -226,7 +215,7 @@ export class ComputerToolExecutor implements ToolExecutor {
     // 慢界面最多多到 2.5s 上限；无稳定观测能力时退回旧的固定 400ms），模型不必盲点
     const st = await waitForStableFrame({ maxWaitMs: STABLE_MAX_WAIT_MS });
     if (st.rounds === 0) await sleep(OPEN_EFFECT_WAIT_MS);
-    const fg = await this.foregroundTitle();
+    const fg = await foregroundTitle();
     return { ok: true, summary: `启动 ${args.nameOrPath}${fg ? `；当前前台窗口: ${fg}` : '；未检测到前台窗口'}` };
   }
 
@@ -269,8 +258,10 @@ export class ComputerToolExecutor implements ToolExecutor {
   }
 
   private async uiLocate(args: Record<string, unknown>): Promise<ToolResult> {
+    // #ref 寻址（来自窗口索引）：优先于按名查询——重解析当前 rect 后返回可复用坐标与 ref
+    if (args.ref !== undefined) return locateByRef(this.refCtx(), args);
     const query = String(args.query ?? '').trim();
-    if (!query) return { ok: false, summary: '', error: 'ui_locate 需要 query（控件/图标名称的子串，如 "Qoder"、"保存"）' };
+    if (!query) return { ok: false, summary: '', error: 'ui_locate 需要 query（控件/图标名称的子串，如 "Qoder"、"保存"）或 ref（索引 #编号）' };
     // B1 找到即点：locate+click 合一（省一整个迭代），仅首个候选；守卫/穿透/验证沿用既有链
     const click = args.click === true;
     try {
@@ -279,183 +270,32 @@ export class ComputerToolExecutor implements ToolExecutor {
       const matches = searchMatches(all, query, Number(args.limit ?? 8));
       if (matches.length === 0) {
         // UIA 未命中 → grounding 降级链（DeepSeek 视觉定位，坐标由代码反归一化）
-        const g = await this.groundingLookup(query);
-        if (g) return click ? this.clickAfterLocate(g, args) : g;
+        const g = await groundingLookup(this.refCtx(), query);
+        if (g) return click ? clickAfterLocate(this.refCtx(), g, args) : g;
         return { ok: false, summary: '', error: `未找到名称含「${query}」的元素（扫描 ${all.length} 个节点）。换更短的关键词，或回退为看图点击` };
       }
       const detail = formatLocateDetail(matches);
       // 登记给点击守卫：模型若拿坐标直点，会被提示改用 ui_click（UIA 中心无目测误差）
       this.guard.remember(matches.map((m) => ({ id: m.id, name: m.name, x: m.x, y: m.y, w: m.w, h: m.h })));
+      // 新鲜索引里有同名元素时附送可复用 #ref（后续步骤 ui_click(ref) 免重查）
+      const idxRef = getWindowIndex().refForName(matches[0]!.name);
+      const refNote = idxRef !== undefined ? `；索引内同名 #${idxRef} 可用 ui_click(ref:${idxRef})` : '';
       // 重复查询检测：同 query 短时间内返回同一结果时升级警告，打断"locate→click→locate"空转
       const repeat = this.guard.locateRepeatNote(query, `${matches[0]!.id}@${Math.round(matches[0]!.center.x)},${Math.round(matches[0]!.center.y)}`);
       if (click) {
-        const clicked = await this.uiClick({ ...args, elementId: matches[0]!.id });
+        const clicked = await uiClickTool(this.refCtx(), { ...args, elementId: matches[0]!.id });
         const summary = `找到${matches.length}个: ${detail}；已点击首个 #${matches[0]!.id} "${matches[0]!.name}"${repeat ?? ''}`;
         return clicked.ok ? { ok: true, summary: `${summary} → ${clicked.summary}`, data: { matches } } : { ...clicked, error: `${summary}；点击失败: ${clicked.error}` };
       }
       return {
         ok: true,
-        summary: `找到${matches.length}个: ${detail}。点击请用 ui_click(elementId)，或 ui_locate(click:true) 找到即点${repeat ?? ''}`,
+        summary: `找到${matches.length}个: ${detail}。点击请用 ui_click(elementId)，或 ui_locate(click:true) 找到即点${refNote}${repeat ?? ''}`,
         data: { matches },
       };
     } catch (err) {
       // UIA 整体不可用时也走 grounding 兜底
-      const g = await this.groundingLookup(query).catch(() => null);
-      if (g) return click ? this.clickAfterLocate(g, args) : g;
-      return { ok: false, summary: '', error: `UIA 不可用(${(err as Error).message})，请回退为看图点击` };
-    }
-  }
-
-  /** B1：视觉定位结果（无 UIA id）的找到即点——按中心坐标直点，沿用 mouseClick 的守卫/穿透/验证链 */
-  private async clickAfterLocate(g: ToolResult, args: Record<string, unknown>): Promise<ToolResult> {
-    const hit = (g.data?.matches as Array<{ x: number; y: number; w: number; h: number }> | undefined)?.[0];
-    if (!hit) return g;
-    const cx = Math.round(hit.x + hit.w / 2);
-    const cy = Math.round(hit.y + hit.h / 2);
-    const clicked = await this.mouseClick({ x: cx, y: cy, button: args.button ?? 'left', times: Number(args.times ?? 1), modifiers: args.modifiers });
-    const located = (g.summary ?? '').slice(0, 120);
-    return clicked.ok
-      ? { ok: true, summary: `${located}；已点击中心 (${cx},${cy}) → ${clicked.summary}` }
-      : { ...clicked, error: `${located}；点击失败: ${clicked.error}` };
-  }
-
-  /** grounding 降级：拿干净截图（无网格）→ SoM 编号选择（首选）→ 自由 bbox（兜底）→ OCR 文字定位（最终兜底） */
-  private async groundingLookup(query: string): Promise<ToolResult | null> {
-    if (!this.deps.grounding && !this.deps.somLookup) {
-      // 无视觉定位依赖时直接走 OCR 兜底
-      return this.ocrFallback(query);
-    }
-    const host = getHost();
-    try {
-      const screenshot = host.captureCleanScreen ? await host.captureCleanScreen() : await host.captureScreen();
-      // 首选 SoM：坐标来自 OCR/UIA 框（像素级可信），模型只选编号，不回归坐标
-      if (this.deps.somLookup) {
-        const candidates = await this.somCandidates(screenshot);
-        const hit = await this.deps.somLookup(screenshot, query, candidates).catch(() => null);
-        if (hit) {
-          const cx = hit.x + Math.round(hit.w / 2);
-          const cy = hit.y + Math.round(hit.h / 2);
-          return {
-            ok: true,
-            summary: `SoM 视觉选择: "${hit.name}" 中心(${cx},${cy})（${candidates.length} 个候选中选中）。目标无 UIA 元素 id，请直接 mouse_click 中心坐标（双击 times=2）${somMismatchNote(query, hit.name)}`,
-            data: { matches: [hit] },
-          };
-        }
-      }
-      // 兜底：自由 grounding（模型直接报 bbox，无候选场景如纯图标）→ zoom 二次精修
-      if (this.deps.grounding) {
-        const matches = await this.deps.grounding(screenshot, query);
-        if (matches && matches.length > 0) {
-          const coarse = matches[0]!;
-          const refined = await this.zoomRefine(coarse, query);
-          const m = refined ?? coarse;
-          const detail = `"${m.name}" 中心(${Math.round(m.x + m.w / 2)},${Math.round(m.y + m.h / 2)}) 尺寸 ${Math.round(m.w)}x${Math.round(m.h)}${refined ? '（zoom 精修）' : ''}`;
-          return {
-            ok: true,
-            summary: `grounding 视觉定位: ${detail}。目标无 UIA 元素 id，请直接 mouse_click 中心坐标（双击 times=2）`,
-            data: { matches: [m] },
-          };
-        }
-      }
-      // 方向3：OCR 兜底——UIA/SoM/grounding 全部失败时，用 Windows OCR 识别文字位置
-      const ocrResult = await ocrLookupTool(screenshot, query).catch(() => null);
-      if (ocrResult) return ocrResult;
-      return null;
-    } catch (err) {
-      console.warn('[executor] grounding 降级失败:', (err as Error).message);
-      return null;
-    }
-  }
-
-  /** 自由 grounding 粗框的二次精修：局部放大再定位一次，误差从全屏尺度收敛到局部尺度 */
-  private async zoomRefine(
-    m: { name: string; x: number; y: number; w: number; h: number; spread?: number },
-    query: string,
-  ): Promise<{ name: string; x: number; y: number; w: number; h: number } | null> {
-    const host = getHost();
-    if (typeof host.captureZoom !== 'function' || !this.deps.grounding) return null;
-    // 粗框扩边 2.2x（最小 160x120）：粗框常偏紧或偏移，防目标贴边
-    let cw = Math.max(160, Math.round(m.w * 2.2));
-    let ch = Math.max(120, Math.round(m.h * 2.2));
-    // 投票散布大（模型定位不稳定）：复核范围必须盖住散布，否则放大图里根本没有目标
-    if (m.spread && m.spread > 0) {
-      cw = Math.max(cw, Math.round(m.spread * 2.2));
-      ch = Math.max(ch, Math.round(m.spread * 2.2));
-    }
-    try {
-      const { jpeg, origin, zoom } = await host.captureZoom(m.x + m.w / 2 - cw / 2, m.y + m.h / 2 - ch / 2, cw, ch);
-      const hits = await this.deps.grounding(jpeg, query);
-      if (!hits || hits.length === 0) return null;
-      const r = zoomedBoxToScreen(hits[0]!, origin, zoom);
-      console.log(`[executor] zoom 精修: 粗框中心(${Math.round(m.x + m.w / 2)},${Math.round(m.y + m.h / 2)}) → 精修中心(${Math.round(r.x + r.w / 2)},${Math.round(r.y + r.h / 2)})`);
-      return { name: hits[0]!.name, x: r.x, y: r.y, w: r.w, h: r.h };
-    } catch (err) {
-      console.warn('[executor] zoom 精修失败，回退粗框:', (err as Error).message);
-      return null;
-    }
-  }
-
-  private async ocrFallback(query: string): Promise<ToolResult | null> {
-    const host = getHost();
-    try {
-      const screenshot = host.captureCleanScreen ? await host.captureCleanScreen() : await host.captureScreen();
-      return ocrLookupTool(screenshot, query);
-    } catch (err) {
-      console.warn('[executor] OCR 兜底失败:', (err as Error).message);
-      return null;
-    }
-  }
-
-  /** SoM 候选收集：UIA 控件，坐标在截图坐标系。限定前台窗口（后台候选在截图上不可见，选中即点飞）。 */
-  private async somCandidates(_screenshot: Buffer): Promise<SomCandidate[]> {
-    const out: SomCandidate[] = [];
-    try {
-      const tree = await this.uiTree();
-      const fg = await this.foregroundTitle();
-      const pool = filterForegroundCandidates(collectCandidates(tree.tree, SOM_CANDIDATE_LIMIT), fg);
-      for (const m of pool) {
-        out.push({ index: out.length + 1, label: m.name.slice(0, SOM_LABEL_MAX), x: m.x, y: m.y, w: m.w, h: m.h });
-        if (out.length >= SOM_CANDIDATE_LIMIT) break;
-      }
-    } catch { /* UIA 不可用，无候选 */ }
-    return out;
-  }
-
-  private async uiClick(args: Record<string, unknown>): Promise<ToolResult> {
-    const id = Number(args.elementId);
-    if (!Number.isFinite(id)) return { ok: false, summary: '', error: 'ui_click 需要 elementId（来自 ui_locate 返回的 #id）' };
-    // 同元素连点熔断：连续 ≥3 次确定性止损
-    const clicks = (this.uiClickCounts.get(id) ?? 0) + 1;
-    this.uiClickCounts.set(id, clicks);
-    if (clicks > 3) {
-      return { ok: false, summary: '', error: `元素 #${id} 已点击 ${clicks - 1} 次仍无效果，已熔断。换方案：检查目标是否被窗口遮挡、activate_window 激活目标窗口、或改用键盘/其他工具` };
-    }
-    try {
-      // 每次点击都重取树：id 是 RuntimeId 哈希，元素活着就稳定；界面变了会显式报「已不存在」防点错
-      const tree = await this.uiTree();
-      const hit = flattenTree(tree.tree).find((m) => m.id === id);
-      if (!hit) return { ok: false, summary: '', error: `元素 #${id} 已不存在（界面有变化），请重新 ui_locate` };
-      const button = (args.button as 'left' | 'right' | 'middle') ?? 'left';
-      const times = Number(args.times ?? 1);
-      const fgBefore = times >= 2 ? await this.foregroundTitle() : null;
-      // ui_click 的目标是模型按名字选中的控件，即使它属于自家窗口也应如实点击（不穿透）
-      const focus = await ensureTargetForeground(hit.center.x, hit.center.y);
-      const baseline = await captureBaseline(hit.center.x, hit.center.y);
-      await clickElementWithModifiers(hit.center.x, hit.center.y, button, times, args.modifiers);
-      this.overlay({ type: 'click', x: hit.center.x, y: hit.center.y });
-      let summary = `真实点击元素 "${hit.name}" 中心 @(${Math.round(hit.center.x)},${Math.round(hit.center.y)}) [${hit.window}]`;
-      if (times >= 2) summary += await this.foregroundDelta(fgBefore);
-      if (focus.note) summary += focus.note;
-      const verify = baseline ? await postClickVerify(baseline) : null;
-      if (verify) {
-        summary += verify.note;
-        if (verify.changed) {
-          this.guard.noteEffective();
-          this.uiClickCounts.delete(id);
-        }
-      }
-      return { ok: true, summary, ...(verify ? { data: verifyResultData(verify) } : {}) };
-    } catch (err) {
+      const g = await groundingLookup(this.refCtx(), query).catch(() => null);
+      if (g) return click ? clickAfterLocate(this.refCtx(), g, args) : g;
       return { ok: false, summary: '', error: `UIA 不可用(${(err as Error).message})，请回退为看图点击` };
     }
   }

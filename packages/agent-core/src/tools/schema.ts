@@ -110,18 +110,25 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   // 桌面图标/系统对话框等原生 UI 在 UIA 树里有 Name 有矩形，elementId 点击像素级无误差。
   // 曾降级为可选导致 flash 模型目测直点桌面图标必点飞（±20-50px 误差 > 图标间距），故升回常驻。
   {
+    name: 'ui_index',
+    description: '窗口元素索引（只读）：每步清单行的 #编号就来自它，按编号点击免目测。无参=报告当前已索引哪些窗口；window=标题子串或进程pid，为该窗口建/刷索引；filter=在索引里按名称/路径/类型子串检索（返回带#编号的行）；refresh=true 强制重建；limit 默认40。清单外元素、编号大面积失效、或需要别的窗口时用。',
+    level: 0,
+    source: 'computer',
+    parameters: { type: 'object', properties: { window: { type: 'string', description: '窗口标题子串，或进程 pid 数字串（如 "12345"）；缺省=前台窗口' }, refresh: { type: 'boolean', description: 'true=强制重建当前索引' }, filter: { type: 'string', description: '在已建索引内检索的关键词（名称/路径/控件类型子串）' }, limit: { type: 'integer', description: '返回行上限，默认 40' } }, required: [] },
+  },
+  {
     name: 'ui_locate',
     description: '按名称子串搜索屏幕控件（按钮、菜单项、桌面图标、对话框元素等），返回精确中心坐标与 elementId。桌面图标、系统设置/对话框等原生 UI 首选此工具；纯视觉目标（图片内容/自绘画布）才用看图直点。click:true 时找到即点（省一步）。',
     level: 0,
     source: 'computer',
-    parameters: { type: 'object', properties: { query: { type: 'string', description: '名称子串（大小写不敏感），如 "360安全卫士"、"保存"' }, limit: { type: 'integer', description: '最多返回几个，默认 8' }, click: { type: 'boolean', description: '找到即点首个候选（省一步；目标唯一时用，多个候选时先看列表再 ui_click）' }, button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'click:true 时的鼠标键' }, times: { type: 'integer', description: 'click:true 时的点击次数，2=双击' }, ...modifiersProp }, required: ['query'] },
+    parameters: { type: 'object', properties: { query: { type: 'string', description: '名称子串（大小写不敏感），如 "360安全卫士"、"保存"；与 ref 二选一' }, ref: { type: 'string', description: '窗口索引编号（如 "7" 或 "#7"，来自每步清单/ui_index），命中返回当前坐标与可复用 ref' }, limit: { type: 'integer', description: '最多返回几个，默认 8' }, click: { type: 'boolean', description: '找到即点首个候选（省一步；目标唯一时用，多个候选时先看列表再 ui_click）' }, button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'click:true 时的鼠标键' }, times: { type: 'integer', description: 'click:true 时的点击次数，2=双击' }, ...modifiersProp }, required: [] },
   },
   {
     name: 'ui_click',
-    description: '点击 ui_locate 返回的元素（elementId）。按元素真实中心点击，无视觉误差，双击 times=2（如打开桌面图标）。若报「元素已不存在」说明界面变了，需重新 ui_locate。',
+    description: '点击元素：ref=每步清单/ui_index 的 #编号（推荐；执行前自动重解析当前坐标，元素移动/销毁会明确报失效）；或 elementId=ui_locate 返回的 #id。按元素真实中心点击，无视觉误差，双击 times=2（如打开桌面图标）。若报「已失效」先 ui_index{refresh:true} 刷新再点，勿拿旧坐标硬点。',
     level: 1,
     source: 'computer',
-    parameters: { type: 'object', properties: { elementId: { type: 'number', description: 'ui_locate 返回的 #id' }, button: { type: 'string', enum: ['left', 'right', 'middle'] }, times: { type: 'integer', description: '点击次数，默认1；2=双击' }, ...modifiersProp }, required: ['elementId'] },
+    parameters: { type: 'object', properties: { ref: { type: 'string', description: '索引编号（如 "7" 或 "#7"）；与 elementId 二选一，有索引时优先 ref' }, elementId: { type: 'number', description: 'ui_locate 返回的 #id' }, button: { type: 'string', enum: ['left', 'right', 'middle'] }, times: { type: 'integer', description: '点击次数，默认1；2=双击' }, ...modifiersProp }, required: [] },
   },
   // ---------- 强观察（常驻） ----------
   // 曾按需加载导致弱模型从不知道要 request_tools：条件等待/放大查看是"看得准"的主力手段，转常驻
@@ -263,3 +270,6 @@ export const TOOL_SCHEMA_MAP: Record<string, ToolSchema> = Object.fromEntries(
 // 抵掉系统提示可选目录里对应两行（≈-60，一次性）后，每步净增 ≈260 token——
 // 弱模型不知道 request_tools 导致的整任务失败成本远高于此。screen_ocr（≈150，schema 最长）
 // 不转常驻：读文字场景已由每步「可交互元素清单」覆盖大半，剩余低频场景一次 request_tools 即得。
+// 窗口索引轮（2026-07）：ui_index 常驻 ≈170 token/步（schema 四参数），换来的是每步清单从
+// 「目测坐标」升级为「#编号寻址」+ 弱模型不再需要 request_tools 就用索引；旧清单里嵌的
+// ui_locate/look_close 提示语可省，行内坐标改编号后每步清单净增约 50-100 token，整体打平。

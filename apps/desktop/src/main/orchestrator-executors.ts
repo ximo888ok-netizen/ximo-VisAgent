@@ -5,7 +5,7 @@
  * wechat_ → 微信 Bot 通讯渠道；web_search → Qwen 联网搜索；其余 → 真实键鼠。
  */
 import path from 'node:path';
-import { ComputerToolExecutor, FileOfficeExecutor, setHost } from '@ximo-visagent/control-kit';
+import { ComputerToolExecutor, FileOfficeExecutor, setHost, wrapExecutorWithIndex } from '@ximo-visagent/control-kit';
 import { wrapExecutorWithGroundCache, type GroundCache, type GroundingLookup, type SomLookup, type ToolExecutor } from '@ximo-visagent/agent-core';
 import { WebSearchClient } from '@ximo-visagent/llm-providers';
 import type { LLMConfig } from '@ximo-visagent/shared-types';
@@ -100,6 +100,8 @@ export function buildExecutorStack(input: {
       return computer.execute(name, args);
     },
   };
-  // 坐标表缓存接线：ui_locate 在降级链前查表、成功后记表（UIA 命中也进表）
-  return { computer, files, executor: input.groundCache ? wrapExecutorWithGroundCache(executor, input.groundCache) : executor };
+  // 坐标表缓存接线：ui_locate 在降级链前查表、成功后记表（UIA 命中也进表）。
+  // 最外层再套窗口索引观测包装：把动作喂给索引生命周期（写动作信号 + ref/目测点击占比统计）。
+  const cached = input.groundCache ? wrapExecutorWithGroundCache(executor, input.groundCache) : executor;
+  return { computer, files, executor: wrapExecutorWithIndex(cached) };
 }

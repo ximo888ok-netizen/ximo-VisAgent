@@ -232,6 +232,8 @@ export function actionSignature(name: string, args: Record<string, unknown> | un
     return `${name}@${Math.round(x / 24)}_${Math.round(y / 24)}`;
   }
   if (name === 'ui_click') {
+    const rs = typeof args.ref === 'string' ? Number(args.ref.replace(/^#/, '')) : Number(args.ref);
+    if (Number.isFinite(rs)) return `ui_click@r${rs}`;
     const id = Number(args.elementId);
     return Number.isFinite(id) ? `ui_click#${id}` : null;
   }

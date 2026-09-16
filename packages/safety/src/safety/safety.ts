@@ -41,6 +41,7 @@ export const DEFAULT_TOOL_POLICY: Record<string, ToolPolicy> = {
   open_app: { level: 1 },
   set_clipboard: { level: 1 },
   ui_locate: { level: 0 }, // 只读 UIA 树查询，无输入注入
+  ui_index: { level: 0 }, // 只读窗口元素索引（建/刷/检索均为 UIA 查询，无输入注入）
   ui_click: { level: 1 }, // 等价 mouse_click（前台窗口规则命中时同样被 override）
   ui_scroll_to: { level: 1 }, // ScrollItemPattern 滚动视图：改变界面状态但不点击/不改选中
 

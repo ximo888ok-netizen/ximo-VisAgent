@@ -1,43 +1,36 @@
-// HostPerception 快照装配单测：每步交互元素清单的开关语义与降级缺席（sidecar 全程替身，不启动进程）
+// HostPerception 快照装配单测：每步索引摘要的开关语义与降级缺席（假索引注入，不启动侧车进程）
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { UiNode } from '@ximo-visagent/shared-types';
+import type { IndexedElement } from '../src/uia-index';
 
-const uiaMocks = vi.hoisted(() => ({
-  degraded: false,
-  healthy: true,
-  start: vi.fn(async () => undefined),
-  getUiTree: vi.fn(async () => ({ ok: true, total: 0, cache: 0, tree: undefined as unknown })),
-}));
-vi.mock('../src/uia-client', () => ({
-  getUiaClient: () => ({
-    get degraded() { return uiaMocks.degraded; },
-    get healthy() { return uiaMocks.healthy; },
-    start: uiaMocks.start,
-    stop: () => undefined,
-    getUiTree: uiaMocks.getUiTree,
-  }),
-}));
+vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
 import { HostPerception } from '../src/index';
 import { setHost } from '../src/host';
-import { setScreenScale } from '../src/screen-scale';
+import { configureWindowIndexDeps, resetWindowIndex } from '../src/window-index';
 
-const tree: UiNode = {
-  id: 0, type: 'Pane', name: '桌面',
-  children: [
-    {
-      id: 1, type: 'Window', name: '记事本', isWindow: true, x: 0, y: 0, w: 800, h: 600,
-      children: [{ id: 11, type: 'Button', name: '保存', x: 700, y: 520, w: 80, h: 32 }],
-    },
-  ],
-};
+const elements: IndexedElement[] = [{
+  ref: 1, runtimeId: 'rid,1', name: '保存', controlType: 'Button', className: '', automationId: '',
+  rect: { x: 700, y: 520, w: 80, h: 32 }, center: { x: 740, y: 536 },
+  enabled: true, offscreen: false, focused: false, focusable: true,
+  patterns: { invoke: true, toggle: false, scroll: false, selectionItem: false, expandCollapse: false },
+  path: '记事本/保存',
+}];
+
+let indexCalls = 0;
+let degraded = false;
 
 beforeEach(() => {
-  setScreenScale(1, 1);
-  uiaMocks.degraded = false;
-  uiaMocks.healthy = true;
-  uiaMocks.getUiTree.mockClear();
-  uiaMocks.getUiTree.mockImplementation(async () => ({ ok: true, total: 0, cache: 0, tree }));
+  resetWindowIndex();
+  indexCalls = 0;
+  degraded = false;
+  configureWindowIndexDeps({
+    index: async () => {
+      indexCalls++;
+      return degraded
+        ? { ok: false, reason: 'uia-degraded' }
+        : { ok: true, signature: 'sig-1', ms: 10, windows: [{ hwnd: 9, title: '记事本', className: 'Notepad', pid: 42, elements }] };
+    },
+  });
   setHost({
     captureScreen: async () => Buffer.from('shot'),
     getForegroundInfo: async () => ({ title: '记事本', className: 'Notepad' }),
@@ -47,21 +40,22 @@ beforeEach(() => {
   });
 });
 
-describe('HostPerception.snapshot（清单接入）', () => {
-  it('默认开：快照携带前台窗口清单', async () => {
+describe('HostPerception.snapshot（索引摘要接入）', () => {
+  it('默认开：快照携带带 #ref 的窗口索引摘要', async () => {
     const snap = await new HostPerception().snapshot();
-    expect(snap.interactiveList).toContain('可交互元素清单[记事本]');
-    expect(snap.interactiveList).toContain('1. 保存 (Button) @(740,536)');
+    expect(snap.interactiveList).toContain('窗口索引[记事本]');
+    expect(snap.interactiveList).toContain('#1 保存 (Button) @(740,536) [可点击]');
+    expect(snap.interactiveList).toContain('ui_click(ref:#编号)');
   });
 
-  it('显式关（配置项 false）：不采清单，快照字段整体缺席（对象形状与旧实现一致，回归红线）', async () => {
+  it('显式关（配置项 false）：不采摘要，快照字段整体缺席（对象形状与旧实现一致，回归红线）', async () => {
     const snap = await new HostPerception({ interactiveListEnabled: () => false }).snapshot();
     expect('interactiveList' in snap).toBe(false);
-    expect(uiaMocks.getUiTree).not.toHaveBeenCalled();
+    expect(indexCalls).toBe(0);
   });
 
   it('sidecar 降级：整段省略，不输出空清单误导模型', async () => {
-    uiaMocks.degraded = true;
+    degraded = true;
     const snap = await new HostPerception().snapshot();
     expect('interactiveList' in snap).toBe(false);
   });

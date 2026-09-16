@@ -354,6 +354,23 @@ describe('wrapExecutorWithGroundCache 接线', () => {
     expect(r.summary).toContain('[坐标缓存]');
   });
 
+  it('ref 寻址走索引旁路：无 query 的 ui_locate/ui_click 不查坐标表（有索引时索引优先）', async () => {
+    const c = cacheWith(fpStable);
+    const base = makeBase(okUia());
+    const ex = wrapExecutorWithGroundCache(base.executor, c);
+    c.beginStep(frame(1));
+    await ex.execute('ui_locate', { query: '保存' }); // 常规 query：会查一次坐标表
+    const s0 = c.stats();
+    const r = await ex.execute('ui_locate', { ref: '#7' });
+    expect(r.summary).toContain('找到1个'); // 直达执行器（索引重解析链），不吃 [坐标缓存] 话术
+    const s1 = c.stats();
+    await ex.execute('ui_click', { ref: 7 });
+    const s2 = c.stats();
+    expect(s2.lookups).toBe(s1.lookups); // ref 路径全程零坐标表查询
+    expect(s2.misses).toBe(s1.misses);
+    expect(s0.lookups).toBe(1); // 只有 query 那次产生查询
+  });
+
   it('缓存坐标点击校验无效 → 该条失效（自愈剔除）', async () => {
     const c = cacheWith(fpStable);
     const base = makeBase(okGrounding, [clickResult(true), clickResult(false)]);

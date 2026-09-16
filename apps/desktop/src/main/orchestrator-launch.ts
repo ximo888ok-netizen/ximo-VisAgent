@@ -9,7 +9,7 @@
 import { AgentLoop, BudgetGuard, shouldPlan, createGroundingLookup, createSomLookup, GroundCache, type AgentLoopOptions, type StepDetail } from '@ximo-visagent/agent-core';
 import { supportsWebSearch } from '@ximo-visagent/llm-providers';
 import { ApprovalEngine } from '@ximo-visagent/safety';
-import { ComputerToolExecutor, evaluateTaskAssertion, type FileOfficeExecutor } from '@ximo-visagent/control-kit';
+import { ComputerToolExecutor, evaluateTaskAssertion, getWindowIndex, type FileOfficeExecutor } from '@ximo-visagent/control-kit';
 import { makeClassifier, makeClients } from './orchestrator-clients';
 import { withSomMarks } from './som-mark';
 import { buildExecutorStack, workspaceDirOf } from './orchestrator-executors';
@@ -22,6 +22,7 @@ import { finalizeTaskExperience } from './orchestrator-experience';
 import { classifyFailure, toStepSkeleton, persistAgentEvent, recordAnchorAttached, recordAnchorWatchdogEvent } from './orchestrator-audit';
 import { pushTaskFinished, notifyTaskStarted, notifyTaskFinished, requestApprovalUI } from './orchestrator-notify';
 import { attachAnchorWatchdog, getAnchorWatchdog } from './anchor-watchdog-host';
+import { familyBasenamesOf, listProcIdsByBasename } from './foreground-proc';
 import { getLongTaskRunner } from './longtask-runner';
 import { getPreauthGrants } from './ipc-registry';
 import { createCheckpointStore } from './checkpoint-store';
@@ -76,6 +77,13 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
 
   // 每步可交互元素清单开关：配置项默认开，getter 让改配置对下一个任务感知步即时生效
   const perception = initPerception(() => store.get().agent.interactiveListEnabled !== false);
+  // 窗口索引（交付4）：任务边界开始计数；带 targetApp → 立即为该进程族建索引（异步不阻塞启动），
+  // 无 targetApp → 默认由感知步给前台窗口自动建（Agent 可在 ui_index{window} 显式改目标）。
+  const indexTargetPids = t.targetApp
+    ? [...new Set(familyBasenamesOf(t.targetApp).flatMap((b) => listProcIdsByBasename(b)))]
+    : [];
+  getWindowIndex().beginTask({ targetPids: indexTargetPids.length > 0 ? indexTargetPids : undefined });
+  if (indexTargetPids.length > 0) void getWindowIndex().buildFor({ pid: indexTargetPids[0] }).catch(() => undefined);
   // SoM 基础闭包：先在截图上画编号标注再发给模型（真 Set-of-Mark，见 som-mark.ts）
   const somLookupBase = createSomLookup(vision ?? text);
   // 布局稳定元素坐标表缓存：任务内共享一个实例（循环登记帧上下文，执行器包装查表/记表）。
@@ -223,7 +231,11 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
   // 判定/暂停/续跑/收口全在 anchor-watchdog*.ts 三文件内，这里不承载任何看门狗逻辑。
   const watchdog = attachAnchorWatchdog(host, t, {
     // A-M7 FR-012 埋点：暂停/续跑/收口信号落审计（SQL 可查，见 orchestrator-audit）
-    onSignal: (ev) => recordAnchorWatchdogEvent(audit, t.taskId, ev),
+    onSignal: (ev) => {
+      recordAnchorWatchdogEvent(audit, t.taskId, ev);
+      // 看门狗恢复 = 期间界面可能全变（暂停 ≥2 分钟）：索引失效，下步感知强制重建
+      if (ev.signal === 'RESUME') getWindowIndex().invalidate('watchdog-resume');
+    },
   });
   // A-M7 装配（M3 清单 2 + §4.2 数据源）：仅锚定任务登记台账（无 chip 的旧任务/纯 longTask
   // 任务保持 anchored=false，控制条呈现与现状逐字一致）；status() 经 getAnchorWatchdog 聚合看门狗态
@@ -245,6 +257,8 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
   void loop.run(t.goal, t.taskId)
     .then((result) => {
       host.lastSteps.set(t.taskId, result.stepsDetail);
+      // 观测（交付7）：任务终态汇总「按 ref 点击占比 vs 目测坐标占比」——判断索引有没有用的关键指标
+      console.log(`[window-index] task-end(${t.taskId.slice(0, 8)}) ${getWindowIndex().taskStatsLine()}`);
       const failureKind = classifyFailure(result.status, result.finalAnswer);
       audit.insert(audit.fromAgentEvent(t.taskId, { type: 'task_result', status: result.status, finalAnswer: result.finalAnswer ?? '', steps: result.steps, totalTokens: result.totalTokens, gate: result.gate, thinking: result.thinking }));
       // A-M5 收口报告（FR-006）：终态由哪一闸触发 + 最新检查点工件对账出的未完成清单（断点保留由 A-M4 纪律兜底）
