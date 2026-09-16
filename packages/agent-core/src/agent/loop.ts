@@ -14,13 +14,13 @@ import {
   clampThought,
   createGuessHintInjector,
   hashString,
-  isScreenChanged,
   parseModelOutput,
   sleep,
   summarizeSteps,
   type PerceptionSnap,
 } from './loop-helpers';
 import { EfficiencyGuard } from './loop-efficiency';
+import { ObservePolicy } from './observe-policy';
 import { windowSignatureOf } from './ground-cache';
 import type { BudgetStop } from './loop-budget';
 import { StateTracker } from './state-tracker';
@@ -134,9 +134,9 @@ export class AgentLoop {
     let index = 0;
     emit({ type: 'status', status: 'RUNNING' });
 
-    // 画面变化检测（仅用于提示模型"画面没变"，不再用于跳过截图）
-    let lastScreenSig: string | null = null;
-    let noChangeCount = 0;
+    // 画面变化检测（P2 分层）：判定公式在 loop-helpers.layeredScreenChanged，
+    // 跨步状态（整帧指纹/计数/目标区基线/失败快路径）收在 observe-policy.ts
+    const observe = new ObservePolicy(this.opts.regionFingerprint);
     // 效率与收尾守卫：重复 thought / 相似动作 / 半程收尾三类注入（逻辑在 loop-efficiency.ts）
     const efficiency = new EfficiencyGuard(maxSteps);
     // 关键状态追踪：窗口切换/文件打开/复制操作等结构化状态，注入感知文本防丢线索
@@ -196,12 +196,11 @@ export class AgentLoop {
       try {
         // 2) 感知帧：每步都截图发模型（384 token 代价极低，省掉变化检测逻辑）
         const snap: PerceptionSnap = await perception.snapshot().catch(() => ({} as PerceptionSnap));
-        // 指纹优先用宿主分块哈希（抗光标闪烁），缺省回退整图字节哈希
+        // 指纹优先用宿主分块哈希（抗光标闪烁），缺省回退整图字节哈希；分层判定与计数在 observe-policy
         const screenSig = snap.signature ?? (snap.screenshot ? quickHash(snap.screenshot) : null);
-        const screenChanged = screenSig !== null && (lastScreenSig === null || isScreenChanged(lastScreenSig, screenSig));
-        if (screenSig !== null && !screenChanged) noChangeCount++;
-        else noChangeCount = 0;
-        lastScreenSig = screenSig;
+        const obs = await observe.assess(snap, screenSig, stepsDetail.slice(-2).map((s) => `${s.actionName ?? ''} ${s.resultSummary}`).join(' '));
+        const screenChanged = obs.changed;
+        const noChangeCount = obs.noChangeCount;
         // 坐标表缓存：登记本步窗口签名/整帧指纹/步号；窗口变化由缓存在 beginStep 内整表失效
         groundCache?.beginStep({ windowSignature: windowSignatureOf(snap.foreground), frameHash: screenSig ?? undefined, step: index });
 
@@ -252,7 +251,7 @@ export class AgentLoop {
         }
 
         // 效率与收尾守卫：按需注入系统指令（下一个模型调用生效）
-        for (const nudge of efficiency.onStep(index, parsed.thought ?? null, parsed.actions[0] ?? null, { noChangeCount })) {
+        for (const nudge of efficiency.onStep(index, parsed.thought ?? null, parsed.actions[0] ?? null, obs)) {
           messages.push({ role: 'system', content: nudge.message });
           emit({ type: 'step', step: { index, thought: nudge.notice, actionName: null, resultSummary: '', ok: true } });
         }
@@ -353,6 +352,8 @@ export class AgentLoop {
           }
 
           // 5c) 执行（停滞硬约束：重复同一个没有界面响应的动作直接拦截，不做真实注入）
+          // P2 失败快路径：执行前抓一次目标区基线指纹（宿主本地截图，零 token；非点击自动跳过）
+          await observe.armForAction({ name: action.name, args: finalArgs });
           const blockReason = efficiency.blockReason(action);
           if (blockReason) efficiency.notePathological(blockReason); // C1：被拦截 = 无进展证据
           const execResult = blockReason

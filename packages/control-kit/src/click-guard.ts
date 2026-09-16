@@ -73,7 +73,7 @@ export class ClickGuard {
     const near = this.nearest(x, y);
     const advice = near.length > 0
       ? `该点附近的 UIA 元素: ${near.map((m) => `#${m.id} "${m.name}"`).join('、')}——用 ui_click(#id) 点击`
-      : '先用 ui_locate 定位控件名，或换坐标（至少偏移 50px）、改键盘快捷键';
+      : '改用 ui_locate 精确定位控件后走 ui_click(#id)/清单中心坐标，或键盘快捷键；勿凭感觉偏移坐标（小图标偏移 50px 必点飞）';
     return `坐标 (${Math.round(x)},${Math.round(y)}) 附近已连续点击 ${count - 1} 次未生效，已熔断。${advice}。若目标已达成或无法继续，调 task_done。`;
   }
 

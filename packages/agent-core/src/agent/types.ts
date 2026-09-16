@@ -3,7 +3,7 @@ import type { ILLMClient } from '@ximo-visagent/llm-providers';
 import type { OperationLevel, TaskStatus, ToolSchema } from '@ximo-visagent/shared-types';
 import type { ApprovalEngine, SafetyClassifier } from '@ximo-visagent/safety';
 import type { PerceptionProvider, ToolExecutor } from '../tools/registry';
-import type { GroundCache } from './ground-cache';
+import type { GroundCache, RegionFingerprint } from './ground-cache';
 import type { RecoveryContext, RecoveryHit } from './recovery';
 import type { BudgetGuard } from './loop-budget';
 import type { ThinkingStats } from './thinking-policy';
@@ -79,6 +79,9 @@ export interface AgentLoopOptions {
   roleContext?: import('../prompts/system').RoleContext;
   /** 布局稳定元素坐标表缓存（ground-cache.ts）：宿主创建，注入循环登记帧上下文与失效时机 */
   groundCache?: GroundCache;
+  /** P2 分层变化判定：宿主注入的目标区域指纹回调（desktop host-capabilities.regionFingerprint，
+   *  与 groundCache 同一实现）。缺省 = 拿不到区域信号 → 变化判定保守退回整帧语义（零回归）。 */
+  regionFingerprint?: RegionFingerprint;
   /** 常识与能力卡常驻：宿主按目标 FTS 召回的 top-k 相似任务能力卡，随 system prompt 注入；空/缺省不注入 */
   capabilityCards?: import('../prompts/capability-inject').CapabilityBrief[];
 }

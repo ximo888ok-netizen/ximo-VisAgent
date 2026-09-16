@@ -130,6 +130,8 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     visionLLM: vision,
     executor,
     groundCache,
+    // P2 分层变化判定：与坐标缓存共用同一区域指纹实现（本地截图取 pHash，零 token）
+    regionFingerprint,
     perception,
     classifier: makeSafetyClassifier(),
     approval: approvals,

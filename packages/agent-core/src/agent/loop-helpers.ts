@@ -1,8 +1,9 @@
-// loop 辅助：感知文本 / 模型输出解析 / 步骤压缩 / 工具定义 / 图片块
+// loop 辅助：感知文本 / 模型输出解析 / 步骤压缩 / 工具定义 / 图片块 / P2 分层变化判定（纯函数）
 import { imageDetailFor, readImageSize } from '@ximo-visagent/llm-providers';
 import type { ContentPart, ILLMClient, ToolDef } from '@ximo-visagent/llm-providers';
 import type { ToolSchema } from '@ximo-visagent/shared-types';
 import { OPTIONAL_TOOL_SCHEMAS, TOOL_SCHEMA_MAP, TOOL_SCHEMAS } from '../tools/schema';
+import { hashDistance } from './ground-cache';
 import { extractThinkRequest } from './thinking-policy';
 
 export interface PerceptionSnap {
@@ -28,6 +29,26 @@ export function isScreenChanged(prev: string, next: string): boolean {
     return d > SCREEN_CHANGE_MIN_BITS;
   }
   return prev !== next;
+}
+
+/** 目标区域指纹变化阈（汉明距离 ≥2 即算"变了"）。敢比整帧 6/64 紧这么多：裁剪区远小于整帧，
+ *  同尺寸重采样后对目标区的改动（单元格数值、勾选态）远比整帧敏感，1bit 留给光标/抗锯齿噪声。 */
+const REGION_CHANGE_MIN_BITS = 2;
+
+/** P2 分层变化判定（纯函数；跨步状态与失败快路径在 observe-policy.ts）：
+ *  目标区域指纹为主、整帧为辅——两层都判"没变"才算没变。
+ *  区域指纹拿不到（无回调 / 非点击动作 / 不可比）→ regionUnchanged=undefined，
+ *  调用方保守退回整帧语义（与旧判定逐字节一致，零回归）。 */
+export function layeredScreenChanged(
+  prevFrame: string | null,
+  curFrame: string | null,
+  prevRegion: string | null,
+  curRegion: string | null,
+): { changed: boolean; regionUnchanged: boolean | undefined } {
+  const frameChanged = curFrame !== null && (prevFrame === null || isScreenChanged(prevFrame, curFrame));
+  const d = prevRegion !== null && curRegion !== null ? hashDistance(prevRegion, curRegion) : null;
+  const regionChanged = d === null ? null : d >= REGION_CHANGE_MIN_BITS;
+  return { changed: regionChanged === true || frameChanged, regionUnchanged: regionChanged === null ? undefined : !regionChanged };
 }
 
 /** 环境上下文：每步感知时附带的结构化系统信息，让模型对环境有基本认知 */

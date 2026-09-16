@@ -1,6 +1,7 @@
 // 效率与收尾守卫（自 loop.ts 拆出）：重复 thought 检测 / 相似动作重复检测 / 半程收尾提醒
 // 职责：发现模型空转或目标收尾缺失时，产出要注入的系统指令。状态机本身，不做 IO。
 import { actionSignature } from './loop-helpers';
+import { fastPathLevel, PROGRESS_WAIT_HINT, repeatBlockText, stallHintText, type FastPathLevel } from './observe-policy';
 
 export interface EfficiencyNudge {
   /** 注入给模型的 system 指令 */
@@ -11,8 +12,13 @@ export interface EfficiencyNudge {
 
 /** 每步附带的运行时状态（loop 层才能感知的信号） */
 export interface StepContext {
-  /** 画面连续未变化步数（感知帧指纹判定） */
+  /** 画面连续未变化步数（P2 起为分层判定：整帧+目标区域都判没变才计数） */
   noChangeCount?: number;
+  /** P2 分层观察信号（observe-policy.assess 产出，字段同形直传）：目标区判定 / 动作后连续无效果次数 /
+   *  进度语义。regionUnchanged 缺省 = 无区域信号，保守退回整帧语义（与旧行为一致）。 */
+  regionUnchanged?: boolean;
+  noEffectStreak?: number;
+  progressSeen?: boolean;
 }
 
 const MAX_REPEAT_THOUGHTS = 3;
@@ -44,6 +50,9 @@ export class EfficiencyGuard {
   private wrapupNudged = false;
   private stallNudged = false;
   private stalled = false;
+  /** P2 失败快路径档位（observe-policy 决策）与进度提示一次性配额 */
+  private fastPath: FastPathLevel | null = null;
+  private progressNudged = false;
   /** 上一步的动作签名（用于识别"重复同一个无效动作"） */
   private prevSig: string | null = null;
   /** 本轮待拦截的动作签名（停滞 + 与上一步相同） */
@@ -54,7 +63,10 @@ export class EfficiencyGuard {
   /** 每步解析后调用一次；返回 0..N 条要注入的指令 */
   onStep(index: number, thought: string | null, action: { name: string; args: Record<string, unknown> } | null, ctx: StepContext = {}): EfficiencyNudge[] {
     const noChangeCount = ctx.noChangeCount ?? 0;
-    this.stalled = noChangeCount >= STALL_STEPS;
+    this.fastPath = ctx.progressSeen === true ? null : fastPathLevel(ctx.noEffectStreak ?? 0, ctx.regionUnchanged === true);
+    // 停滞 = 失败快路径已确认无效果（区域层作证，第 1 次起算）；或 整帧连静且目标区域亦未变（前置条件）。
+    // 进度语义时画面静止不是停滞，转 wait_for 提示，不拦截（守卫变准：区域变化的单元格级操作不再误判）。
+    this.stalled = ctx.progressSeen !== true && (this.fastPath !== null || (noChangeCount >= STALL_STEPS && ctx.regionUnchanged !== false));
     // C1：停滞轮次边界触发（进入停滞记一次，退出后再次进入才再记）
     if (this.stalled && !this.wasStalled) this.notePathological(`画面连续 ${noChangeCount} 步无变化`);
     this.wasStalled = this.stalled;
@@ -68,7 +80,7 @@ export class EfficiencyGuard {
     if (thoughtNudge) out.push(thoughtNudge);
     const actionNudge = this.checkRepeatedAction(action);
     if (actionNudge) out.push(actionNudge);
-    const stallNudge = this.checkStall(noChangeCount);
+    const stallNudge = this.checkStall(noChangeCount, ctx.progressSeen === true);
     if (stallNudge) out.push(stallNudge);
     const wrapup = this.checkStepBudget(index);
     if (wrapup) out.push(wrapup);
@@ -111,7 +123,7 @@ export class EfficiencyGuard {
     const sig = actionSignature(action.name, action.args);
     if (sig === null) return null;
     if (this.blockSig && sig === this.blockSig) {
-      return `画面已连续多步没有变化，${action.name} 在上一步已经做过且没有产生任何界面响应，本轮已拦截。改用：1) ui_locate/ui_click 精确定位控件；2) 键盘快捷键（Enter/Esc/Tab）；3) wait_for 等界面加载；4) 换目标坐标（至少偏移 50px）。`;
+      return `画面已连续多步没有变化，${action.name} 在上一步已经做过且没有产生任何界面响应，本轮已拦截。${repeatBlockText(this.fastPath)}`;
     }
     // 交替循环：同一签名在近 10 步内高频出现（画面可能有变——菜单开开关关——但任务没推进）
     const count = this.recentActionSigs.filter((s) => s === sig).length;
@@ -123,13 +135,19 @@ export class EfficiencyGuard {
     return null;
   }
 
-  /** 画面停滞提示：弱模型对"画面没变"无感，这里点明"上一步没有产生任何界面响应" */
-  private checkStall(noChangeCount: number): EfficiencyNudge | null {
-    if (noChangeCount < STALL_STEPS || this.stallNudged) return null;
+  /** 画面停滞提示：弱模型对"画面没变"无感，这里点明"上一步没有产生任何界面响应"。
+   *  P2：进度语义时画面静止不是停滞（任务在跑）→ 一次性 wait_for 条件等待提示，替代换策略指令。 */
+  private checkStall(noChangeCount: number, progress: boolean): EfficiencyNudge | null {
+    const progressFire = progress && noChangeCount >= 2 && !this.progressNudged;
+    if (!progressFire && (this.stallNudged || !this.stalled)) return null;
+    if (progress) {
+      this.progressNudged = true;
+      return { message: PROGRESS_WAIT_HINT, notice: '[进度等待] 检测到进度语义：画面静止≠停滞，改走 wait_for 条件等待' };
+    }
     this.stallNudged = true;
     return {
-      message: `⚠ 画面已连续 ${noChangeCount} 步没有变化：你上一步的动作没有产生任何界面响应。不要重复同一个动作——改用 ui_locate/ui_click 精确点击、换键盘快捷键（Enter/Esc/Tab），或先 wait_for 等界面加载。`,
-      notice: `[停滞纠正] 画面连续 ${noChangeCount} 步无变化，已注入换策略指令`,
+      message: stallHintText(this.fastPath, noChangeCount),
+      notice: `[停滞纠正] 连续 ${noChangeCount} 步无变化，已注入${this.fastPath ? '失败快路径' : '换策略'}指令`,
     };
   }
 
