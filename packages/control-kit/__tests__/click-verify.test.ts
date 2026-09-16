@@ -1,8 +1,9 @@
-// 点击验证单测：同区域前后帧比对（旧实现拿整屏 vs 区域裁剪比较，恒报"生效"）
+// 点击验证单测：先等画面稳定再取结论（P1，同区域前后帧比对；旧实现固定 sleep 截到过渡帧）
 // + 变化区域定向读（分块 diff → 稳定命中并集 bbox → 只对该区域 OCR，全部替身不碰真实 OCR/设备）
 import { describe, expect, it } from 'vitest';
 import { setHost, type HostCapabilities } from '../src/host';
-import { byteDiffRatio, captureBaseline, postClickVerify } from '../src/click-verify';
+import { captureBaseline, postClickVerify } from '../src/click-verify';
+import { byteDiffRatio } from '../src/stable-frame';
 import type { OcrHit } from '../src/ocr-lookup';
 
 /** 装一个只实现截图/差异能力的宿主 */
@@ -160,5 +161,47 @@ describe('postClickVerify 变化区域定向读', () => {
     expect(out?.changed).toBe(true);
     expect(out?.regionBbox).toBeNull();
     expect(out?.regionOcr).toBeNull();
+  });
+});
+
+// ---------- P1：动作后等到画面稳定再取结论（取代固定 300ms + 盲采样） ----------
+
+describe('postClickVerify 稳定窗口取结论', () => {
+  it('过渡帧不进结论：比率与变化块只来自稳定窗口（帧1≠帧2=帧3 型序列）', async () => {
+    const seq = [
+      { ratio: 0.9, blocks: [blk(200, 200)] }, // 点击后的过渡帧：巨幅假变化
+      { ratio: 0.2, blocks: STABLE_BLOCKS },
+      { ratio: 0.2, blocks: STABLE_BLOCKS },
+      { ratio: 0.2, blocks: STABLE_BLOCKS },
+    ];
+    let i = 0;
+    stubHost({
+      regionDiff: undefined,
+      captureRegion: async () => Buffer.from('region'),
+      regionDiffBlocks: async () => {
+        const r = seq[Math.min(i, seq.length - 1)]!;
+        i++;
+        return { ratio: r.ratio, blocks: r.blocks.map((b) => ({ ...b })) };
+      },
+    });
+    const out = await postClickVerify(BASELINE, { recognize: recognizeHits('已保存到磁盘') });
+    // 旧实现（固定 300ms + 3 轮盲采样）会把过渡帧的 90% 拉进结论 → 假"生效"误导
+    expect(out?.note).toContain('20.0%');
+    expect(out?.changed).toBe(true);
+    expect(out?.regionBbox).toEqual({ x: 64, y: 64, w: 96, h: 32 });
+    expect(out?.regionOcr).toBe('已保存到磁盘');
+  });
+
+  it('快界面有界延迟：稳定后 3 轮×80ms 采样即收口（远快于旧 300ms+3×120ms≈540ms）', async () => {
+    stubHost({
+      captureRegion: async () => Buffer.from('region'),
+      regionDiffBlocks: async () => ({ ratio: 0, blocks: [] }),
+    });
+    const t0 = Date.now();
+    const out = await postClickVerify(BASELINE);
+    const elapsed = Date.now() - t0;
+    expect(out?.changed).toBe(false);
+    // 快路径上界（含调度余量）；旧实现同路径恒 ≥540ms
+    expect(elapsed).toBeLessThan(400);
   });
 });

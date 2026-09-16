@@ -14,8 +14,10 @@ import { screenOcr, waitFor, lookClose } from './screen-ocr';
 import { mouseDrag, mouseHold, mouseDragHold, mouseScroll } from './win32';
 import { keyboardPress, keyboardType } from './win32-keyboard';
 import { verifyTypedInput } from './keyboard-verify';
+import { STABLE_MAX_WAIT_MS, waitForStableFrame } from './stable-frame';
 import { activateWindow, listWindows } from './win32-window';
-/** 双击后等待前台窗口变化（覆盖冷启动 >300ms，防误报未变化） */
+/** 开应用/双击后等"见效"：稳定帧轮询取代固定等待——快路径 ~160-240ms（不劣于旧 400ms），
+ *  上限 2.5s 有界（慢界面不误报未变化）；宿主无稳定观测能力时退回旧的固定 400ms。 */
 const OPEN_EFFECT_WAIT_MS = 400;
 
 /** SoM 候选上限与 label 截断 */
@@ -111,9 +113,17 @@ export class ComputerToolExecutor implements ToolExecutor {
     return { ok: true, summary, ...(verify ? { data: verifyResultData(verify) } : {}) };
   }
 
-  /** 双击后的前台窗口变化反馈（无变化 = 可能被遮挡或没打开，模型不必盲试） */
+  /** 双击后的前台窗口变化反馈（无变化 = 可能被遮挡或没打开，模型不必盲试）：
+   *  窗口已切换则提前结束等待；未切换时等到画面收敛再下"未变化"结论（上限 2.5s 有界） */
   private async foregroundDelta(before: string | null): Promise<string> {
-    await new Promise((r) => setTimeout(r, OPEN_EFFECT_WAIT_MS));
+    const st = await waitForStableFrame({
+      maxWaitMs: STABLE_MAX_WAIT_MS,
+      earlyExit: async () => {
+        const now = await this.foregroundTitle();
+        return now !== null && now !== before;
+      },
+    });
+    if (st.rounds === 0) await sleep(OPEN_EFFECT_WAIT_MS); // 无稳定观测能力 → 旧的固定等待
     const after = await this.foregroundTitle();
     if (after && after !== before) return `；前台窗口已切换: ${after}`;
     return `；前台窗口未变化 (${after ?? '未知'})——目标可能被遮挡或未打开，勿原地重试`;
@@ -204,8 +214,10 @@ export class ComputerToolExecutor implements ToolExecutor {
 
   private async openApp(args: Record<string, unknown>): Promise<ToolResult> {
     await getHost().openApp(String(args.nameOrPath));
-    // 启动是异步的：宿主已等窗口并尝试激活，这里回报真实前台窗口，模型不必盲点
-    await sleep(OPEN_EFFECT_WAIT_MS);
+    // 启动是异步的：宿主已等窗口并尝试激活，这里等画面收敛后回报真实前台窗口（快路径 <400ms，
+    // 慢界面最多多到 2.5s 上限；无稳定观测能力时退回旧的固定 400ms），模型不必盲点
+    const st = await waitForStableFrame({ maxWaitMs: STABLE_MAX_WAIT_MS });
+    if (st.rounds === 0) await sleep(OPEN_EFFECT_WAIT_MS);
     const fg = await this.foregroundTitle();
     return { ok: true, summary: `启动 ${args.nameOrPath}${fg ? `；当前前台窗口: ${fg}` : '；未检测到前台窗口'}` };
   }

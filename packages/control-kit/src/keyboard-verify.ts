@@ -6,8 +6,13 @@ import { readImageSize } from '@ximo-visagent/llm-providers';
 import { getHost } from './host';
 import { ocrRecognizeAll } from './ocr-lookup';
 import { getScreenScale, physicalToScreenshot } from './screen-scale';
+import { waitForStableFrame } from './stable-frame';
 import { getUiaClient } from './uia-client';
 import type { Box } from './changed-region';
+
+/** 注入后回读前的稳定等待上限：等字段区域画面收敛再读，慢界面最多多到 2.5s（有界），
+ *  快路径 ~160ms 与旧固定 150ms 相当；上限取 max(本值, settleMs)，不放得比原等待更短（防回归） */
+const SETTLE_MAX_WAIT_MS = 2500;
 
 /** 含非 ASCII（中文/全角）的文本易被输入法/IME 干扰，值得回读；纯 ASCII 注入链路稳定 */
 export function needsInputVerify(text: string): boolean {
@@ -66,8 +71,8 @@ export interface TypeVerifyDeps {
   ocrRegion?: (rectPhysical: Box) => Promise<string | null>;
 }
 
-/** 注入后的完整回读判定：UIA value 优先，不可得走字段 bbox 区域 OCR；
- *  无需验证（纯 ASCII）返回 null；全程不抛出。 */
+/** 注入后的完整回读判定：等焦点字段区域画面稳定（P1，取代固定 settle）后再回读；
+ *  UIA value 优先，不可得走字段 bbox 区域 OCR；无需验证（纯 ASCII）返回 null；全程不抛出。 */
 export async function verifyTypedInput(
   text: string,
   settleMs = 150,
@@ -75,8 +80,12 @@ export async function verifyTypedInput(
 ): Promise<InputVerifyOutcome | null> {
   if (!needsInputVerify(text)) return null;
   try {
-    if (settleMs > 0) await sleep(settleMs);
-    const snap = await (deps.readFocused ?? readFocusedSnapshot)();
+    const readFocused = deps.readFocused ?? readFocusedSnapshot;
+    let snap = await readFocused();
+    if (settleMs > 0) {
+      await settleAfterInput(snap.rect, settleMs);
+      snap = await readFocused(); // 结论取自稳定后的回读，过渡态 value 不进判定
+    }
     if (snap.value) return outcome('uia', compareTypedText(text, snap.value), text, snap.value);
     if (!snap.rect) return outcome('none', 'unverifiable', text, '');
     const ocr = await (deps.ocrRegion ?? ocrFocusedRect)(snap.rect);
@@ -87,20 +96,39 @@ export async function verifyTypedInput(
   }
 }
 
+/** 注入后的稳定等待：有字段 rect 就只轮询该区域收敛（本地截图+pHash，零 token，
+ *  快路径 ~160ms）；无 rect / 宿主无能力时退回旧的固定 sleep(settleMs)，不缩短上限 */
+async function settleAfterInput(rectPhysical: Box | null, settleMs: number): Promise<void> {
+  if (!rectPhysical) {
+    await sleep(settleMs);
+    return;
+  }
+  const st = await waitForStableFrame({
+    rect: physicalRectToShotBox(rectPhysical),
+    maxWaitMs: Math.max(SETTLE_MAX_WAIT_MS, settleMs),
+  });
+  if (st.rounds === 0) await sleep(settleMs);
+}
+
+/** UIA 物理像素 rect → 截图坐标矩形（captureRegion 收截图系坐标，先按缩放换算） */
+function physicalRectToShotBox(rectPhysical: Box): Box {
+  const scale = getScreenScale();
+  const origin = physicalToScreenshot(rectPhysical.x, rectPhysical.y);
+  return {
+    x: Math.round(origin.x),
+    y: Math.round(origin.y),
+    w: Math.max(1, Math.round(rectPhysical.w / (scale.x || 1))),
+    h: Math.max(1, Math.round(rectPhysical.h / (scale.y || 1))),
+  };
+}
+
 /** 字段区域 OCR 回读降级分支：UIA rect 是物理像素，captureRegion 收截图坐标，先换算；
  *  宿主缺能力 / 截图失败 / OCR 不可用 / 无文字 → null（调用方判 unverifiable） */
 async function ocrFocusedRect(rectPhysical: Box): Promise<string | null> {
   try {
     const host = getHost();
     if (typeof host.captureRegion !== 'function') return null;
-    const scale = getScreenScale();
-    const origin = physicalToScreenshot(rectPhysical.x, rectPhysical.y);
-    const box = {
-      x: Math.round(origin.x),
-      y: Math.round(origin.y),
-      w: Math.max(1, Math.round(rectPhysical.w / (scale.x || 1))),
-      h: Math.max(1, Math.round(rectPhysical.h / (scale.y || 1))),
-    };
+    const box = physicalRectToShotBox(rectPhysical);
     const jpeg = await host.captureRegion(box.x, box.y, box.w, box.h).catch(() => null);
     if (!jpeg) return null;
     const dims = readImageSize(jpeg) ?? { width: box.w, height: box.h };

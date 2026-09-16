@@ -8,6 +8,7 @@
  * 这里全部用依赖注入替身钉纯逻辑与分支选择，不碰真实设备。
  */
 import { describe, expect, it } from 'vitest';
+import { setHost } from '../src/host';
 import {
   compareTypedText,
   needsInputVerify,
@@ -124,5 +125,43 @@ describe('verifyTypedInput 通道选择与结构化结论', () => {
     expect(out?.status).toBe('unverifiable');
     expect(out?.channel).toBe('ocr');
     expect(out?.actual).toBe('');
+  });
+});
+
+// ---------- P1：注入后等字段区域画面稳定再回读（取代固定 settle，慢界面有界 2.5s） ----------
+
+describe('verifyTypedInput 稳定后再回读', () => {
+  it('有字段 rect：区域判稳后才做结论回读（过渡态 value 不进判定）', async () => {
+    setHost({
+      captureScreen: async () => Buffer.from('shot'),
+      captureRegion: async () => Buffer.from('region'), // 恒同帧 → 2 轮判稳
+      readClipboard: async () => '',
+      writeClipboard: async () => {},
+      getForegroundInfo: async () => ({ title: '', className: '' }),
+      openApp: async () => {},
+    });
+    let reads = 0;
+    const out = await verifyTypedInput('把会议安排在明天', 150, {
+      readFocused: async () => {
+        reads++;
+        return reads === 1 ? snap('把会议', RECT) : snap('把会议安排在明天', RECT);
+      },
+    });
+    expect(reads).toBe(2); // 稳定等待后重新回读
+    expect(out?.status).toBe('verified');
+    expect(out?.actual).toBe('把会议安排在明天');
+  });
+
+  it('无 rect（纯 value 通道）：退回旧固定 settle，等待上限不缩短', async () => {
+    let reads = 0;
+    const t0 = Date.now();
+    const out = await verifyTypedInput('把会议安排在明天', 40, {
+      readFocused: async () => {
+        reads++;
+        return reads === 1 ? snap('把会议', null) : snap('把会议安排在明天', null);
+      },
+    });
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(35); // settle 下限保住（防回归）
+    expect(out?.status).toBe('verified');
   });
 });
