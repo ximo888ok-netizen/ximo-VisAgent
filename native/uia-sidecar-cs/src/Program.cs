@@ -92,12 +92,18 @@ namespace UiaSidecar
         public Dictionary<long, AutomationElement> Cache { get { return _cache; } }
         private readonly int _maxNodes;
         private readonly int _maxDepth;
+        // 自我污染防线（交付3）：这些 pid 的元素连同子树整枝剪掉（灵动岛是主进程常驻顶层窗口，
+        // 一旦进树模型就会去点我们自己的界面）。调用方传入宿主 pid，侧车自身 pid 由入口恒内置。
+        private readonly HashSet<int> _excludePids;
         public int Total = 0;
 
-        public Collector(int maxNodes, int maxDepth)
+        public Collector(int maxNodes, int maxDepth) : this(maxNodes, maxDepth, null) { }
+
+        public Collector(int maxNodes, int maxDepth, HashSet<int> excludePids)
         {
             _maxNodes = maxNodes;
             _maxDepth = maxDepth;
+            _excludePids = excludePids;
         }
 
         public static long ElementId(AutomationElement el)
@@ -153,6 +159,11 @@ namespace UiaSidecar
         // 返回 JSON 或 null（节点被裁剪）
         public string Build(AutomationElement el, int depth, bool isRoot)
         {
+            if (_excludePids != null && _excludePids.Count > 0 && !isRoot)
+            {
+                try { if (_excludePids.Contains(el.Current.ProcessId)) return null; }
+                catch { /* 读不到 ProcessId 的节点按不排除处理，交由下方 Current 异常兜底 */ }
+            }
             Total++;
             bool isWin = isRoot || IsWindow(el);
             if (!isWin && (depth > _maxDepth || Total > _maxNodes))
@@ -249,6 +260,8 @@ namespace UiaSidecar
                     switch (method)
                     {
                         case "getUiTree": result = BuildTree(payload); break;
+                        case "indexWindow": result = IndexWindowActions.IndexWindow(payload); break;
+                        case "resolveRefs": result = IndexWindowActions.ResolveRefs(payload); break;
                         case "elementRect": result = ElementRect(payload); break;
                         case "scrollIntoView": result = ScrollActions.ScrollIntoView(payload); break;
                         case "focusedElement": result = Focused(); break;
@@ -271,7 +284,9 @@ namespace UiaSidecar
         {
             int maxDepth = SafeInt(ExtractParam(payload, "maxDepth", "6"), 1, 12, 6);
             int maxNodes = SafeInt(ExtractParam(payload, "maxNodes", "800"), 50, 2000, 800);
-            var c = new Collector(maxNodes, maxDepth);
+            // 交付3：excludePids（宿主进程传入 Electron 主进程 pid）+ 侧车自身 pid 恒排除
+            var exclude = IndexWindowActions.ParseExcludePids(payload);
+            var c = new Collector(maxNodes, maxDepth, exclude);
             string body;
             try
             {

@@ -86,7 +86,22 @@ function safeDpi(): number {
 
 export { setHost, getHost } from './host';
 export type { HostCapabilities, OverlayEvent } from './host';
-export { getUiaClient, UiaClient, type UiaClientOptions } from './uia-client';
+export { getUiaClient, UiaClient, withSelfPid, type UiaClientOptions } from './uia-client';
+export {
+  indexWindow,
+  resolveRefs,
+  type UiaTransport,
+  type IndexWindowOptions,
+  type IndexWindowResult,
+  type IndexedWindow,
+  type IndexedElement,
+  type IndexPatterns,
+  type IndexRect,
+  type IndexCenter,
+  type ResolveRefItem,
+  type ResolveRefsResult,
+  type ResolvedRef,
+} from './uia-index';
 export * from './win32';
 export * from './win32-keyboard';
 export * from './win32-window';

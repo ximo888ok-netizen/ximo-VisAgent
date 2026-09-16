@@ -92,6 +92,47 @@ namespace UiaSidecar
             return int.TryParse(line.Substring(p, end - p), out v) ? v : dflt;
         }
 
+        /// <summary>取 "key":number 长整数参数（hwnd 等 64 位句柄值；JS Number 传输的十进制整数）。</summary>
+        public static long LongParam(string line, string key, long dflt)
+        {
+            int i = line.IndexOf("\"" + key + "\"", StringComparison.Ordinal);
+            if (i < 0) return dflt;
+            int colon = line.IndexOf(':', i + key.Length + 2);
+            if (colon < 0) return dflt;
+            int p = colon + 1;
+            while (p < line.Length && (line[p] == ' ' || line[p] == '\t')) p++;
+            int end = p;
+            while (end < line.Length && (char.IsDigit(line[end]) || line[end] == '-')) end++;
+            if (end == p) return dflt;
+            long v;
+            return long.TryParse(line.Substring(p, end - p), out v) ? v : dflt;
+        }
+
+        /// <summary>取 "key":[1,2] 数字数组参数（excludePids 等；非数字元素跳过，缺失/坏形回空表）。</summary>
+        public static List<int> IntArray(string line, string key)
+        {
+            var list = new List<int>();
+            int i = line.IndexOf("\"" + key + "\"", StringComparison.Ordinal);
+            if (i < 0) return list;
+            int open = line.IndexOf('[', i);
+            if (open < 0) return list;
+            int close = line.IndexOf(']', open);
+            if (close < 0) return list;
+            int p = open + 1;
+            while (p < close)
+            {
+                int q = p;
+                while (q < close && !char.IsDigit(line[q]) && line[q] != '-') q++;
+                int e = q;
+                while (e < close && (char.IsDigit(line[e]) || line[e] == '-')) e++;
+                if (q >= e) break;
+                int v;
+                if (int.TryParse(line.Substring(q, e - q), out v)) list.Add(v);
+                p = e;
+            }
+            return list;
+        }
+
         /// <summary>取 "key":["a","b"] 字符串数组参数（逐串还原转义，非字符串元素跳过）。</summary>
         public static List<string> StringArray(string line, string key)
         {

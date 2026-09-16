@@ -46,6 +46,11 @@ function resolveSidecarPath(): string {
   return findSidecarUpwards(__dirname) ?? SIDECAR_REL;
 }
 
+/** 自我污染防线共用的排除集合成：宿主进程 pid（Electron 主进程=灵动岛/aura 的窗口主人）恒在列表中并去重 */
+export function withSelfPid(exclude?: number[]): number[] {
+  return Array.from(new Set([process.pid, ...(exclude ?? [])]));
+}
+
 export class UiaClient extends EventEmitter {
   private proc: ChildProcess | null = null;
   private pending = new Map<number, { resolve: (v: string) => void; reject: (e: Error) => void }>();
@@ -162,7 +167,12 @@ export class UiaClient extends EventEmitter {
     }
   }
 
-  private request(method: string, payload: Record<string, unknown>): Promise<string> {
+  /**
+   * 底层 JSON-RPC：发送一行 NDJSON、等 id 对应的 result（30s 超时）。
+   * 公开是给 uia-index.ts 这类类型化封装复用超时/重启预算；
+   * 业务代码优先用封装方法（getUiTree/indexWindow/…），别裸拼报文。
+   */
+  request(method: string, payload: Record<string, unknown>): Promise<string> {
     // BUG-08 修复：向死管道写入前检查健康状态
     if (!this.healthy) {
       return Promise.reject(new Error(`sidecar not healthy (method: ${method})`));
@@ -191,7 +201,11 @@ export class UiaClient extends EventEmitter {
   }
 
   async getUiTree(options: UiTreeOptions = {}): Promise<UiTreeResult> {
-    const raw = await this.request('getUiTree', { params: options });
+    // 交付3（调用方半边）：本客户端跑在 Electron 主进程里，灵动岛/aura 同属该 pid，
+    // 一旦进树模型就会去点我们自己的界面——宿主 pid 必进排除集（侧车内部再恒排除自身 pid）。
+    const raw = await this.request('getUiTree', {
+      params: { ...options, excludePids: withSelfPid(options.excludePids) },
+    });
     return JSON.parse(raw) as UiTreeResult;
   }
 
