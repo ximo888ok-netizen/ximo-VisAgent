@@ -12,7 +12,7 @@ import { clickWithSelfPassthrough, ensureTargetForeground } from './click-focus'
 import { mouseHoverTool } from './mouse-hover';
 import { uiScrollTo } from './uia-scroll';
 import { screenOcr, waitFor, lookClose } from './screen-ocr';
-import { mouseDrag, mouseHold, mouseDragHold, mouseScroll, mouseMoveTo } from './win32';
+import { mouseDrag, mouseHold, mouseDragHold, mouseScroll, mouseMoveTo, getCursorPos } from './win32';
 import { keyboardPress, keyboardType } from './win32-keyboard';
 import { verifyTypedInput, verifyKeyEffect, readFocusedSnapshot, diffFocusVerdict } from './keyboard-verify';
 import { STABLE_MAX_WAIT_MS, waitForStableFrame } from './stable-frame';
@@ -108,13 +108,19 @@ export class ComputerToolExecutor implements ToolExecutor {
 
   // ---------- 视觉坐标（直点模式：模型给什么坐标就点什么，不纠正） ----------
   private async mouseClick(args: Record<string, unknown>): Promise<ToolResult> {
-    const x = Number(args.x);
-    const y = Number(args.y);
-    if (args.x == null || args.y == null || !Number.isFinite(x) || !Number.isFinite(y)) {
+    const straight = args.straight === true;
+    let x = Number(args.x);
+    let y = Number(args.y);
+    // 不带坐标 = 在当前光标处原地点击（移动与点击拆开：先 mouse_move 到位，再 mouse_click()）
+    if (args.x == null && args.y == null) {
+      const cur = getCursorPos();
+      x = cur.x;
+      y = cur.y;
+    } else if (!Number.isFinite(x) || !Number.isFinite(y)) {
       return {
         ok: false,
         summary: '',
-        error: `mouse_click 坐标非法（x=${String(args.x)}, y=${String(args.y)}）。x/y 必须是数字，如 {"x": 497, "y": 528}；坐标从截图网格刻度线插值读取`,
+        error: `mouse_click 坐标非法（x=${String(args.x)}, y=${String(args.y)}）。x/y 给数字（从截图网格插值），或都省略以在当前光标处点击`,
       };
     }
     const button = (args.button as 'left' | 'right' | 'middle') ?? 'left';
@@ -127,7 +133,7 @@ export class ComputerToolExecutor implements ToolExecutor {
     // 点击前抓同区域基线，点击后比对：这是模型判断"点没点中"的唯一可信信号
     const baseline = await captureBaseline(x, y);
 
-    await clickWithSelfPassthrough(x, y, button, times, focus.selfOccluded, args.modifiers);
+    await clickWithSelfPassthrough(x, y, button, times, focus.selfOccluded, args.modifiers, straight);
     this.overlay({ type: 'click', x, y });
     const actionName = times === 2 ? '双击' : times > 2 ? `${times}击` : '点击';
     let summary = `真实光标${actionName} @(${Math.round(x)},${Math.round(y)}) (${button})`;
@@ -218,8 +224,8 @@ export class ComputerToolExecutor implements ToolExecutor {
         error: `mouse_move 坐标非法（x=${String(args.x)}, y=${String(args.y)}）。x/y 必须是数字，如 {"x": 497, "y": 528}`,
       };
     }
-    await mouseMoveTo(x, y);
-    return { ok: true, summary: `光标移动到 (${Math.round(x)},${Math.round(y)})（未点击）` };
+    await mouseMoveTo(x, y, args.straight === true);
+    return { ok: true, summary: `光标移动到 (${Math.round(x)},${Math.round(y)})（未点击${args.straight === true ? '，直线' : ''}）` };
   }
 
   /** 单动作菜单导航：path="文件>另存为" → 逐级"定位→点→等子菜单渲染"，全程一个动作，
@@ -245,7 +251,7 @@ export class ComputerToolExecutor implements ToolExecutor {
       const m = matches[0]!;
       const cx = Math.round(m.center.x);
       const cy = Math.round(m.center.y);
-      const clicked = await this.mouseClick({ x: cx, y: cy });
+      const clicked = await this.mouseClick({ x: cx, y: cy, straight: true });
       if (!clicked.ok) return { ok: false, summary: '', error: `menu_select：点击「${seg}」@(${cx},${cy}) 失败：${clicked.error ?? clicked.summary}` };
       trail.push(`${seg}@(${cx},${cy})`);
       if (i < segs.length - 1) await sleep(MENU_SELECT_SETTLE_MS);

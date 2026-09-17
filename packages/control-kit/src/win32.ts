@@ -155,13 +155,20 @@ function getCurPos(): { x: number; y: number } {
  * 轨迹由 generatePath 生成，每步间隔 ~2ms（快但不瞬移）。
  * 移动结束后用 GetCursorPos 验证光标确实到位。
  */
-export async function mouseMoveTo(toX: number, toY: number): Promise<void> {
-  const from = getCurPos();
-  const path = generatePath(from.x, from.y, toX, toY);
-  for (const pt of path) {
-    const { nx, ny } = toAbsolute(pt.x, pt.y);
+export async function mouseMoveTo(toX: number, toY: number, straight = false): Promise<void> {
+  if (straight) {
+    // 直线/一步到位：不生成中间点 → 指针不会途经菜单外把弹出菜单带收起（菜单导航用）
+    const { nx, ny } = toAbsolute(toX, toY);
     sendInputBuf(mouseInput(nx, ny, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE));
-    if (path.length > 1) await sleep(2);
+    await sleep(5);
+  } else {
+    const from = getCurPos();
+    const path = generatePath(from.x, from.y, toX, toY);
+    for (const pt of path) {
+      const { nx, ny } = toAbsolute(pt.x, pt.y);
+      sendInputBuf(mouseInput(nx, ny, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE));
+      if (path.length > 1) await sleep(2);
+    }
   }
   // 落地确认：用 GetCursorPos 验证光标确实到达目标位置（截图系比对，容差 3px）
   // 失败则强制发一次绝对坐标移动
@@ -171,6 +178,11 @@ export async function mouseMoveTo(toX: number, toY: number): Promise<void> {
     sendInputBuf(mouseInput(nx, ny, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE));
     await sleep(5);
   }
+}
+
+/** 当前光标位置（截图坐标系）——供"原地点击（不带坐标的 mouse_click）"取当前位置。 */
+export function getCursorPos(): { x: number; y: number } {
+  return getCurPos();
 }
 
 /** 用 GetCursorPos 验证光标是否到达目标位置（截图坐标系比对，容差 3px）。
@@ -187,9 +199,9 @@ function verifyCurPos(targetX: number, targetY: number): boolean {
   }
 }
 
-export async function mouseClick(x: number, y: number, button: MouseButton = 'left', times = 1): Promise<void> {
-  // 先沿人类轨迹移动到目标位置
-  await mouseMoveTo(x, y);
+export async function mouseClick(x: number, y: number, button: MouseButton = 'left', times = 1, straight = false): Promise<void> {
+  // 先移动到目标位置（straight=true 时一步到位、不绕贝塞尔弧线，避免途经菜单外收起弹出菜单）
+  await mouseMoveTo(x, y, straight);
   // 移动后短暂等待，确保光标落定再点击（提高一次命中率）
   await sleep(10);
   const { nx, ny } = toAbsolute(x, y);

@@ -39,16 +39,36 @@ describe('locator 复用（自 perception 导出）', () => {
 describe('mouse_click 坐标有限性拦截', () => {
   // 背景：args JSON 解析失败回退 {text} 或模型字面输出 NaN 时，
   // Number(undefined)=NaN 曾直通 SendInput（NaN 归一化落在屏幕左上角）。
-  it('NaN/undefined/字符串坐标被拒绝且不带 SendInput 副作用', async () => {
+  // 新语义：x/y 都省略 = 在当前光标处原地点击（移动与点击拆开后合法）；
+  // 只给一个坐标或给了非有限值（NaN/字符串）→ 仍报坐标非法。
+  it('两坐标都缺 → 不报坐标非法（走原地点击路径）', async () => {
     const ex = new ComputerToolExecutor();
-    for (const bad of [{ x: NaN, y: 100 }, { x: 100, y: NaN }, {}, { x: 'abc', y: 100 }, { x: null, y: 100 }]) {
+    const r = await ex.execute('mouse_click', {});
+    // 新语义：都缺 → getCursorPos 取位原地点击，不再报"坐标非法"
+    // （后续设备调用在无宿主时可能抛异常被 catch，但 error 不含"坐标非法"）
+    expect(r.error ?? '').not.toContain('坐标非法');
+  });
+
+  it('只给一个坐标或给非有限值 → 坐标非法', async () => {
+    const ex = new ComputerToolExecutor();
+    // undefined 缺省 → Number(undefined)=NaN → 非有限被拦截
+    for (const bad of [
+      { x: 100 },               // y 缺省 → NaN
+      { y: 100 },               // x 缺省 → NaN
+      { x: NaN, y: 100 },
+      { x: 100, y: NaN },
+      { x: 'abc', y: 100 },
+      { x: 100, y: 'abc' },
+      { x: undefined, y: 100 },
+      { x: 100, y: undefined },
+    ]) {
       const r = await ex.execute('mouse_click', bad as Record<string, unknown>);
       expect(r.ok).toBe(false);
       expect(r.error).toContain('坐标非法');
     }
   });
 
-  it('mouse_drag 坐标非法被拒绝', async () => {
+  it('mouse_drag 坐标非法被拒绝（用于对照，不走原地点击路径）', async () => {
     const ex = new ComputerToolExecutor();
     const r = await ex.execute('mouse_drag', { from: { x: NaN, y: 1 }, to: { x: 2, y: 3 } });
     expect(r.ok).toBe(false);

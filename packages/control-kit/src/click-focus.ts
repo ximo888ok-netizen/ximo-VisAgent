@@ -51,10 +51,10 @@ export async function ensureTargetForeground(x: number, y: number): Promise<Clic
  *  modifiers（可选，如 ["ctrl"]）在点击前按住、点击后逆序释放（含异常路径，见 withHeldModifiers）。 */
 export async function clickWithSelfPassthrough(
   x: number, y: number, button: MouseButton, times: number, selfOccluded: boolean,
-  modifiers?: unknown,
+  modifiers?: unknown, straight = false,
 ): Promise<void> {
   const mods = normalizeModifiers(modifiers);
-  const click = () => withHeldModifiers(mods, () => mouseClick(x, y, button, times));
+  const click = () => withHeldModifiers(mods, () => mouseClick(x, y, button, times, straight));
   if (!selfOccluded) {
     await click();
     return;
