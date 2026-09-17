@@ -21,10 +21,10 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   // ---------- 鼠标 ----------
   {
     name: 'mouse_click',
-    description: '点击屏幕坐标：从截图网格读目标位置直接点。坐标精确到±5px 以内——看准刻度线逐像素插值，禁止粗略估计。times=2 为双击（如打开桌面图标）。modifiers 按住 Ctrl/Shift/Alt 再点（Shift+点击选文字范围、Ctrl+点击多选）。',
+    description: '点击屏幕坐标：从截图网格读目标位置直接点，坐标精确到±5px。**省略 x/y = 在当前光标处原地点击**（配合 mouse_move 先把指针移到位——移动与点击拆开，菜单里尤其有用）。straight=true 用直线一步到位、不绕贝塞尔弧线（在已展开的菜单内点击防弧线滑出收起）。times=2 双击；modifiers 按住 Ctrl/Shift/Alt 再点。',
     level: 1,
     source: 'computer',
-    parameters: { type: 'object', properties: { ...geoProps, button: { type: 'string', enum: ['left', 'right', 'middle'] }, times: { type: 'integer', description: '点击次数，默认1；2=双击' }, ...modifiersProp }, required: ['x', 'y'] },
+    parameters: { type: 'object', properties: { ...geoProps, button: { type: 'string', enum: ['left', 'right', 'middle'] }, times: { type: 'integer', description: '点击次数，默认1；2=双击' }, straight: { type: 'boolean', description: 'true=直线移动到位再点（不绕弧线），菜单内点击防收起用' }, ...modifiersProp }, required: [] },
   },
   {
     name: 'mouse_hover',
@@ -35,10 +35,10 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   },
   {
     name: 'mouse_move',
-    description: '纯移动光标到坐标，不点击、不停留（人类最高频的动作）。用于：把指针移到目标处准备下一步、在已展开的菜单/二级子菜单内移动（移动不会像点击那样把菜单收起，点击落空才会关菜单）、需要指针到位但不操作时。要停留触发 tooltip/悬停展开用 mouse_hover，要点击用 mouse_click。',
+    description: '纯移动光标到坐标，不点击、不停留（人类最高频的动作）。用于：把指针移到目标处准备下一步、在已展开的菜单/二级子菜单内移动（移动不会像点击那样把菜单收起，点击落空才会关菜单）、需要指针到位但不操作时。straight=true 直线一步到位不绕弧线（菜单内移动防弧线滑出收起）。要停留触发 tooltip/悬停展开用 mouse_hover，要点击用 mouse_click（可省略坐标=原地点击）。',
     level: 1,
     source: 'computer',
-    parameters: { type: 'object', properties: { ...geoProps }, required: ['x', 'y'] },
+    parameters: { type: 'object', properties: { ...geoProps, straight: { type: 'boolean', description: 'true=直线一步到位（不绕贝塞尔弧线），在已展开菜单内移动防收起用' } }, required: ['x', 'y'] },
   },
   {
     name: 'menu_select',
