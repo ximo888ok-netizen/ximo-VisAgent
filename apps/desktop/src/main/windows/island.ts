@@ -125,7 +125,7 @@ export function createIslandWindow(): BrowserWindow {
     frame: false,
     alwaysOnTop: true,
     skipTaskbar: true,
-    focusable: true,
+    focusable: false, // 与文件头设计一致：默认不抢焦点/前台（审批输入时经 setKeyboardInputActive 临时 setFocusable(true)）
     resizable: true,
     maximizable: false,
     fullscreenable: false,

@@ -1,5 +1,5 @@
 // open_app 启动：搜索常见目录 + 直接执行，安全由审批系统兜底
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
@@ -7,6 +7,17 @@ import { listWindows, type WindowInfo } from '@ximo-visagent/control-kit';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
+
+/** 分离启动一个 GUI 应用：成功 spawn 即 resolve（不等进程退出！），ENOENT 则 reject。
+ *  旧实现用 execFileAsync 会一直等 GUI 进程退出 → notepad 这类永不退出的程序卡到超时（open_app 45s 真因）。 */
+function launchDetached(exe: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const child = spawn(exe, args, { detached: true, stdio: 'ignore', windowsHide: false });
+    child.once('error', (e) => { if (!settled) { settled = true; reject(e); } });
+    child.once('spawn', () => { if (!settled) { settled = true; child.unref(); resolve(); } });
+  });
+}
 
 /** 搜索目录：覆盖大多数 Windows 应用安装位置 */
 const SEARCH_DIRS = [
@@ -105,12 +116,21 @@ export async function openAppSafe(nameOrPath: string): Promise<void> {
   if (path.isAbsolute(aliased)) {
     const normalized = path.normalize(aliased);
     if (!existsSync(normalized)) throw new UnsafeAppError('文件不存在');
-    await execFileAsync(normalized, chromiumArgsFor(normalized), { shell: false, windowsHide: false }).catch(() => undefined);
+    await launchDetached(normalized, chromiumArgsFor(normalized)).catch(() => undefined);
     return;
   }
 
   const lower = aliased.toLowerCase();
   const bare = lower.replace(/\.exe$/, '');
+
+  // 快速路径：裸命令名先交给 Windows 自身解析（PATH + System32）——notepad/calc/mspaint/cmd 等内置程序秒开，
+  // 避免为它们空扫 9 个目录（含 Program Files，递归 3 层）。失败（不在 PATH，ENOENT）再走目录递归搜索。
+  if (!path.isAbsolute(aliased)) {
+    try {
+      await launchDetached(aliased, chromiumArgsFor(aliased));
+      return;
+    } catch { /* 未命中 PATH → 继续目录搜索 */ }
+  }
 
   // 搜索 .exe 和 .lnk
   const searchExe = bare + '.exe';
@@ -119,20 +139,20 @@ export async function openAppSafe(nameOrPath: string): Promise<void> {
     if (!dir) continue;
     const found = await findFile(dir, searchExe, 3);
     if (found) {
-      await execFileAsync(found, chromiumArgsFor(found), { shell: false, windowsHide: false }).catch(() => undefined);
+      await launchDetached(found, chromiumArgsFor(found)).catch(() => undefined);
       return;
     }
     // .lnk 经 explorer 启动无法附加参数；Chromium 系目标依赖 sidecar 的
     // SPI_SETSCREENREADER 宣告让其在运行中开启无障碍树
     const lnk = await findFile(dir, searchLnk, 3);
     if (lnk) {
-      await execFileAsync('explorer.exe', [lnk], { shell: false, windowsHide: false }).catch(() => undefined);
+      await launchDetached('explorer.exe', [lnk]).catch(() => undefined);
       return;
     }
   }
 
-  // 兜底：直接当命令执行，让 Windows PATH 解析
-  await execFileAsync(aliased, [], { shell: false, windowsHide: false }).catch(() => {
+  // 兜底：直接当命令启动，让 Windows PATH 解析（分离启动，不等退出）
+  await launchDetached(aliased, []).catch(() => {
     throw new UnsafeAppError(
       `「${input.slice(0, 60)}」未找到。替代方案：1) 用 keyboard_press 打开开始菜单（Win 键）后输入名称搜索；2) 桌面图标用 ui_locate 定位后双击；3) 如果是系统设置，试试 open_app("ms-settings:appsfeatures")`,
     );
