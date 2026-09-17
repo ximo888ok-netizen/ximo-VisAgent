@@ -131,3 +131,4 @@ export * from './win32-window';
 export { ComputerToolExecutor } from './executor';
 export { FileOfficeExecutor } from './file-office';
 export { evaluateTaskAssertion, registerAssertion } from './task-assertions';
+export { detectIconRegions, type GrayImage, type IconBox, ICON_DETECT_MAX } from './icon-detect';

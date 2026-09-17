@@ -9,6 +9,7 @@ import type { ClickGuard } from './click-guard';
 import { STABLE_MAX_WAIT_MS, waitForStableFrame } from './stable-frame';
 import { collectCandidates, filterForegroundCandidates, somMismatchNote, zoomedBoxToScreen } from './ui-locate';
 import { ocrLookupTool, ocrRecognizeAll, type OcrHit } from './ocr-lookup';
+import { detectIconRegions, ICON_DETECT_MAX, type IconBox } from './icon-detect';
 import type { ExecutorDeps } from './executor';
 
 /** 开应用/双击后等"见效"的退回固定等待（无稳定观测能力时），与 executor 同值 */
@@ -138,7 +139,9 @@ async function ocrFallback(host: HostCapabilities, query: string): Promise<ToolR
   }
 }
 
-/** SoM 候选收集：UIA 控件（坐标在截图坐标系）为主，自绘/无树界面用 OCR 文字框补盲（B1）。 */
+/** SoM 候选收集：三来源合并——UIA 控件（首选）→ OCR 文字框（自绘界面补盲）→ 图标探测（纯图标补盲）。
+ *  UIA 和 OCR 都找不到自绘 UI 的纯图标按钮（无 Name、无文字），图标探测用 Sobel 梯度 +
+ *  连通区域找出视觉独立的区块作为第三来源，让 SoM 在任何界面都有候选可供编号选择。 */
 async function somCandidates(ctx: RefToolCtx, screenshot: Buffer): Promise<SomCandidate[]> {
   const uia: SomCandidate[] = [];
   try {
@@ -149,10 +152,33 @@ async function somCandidates(ctx: RefToolCtx, screenshot: Buffer): Promise<SomCa
       uia.push({ index: uia.length + 1, label: m.name.slice(0, SOM_LABEL_MAX), x: m.x, y: m.y, w: m.w, h: m.h });
       if (uia.length >= SOM_CANDIDATE_LIMIT) break;
     }
-  } catch { /* UIA 不可用 → 全靠 OCR 补盲候选 */ }
-  // B1：UIA 候选稀薄（微信/Electron/Chromium 内页无无障碍树）时补 OCR 文字框，
+  } catch { /* UIA 不可用 → 全靠 OCR/图标探测补盲候选 */ }
+  // B1：UIA 候选稀薄（微信/Electron/Chromium 内页无无障碍树）时补 OCR 文字框 + 图标探测，
   // 让 SoM「看图选编号」这类选择题在自绘界面也有可信候选，替代模型目测报坐标（50% 抖动的正解）。
   if (uia.length < 8) {
+    const host = ctx.host();
+    // 图标探测（纯图标按钮：无 UIA Name、无文字，只有视觉边界）
+    if (host.decodeGray) {
+      try {
+        const gray = host.decodeGray(screenshot);
+        if (gray) {
+          const icons = detectIconRegions(gray);
+          if (icons.length > 0) {
+            const iconSom = iconBoxesToSom(icons);
+            const merged1 = mergeSomCandidates(uia, iconSom);
+            if (merged1.length >= 8) return merged1;
+            // 图标 + OCR 合并
+            try {
+              const dims = readImageSize(screenshot);
+              const hits = dims ? await ocrRecognizeAll(screenshot, dims) : null;
+              if (hits && hits.length > 0) return mergeSomCandidates(merged1, ocrHitsToSom(hits));
+            } catch { /* OCR 不可用 */ }
+            return merged1;
+          }
+        }
+      } catch { /* 图标探测失败 → 退回 UIA + OCR */ }
+    }
+    // OCR 补盲
     try {
       const dims = readImageSize(screenshot);
       const hits = dims ? await ocrRecognizeAll(screenshot, dims) : null;
@@ -160,6 +186,22 @@ async function somCandidates(ctx: RefToolCtx, screenshot: Buffer): Promise<SomCa
     } catch { /* OCR 不可用 → 退回 UIA-only 候选 */ }
   }
   return uia;
+}
+
+/** B2：图标区域 → SoM 候选（纯映射，可单测；label 用坐标占位——无文字标签时模型按位置选编号） */
+export function iconBoxesToSom(boxes: IconBox[]): SomCandidate[] {
+  const out: SomCandidate[] = [];
+  for (const b of boxes) {
+    out.push({
+      index: 0,
+      label: `图标(${Math.round(b.x + b.w / 2)},${Math.round(b.y + b.h / 2)})`,
+      x: b.x,
+      y: b.y,
+      w: b.w,
+      h: b.h,
+    });
+  }
+  return out.slice(0, ICON_DETECT_MAX);
 }
 
 /** B1：OCR 文字框 → SoM 候选（纯映射，可单测；空文本丢弃、label 截断） */

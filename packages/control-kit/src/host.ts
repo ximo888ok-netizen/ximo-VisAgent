@@ -36,6 +36,10 @@ export interface HostCapabilities {
   /** 感知帧指纹（可选）：位图分块灰度哈希。整图 JPEG 字节哈希对光标闪烁/时钟跳秒过于敏感，
    *  "画面没变"几乎判不出来；分块均值能滤掉这类噪声，供循环判定停滞。 */
   frameSignature?(jpeg: Buffer): Promise<string | null>;
+  /** JPEG → 灰度数组（可选）：宿主侧解码 JPEG 为 BGRA 位图后取三通道均值为灰度。
+   *  供 icon-detect 做自绘 UI 图标区域探测（Sobel 梯度 + 连通区域）。
+   *  缺省时图标探测跳过，SoM 候选仅有 UIA + OCR 两来源。 */
+  decodeGray?(jpeg: Buffer): { gray: Uint8Array; w: number; h: number } | null;
   /** 本应用自己的窗口（灵动岛/边框）鼠标穿透开关（可选）：
    *  这些窗口不进截图，却会挡住真实点击；点击其下方的目标时临时开启。 */
   setSelfWindowsPassthrough?(enabled: boolean): Promise<void>;

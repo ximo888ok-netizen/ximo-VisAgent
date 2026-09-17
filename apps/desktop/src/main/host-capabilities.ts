@@ -213,6 +213,12 @@ export function createHostCapabilities(emitOverlay?: (ev: OverlayEvent) => void)
 
     emitOverlay,
 
+    /** JPEG → 灰度数组：复用已有的 decodeGray 私有函数（nativeImage 解码 → BGRA → 三通道均值）。
+     *  供 icon-detect 做自绘 UI 图标区域探测。 */
+    decodeGray(jpeg: Buffer) {
+      return decodeGray(jpeg);
+    },
+
     async getEnvContext() {
       const d = screen.getPrimaryDisplay();
       const phys = primaryPhysicalSize();
