@@ -27,6 +27,8 @@
     "postinstall": "node native/uia-sidecar-cs/build.js",
     "verify": "pnpm lint && pnpm budget && pnpm typecheck && pnpm test && pnpm build",
     "budget": "node scripts/check-budget.mjs",
+    "metrics": "node scripts/agent-metrics.mjs",
+    "metrics:gate": "node scripts/agent-metrics.mjs --gate",
     "hooks:install": "node scripts/install-hooks.mjs",
     "budget:update": "node scripts/gen-budget.mjs"
   },
