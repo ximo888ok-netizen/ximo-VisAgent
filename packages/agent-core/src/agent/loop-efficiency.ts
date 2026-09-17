@@ -28,6 +28,10 @@ const STALL_STEPS = 3;
  *  实测病理：locate→click→locate 交替重复（同 query 27 次），每个签名都不与"上一步"相同，
  *  停滞检测的连续性判定永远不触发。纯 1:1 交替在 10 步窗口内同签名恰出现 5 次，阈值必须 ≤5 才能兜住。 */
 const LOOP_SIG_THRESHOLD = 5;
+/** 菜单导航死循环检测阈值：两个不同的 mouse_click 签名交替出现 ≥ 此轮次 → 菜单专用强制改写。
+ *  病理：步15点文件菜单→步16点另存为→菜单已收起点空→步18再点文件→步19再点另存为…
+ *  典型 2 轮交替 = 各签名出现 2 次 = 4 步，阈值 2 能在第 5 步（第二轮交替开始时）就拦截。 */
+const MENU_ALT_THRESHOLD = 2;
 /** C1 死局止损阈值：病理步累计（拦截/失败/停滞轮次）达到此值 → 注入一次性强制收尾预警 */
 const PATHO_WARN_THRESHOLD = 8;
 /** C1 强制止损阈值：预警后仍无改善（病理步累计）→ loop 层直接 FAILED 止损，不再烧剩余步数。
@@ -57,6 +61,12 @@ export class EfficiencyGuard {
   private prevSig: string | null = null;
   /** 本轮待拦截的动作签名（停滞 + 与上一步相同） */
   private blockSig: string | null = null;
+  /** 菜单导航死循环：已注入过菜单强制改写指令（一次性，拦截后冷却） */
+  private menuNudged = false;
+  /** 菜单导航死循环：被拦截后冷却中的 mouse_click 坐标区域（换路后可恢复） */
+  private menuBlockedCoords: { x: number; y: number; r: number }[] = [];
+  /** 近 10 步 mouse_click 的真实坐标（用于菜单交替检测的近邻比较，比签名更抗抖动） */
+  private recentClickCoords: { x: number; y: number }[] = [];
 
   constructor(private maxSteps: number) {}
 
@@ -125,12 +135,56 @@ export class EfficiencyGuard {
     if (this.blockSig && sig === this.blockSig) {
       return `画面已连续多步没有变化，${action.name} 在上一步已经做过且没有产生任何界面响应，本轮已拦截。${repeatBlockText(this.fastPath)}`;
     }
+    // 菜单导航死循环检测：两个不同位置的 mouse_click 交替出现（A→B→A→B 模式）。
+    // 用坐标近邻而非签名：模型每次坐标偏移十几像素（24px 栅格签名不同），但实质点的是同一菜单项。
+    // 病理：点文件菜单→点另存为→菜单收起点空→再点文件→再点另存为…模型不肯用 menu_select。
+    // 阈值低（2 轮 = 4 步）——菜单收起是确定性竞态，2 轮已确证死循环。
+    if (action.name === 'mouse_click') {
+      const cx = Number(action.args.x), cy = Number(action.args.y);
+      if (Number.isFinite(cx) && Number.isFinite(cy)) {
+        // 先检查是否在已拦截的坐标区域内
+        if (this.menuBlockedCoords.some((c) => Math.hypot(c.x - cx, c.y - cy) <= c.r)) {
+          return `菜单导航死循环拦截：该 mouse_click 已被判定为菜单分步点击的重复环节。改用 menu_select(path) 或 keyboard_press(combos) 一步完成菜单导航，禁止再用鼠标分步点菜单。`;
+        }
+        if (!this.menuNudged) {
+          this.recentClickCoords.push({ x: cx, y: cy });
+          if (this.recentClickCoords.length > 10) this.recentClickCoords.shift();
+          const menuAlt = this.detectMenuAlternationByCoord(cx, cy);
+          if (menuAlt) {
+            this.menuNudged = true;
+            // 登记两个坐标区域（半径 60px，覆盖模型抖动范围）
+            this.menuBlockedCoords.push({ x: cx, y: cy, r: 60 }, { x: menuAlt.otherX, y: menuAlt.otherY, r: 60 });
+            return `菜单导航死循环已检测：你在用鼠标分两步点菜单（先点父菜单→下回合点菜单项），但弹出菜单在指针移动或隔一回合后自动收起，你的第二次点击总是点空。本轮已拦截，禁止再用 mouse_click 点菜单项。必须改用：① menu_select(path="文件>另存为")（单动作走完菜单，不跨回合）；或 ② keyboard_press(combos=["Alt+F","A"])（助记键序列，一步到位）；或 ③ keyboard_press(combos=["Alt","Down","Enter"])（方向键导航）。以上任一方式都能在一个动作内完成菜单导航，不会因菜单收起而点空。`;
+          }
+        }
+      }
+    }
     // 交替循环：同一签名在近 10 步内高频出现（画面可能有变——菜单开开关关——但任务没推进）
     const count = this.recentActionSigs.filter((s) => s === sig).length;
     if (count >= LOOP_SIG_THRESHOLD) {
       // 清空该签名历史：拦截后冷却，模型换路再回来还有完整预算（软冷却，不永久锁死）
       this.recentActionSigs = this.recentActionSigs.filter((s) => s !== sig);
       return `动作 ${action.name}（参数几乎不变）近 10 步内已执行 ${count} 次仍未见任务推进——典型的"定位→点击→再定位"空转循环，本轮已拦截。禁止再重复该动作：换关键词/换工具（键盘快捷键、activate_window、screen_ocr）或 task_done 说明卡点原因`;
+    }
+    return null;
+  }
+
+  /** 菜单交替检测（坐标近邻版）：当前点击位置与近 10 步内另一个不同位置的点击交替出现 ≥2 轮。
+   *  用 60px 近邻代替签名匹配——模型每次坐标偏移十几像素，24px 栅格签名不同但实质点同一菜单项。
+   *  返回另一组坐标供调用方登记冷却区域；null = 不是菜单交替模式。 */
+  private detectMenuAlternationByCoord(cx: number, cy: number): { otherX: number; otherY: number } | null {
+    const coords = this.recentClickCoords;
+    if (coords.length < 4) return null;
+    // 找与当前坐标不同（距离>60px）的点击位置
+    const NEAR = 60;
+    // 当前坐标的近邻出现次数
+    const aCount = coords.filter((c) => Math.hypot(c.x - cx, c.y - cy) <= NEAR).length;
+    if (aCount < MENU_ALT_THRESHOLD) return null;
+    // 找另一组坐标（与当前不同）也出现 ≥2 次
+    for (const c of coords) {
+      if (Math.hypot(c.x - cx, c.y - cy) <= NEAR) continue; // 跳过近邻
+      const bCount = coords.filter((c2) => Math.hypot(c2.x - c.x, c2.y - c.y) <= NEAR).length;
+      if (bCount >= MENU_ALT_THRESHOLD) return { otherX: c.x, otherY: c.y };
     }
     return null;
   }

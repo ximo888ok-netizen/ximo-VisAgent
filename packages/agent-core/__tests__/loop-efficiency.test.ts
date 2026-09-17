@@ -78,6 +78,76 @@ describe('EfficiencyGuard 交替循环拦截（场景复刻自 locate→click→
   });
 });
 
+describe('EfficiencyGuard 菜单导航死循环检测', () => {
+  // 复刻 e2e F 轨道真机轨迹：步15点文件菜单(64,407)→步16点另存为(91,517)→菜单收起→步18再点文件→步19再点另存为
+  const menuClick = (x: number, y: number) => ({ name: 'mouse_click', args: { x, y } });
+
+  it('两个不同位置的 mouse_click 交替 ≥2 轮 → 菜单死循环拦截（含 menu_select 指引）', () => {
+    const g = new EfficiencyGuard(30);
+    // 模拟真实 loop 流程：每步先 onStep 再 blockReason
+    // 坐标近邻版：不要求精确匹配，60px 内视为同一位置
+    // 步1: 点文件菜单
+    g.onStep(1, '开文件菜单', menuClick(64, 407));
+    expect(g.blockReason(menuClick(64, 407))).toBeNull(); // push 后 1 个，不拦
+    // 步2: 点另存为（位置不同，>60px）
+    g.onStep(2, '点另存为', menuClick(91, 517));
+    expect(g.blockReason(menuClick(91, 517))).toBeNull(); // A=1 B=1，不拦
+    // 步3: 索引（非 mouse_click，不影响坐标列表）
+    g.onStep(3, '索引', { name: 'ui_index', args: {} });
+    expect(g.blockReason({ name: 'ui_index', args: {} })).toBeNull();
+    // 步4: 再点文件菜单（坐标偏移十几像素，但在 60px 近邻内）
+    g.onStep(4, '再开文件', menuClick(55, 410));
+    expect(g.blockReason(menuClick(55, 410))).toBeNull(); // A=2 B=1，A 达标但 B 不够
+    // 步5: 再点另存为 → A=2 B=2 → 拦截
+    g.onStep(5, '再点另存为', menuClick(95, 520));
+    const reason = g.blockReason(menuClick(95, 520));
+    expect(reason).toContain('菜单导航死循环');
+    expect(reason).toContain('menu_select');
+    expect(reason).toContain('keyboard_press');
+  });
+
+  it('拦截后近邻坐标继续点 → 仍被拒（冷却中）', () => {
+    const g = new EfficiencyGuard(30);
+    g.onStep(1, 'a', menuClick(64, 407));
+    g.blockReason(menuClick(64, 407));
+    g.onStep(2, 'b', menuClick(91, 517));
+    g.blockReason(menuClick(91, 517));
+    g.onStep(3, 'c', menuClick(55, 410));
+    g.blockReason(menuClick(55, 410));
+    g.onStep(4, 'd', menuClick(95, 520));
+    const reason1 = g.blockReason(menuClick(95, 520));
+    expect(reason1).toContain('菜单导航死循环');
+    // 冷却中的坐标区域继续点（60px 近邻内）
+    const reason2 = g.blockReason(menuClick(70, 400));
+    expect(reason2).toContain('菜单导航死循环拦截');
+  });
+
+  it('正常点击（同一位置连击）不触发菜单死循环', () => {
+    const g = new EfficiencyGuard(30);
+    // 同一个点连击 3 次：只有 1 个位置，无交替
+    g.onStep(1, 'a', menuClick(100, 200));
+    g.blockReason(menuClick(100, 200));
+    g.onStep(2, 'b', menuClick(105, 195));
+    g.blockReason(menuClick(105, 195));
+    g.onStep(3, 'c', menuClick(100, 200));
+    expect(g.blockReason(menuClick(100, 200))).toBeNull(); // 同一位置，无交替
+  });
+
+  it('换路后（用 keyboard_press）不被拦截', () => {
+    const g = new EfficiencyGuard(30);
+    g.onStep(1, 'a', menuClick(64, 407));
+    g.blockReason(menuClick(64, 407));
+    g.onStep(2, 'b', menuClick(91, 517));
+    g.blockReason(menuClick(91, 517));
+    g.onStep(3, 'c', menuClick(55, 410));
+    g.blockReason(menuClick(55, 410));
+    g.onStep(4, 'd', menuClick(95, 520));
+    expect(g.blockReason(menuClick(95, 520))).toContain('菜单导航死循环');
+    // 模型换路 → keyboard_press 不被拦截
+    expect(g.blockReason({ name: 'keyboard_press', args: { combo: 'Alt+F' } })).toBeNull();
+  });
+});
+
 describe('EfficiencyGuard 死局止损（C1：病理步累计超限 → 强制终止，不再烧剩余步数）', () => {
   const locate = () => ({ name: 'ui_locate', args: { query: '小答AI客服' } });
   const click = (x: number, y: number) => ({ name: 'mouse_click', args: { x, y } });
