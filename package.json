@@ -22,6 +22,7 @@
     "package:win": "pnpm --filter @ximo-visagent/desktop build && pnpm --filter @ximo-visagent/desktop exec electron-builder --win nsis",
     "e2e": "node e2e/run-e2e.mjs",
     "e2e:list": "node scripts/e2e-list.mjs",
+    "e2e:gate": "node scripts/e2e-gate.mjs",
     "selftest": "pnpm build:desktop && pnpm --filter @ximo-visagent/desktop exec electron out/main/index.js --selftest",
     "lint": "turbo run lint",
     "postinstall": "node native/uia-sidecar-cs/build.js",

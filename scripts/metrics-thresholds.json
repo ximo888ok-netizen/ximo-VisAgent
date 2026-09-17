@@ -1,0 +1,5 @@
+{
+  "minCompletionRate": 0.55,
+  "maxCoordJitterPct": 65,
+  "minKeyboardPct": 3
+}
