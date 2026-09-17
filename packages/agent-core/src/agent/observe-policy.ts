@@ -51,14 +51,14 @@ export function fastPathLevel(noEffectStreak: number, regionConfirmed: boolean):
  *  注意：不再建议「坐标偏移 50px」——小图标偏移必点飞，正解是换精确定位通道。 */
 export function repeatBlockText(level: FastPathLevel | null): string {
   if (level === 'observe') return '目标区域在动作后没有任何变化（首次确认）：禁止原地重击同一坐标。先升级观察——look_close 放大目标区看清控件、ui_locate 精查（点下去没反应通常是坐标错了）或读区域 OCR，确认目标后换准坐标。';
-  if (level === 'switch') return '升级观察后目标区域仍无变化（连续 2 次）：该坐标已判定无效，已列入「已放弃路径·勿重走」清单。换路径：键盘快捷键（Enter/Tab/Esc）、菜单栏入口，或 mouse_scroll 把目标滚进视野。';
+  if (level === 'switch') return '升级观察后目标区域仍无变化（连续 2 次）：该坐标已判定无效，已列入「已放弃路径·勿重走」清单。换路径：菜单类用键盘助记键（keyboard_press "Alt+F" 开菜单→"A" 选项，别隔回合鼠标点会收起的菜单）；或 Enter/Tab/Esc 快捷键、mouse_scroll 把目标滚进视野。';
   return '改用：1) ui_locate/ui_click 精确定位控件；2) 键盘快捷键（Enter/Esc/Tab）；3) wait_for 等界面加载；4) 换操作路径，不要凭感觉偏移坐标（小图标偏移 50px 会点飞）。';
 }
 
 /** 停滞提示文案（按档取；null 档逐字保留旧整帧文案，零回归） */
 export function stallHintText(level: FastPathLevel | null, noChangeCount: number): string {
   if (level === 'observe') return `⚠ 动作后目标区域没有任何变化（画面已连续 ${noChangeCount} 步静止）：别再原地重复同一动作。升级观察：look_close 放大目标区 / ui_locate 精查控件 / 读区域 OCR，先确认真的点中了什么。`;
-  if (level === 'switch') return `⚠ 目标区域连续无变化：该坐标大概率无效（已列入「已放弃路径·勿重走」清单）。换路径：键盘快捷键（Enter/Esc/Tab）、菜单入口、mouse_scroll，或 wait_for 等界面加载，禁止继续点击同一位置。`;
+  if (level === 'switch') return `⚠ 目标区域连续无变化：该坐标大概率无效（已列入「已放弃路径·勿重走」清单）。换路径：菜单用键盘助记键（keyboard_press "Alt+F"→"A"，别隔回合点会收起的弹出菜单）、Enter/Esc/Tab 快捷键、mouse_scroll，或 wait_for 等界面加载，禁止继续点击同一位置。`;
   return `⚠ 画面已连续 ${noChangeCount} 步没有变化：你上一步的动作没有产生任何界面响应。不要重复同一个动作——改用 ui_locate/ui_click 精确点击、换键盘快捷键（Enter/Esc/Tab），或先 wait_for 等界面加载。`;
 }
 

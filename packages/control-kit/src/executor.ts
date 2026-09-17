@@ -14,7 +14,7 @@ import { uiScrollTo } from './uia-scroll';
 import { screenOcr, waitFor, lookClose } from './screen-ocr';
 import { mouseDrag, mouseHold, mouseDragHold, mouseScroll, mouseMoveTo } from './win32';
 import { keyboardPress, keyboardType } from './win32-keyboard';
-import { verifyTypedInput, verifyKeyEffect } from './keyboard-verify';
+import { verifyTypedInput, verifyKeyEffect, readFocusedSnapshot, diffFocusVerdict } from './keyboard-verify';
 import { STABLE_MAX_WAIT_MS, waitForStableFrame } from './stable-frame';
 import { activateWindow, listWindows } from './win32-window';
 import { clickAfterLocate, foregroundDelta, foregroundTitle, groundingLookup, type RefToolCtx } from './grounding-fallback';
@@ -230,7 +230,21 @@ export class ComputerToolExecutor implements ToolExecutor {
   }
 
   private async keyboardPress(args: Record<string, unknown>): Promise<ToolResult> {
-    const combo = String(args.combo);
+    const seq = Array.isArray(args.combos) ? (args.combos as unknown[]).map((x) => String(x)).filter((x) => x.trim()) : [];
+    if (seq.length > 0) {
+      // 有序按键序列（如 ["Alt+F","A"] 打开"文件"菜单再选"另存为"）：一次发完，消除跨回合弹出菜单收起
+      const before = await readFocusedSnapshot();
+      for (let i = 0; i < seq.length; i++) {
+        keyboardPress(seq[i]!);
+        if (i < seq.length - 1) await sleep(150);
+      }
+      await sleep(200);
+      const verdict = diffFocusVerdict(before, await readFocusedSnapshot());
+      const tail = verdict === 'no-effect' ? '；界面未变化（序列可能未生效：换助记键，或先 keyboard_press("Alt") 点亮菜单栏再方向键+回车）' : '';
+      return { ok: true, summary: `按键序列 ${seq.join(' → ')}${tail}` };
+    }
+    const combo = String(args.combo ?? '');
+    if (!combo) return { ok: false, summary: '', error: 'keyboard_press 需要 combo（单个组合键）或 combos（有序序列，如 ["Alt+F","A"] 走菜单）' };
     const note = await verifyKeyEffect({ combo, action: () => keyboardPress(combo) });
     return { ok: true, summary: `已按键 ${combo}${note}` };
   }

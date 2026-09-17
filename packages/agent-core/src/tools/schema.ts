@@ -78,10 +78,10 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   },
   {
     name: 'keyboard_press',
-    description: '按键组合，如 Ctrl+S、Alt+F4、Enter。',
+    description: '按键组合，如 Ctrl+S、Alt+F4、Enter。**走菜单用 combos 有序序列一次发完**（避免弹出菜单跨回合收起）：combos:["Alt+F","A"] = 打开"文件"菜单再选"另存为"（字母=菜单项助记键）；不确定助记键用 combos:["Alt","Down","Enter"] 点亮菜单栏后方向键导航。combo 与 combos 二选一。',
     level: 1,
     source: 'computer',
-    parameters: { type: 'object', properties: { combo: { type: 'string' } }, required: ['combo'] },
+    parameters: { type: 'object', properties: { combo: { type: 'string', description: '单个组合键，如 Ctrl+S' }, combos: { type: 'array', items: { type: 'string' }, description: '有序按键序列（每键间隔约150ms），用于菜单等连续按键，如 ["Alt+F","A"]' } }, required: [] },
   },
   // ---------- 应用/窗口 ----------
   {

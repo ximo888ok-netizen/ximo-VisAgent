@@ -27,3 +27,12 @@ describe('mouse_move（纯移动工具，坐标校验在触达设备前）', () 
     expect(r.error).toContain('mouse_move 坐标非法');
   });
 });
+
+describe('keyboard_press（combo/combos 二选一校验）', () => {
+  it('combo 与 combos 都缺 → 报错且不触碰设备', async () => {
+    const ex = new ComputerToolExecutor();
+    const r = await ex.execute('keyboard_press', {});
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('keyboard_press 需要');
+  });
+});
