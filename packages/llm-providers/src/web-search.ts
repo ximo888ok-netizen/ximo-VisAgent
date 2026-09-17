@@ -1,15 +1,11 @@
-// Qwen 联网搜索：通过 OpenAI 兼容端点流式调用 enable_search
+// 联网搜索：多 provider 支持（Qwen/GLM/Kimi）
 //
-// Qwen 多模态模型联网搜索约束（官方文档）：
-// 1. 必须流式调用（stream:true），否则返回 "Non-streaming mode does not support Web Search"
-// 2. 参数：enable_search: true + search_options: { search_strategy, enable_source }
-// 3. 搜索策略因模型而异：
-//    - qwen3.5-omni 系列 → "agent"（仅支持）
-//    - Qwen3.8 系列 → 不支持 "agent"，用默认（turbo/max）
-//    - 其余模型 → "turbo"/"max"/"agent" 均可
+// 各家搜索 API 差异：
+// 1. Qwen：/chat/completions + enable_search:true + stream:true（SSE 流式）
+// 2. GLM（智谱）：/chat/completions + tools=[builtin_function.$web_search]（工具调用模式）
+// 3. Kimi（月之暗面）：/chat/completions + tools=[builtin_function.$web_search]（同 GLM，内置工具）
 //
-// 实现方式：在 OpenAI 兼容 /chat/completions 端点上附加 enable_search + stream:true，
-// 读取 SSE 流拼接 content，返回搜索结果摘要文本。
+// 实现方式：按 provider 分发到对应的搜索策略，公共逻辑（SSE 解析/净化）复用。
 import type { LLMConfig } from '@ximo-visagent/shared-types';
 import { LLMError } from './types';
 
@@ -23,65 +19,116 @@ export interface SearchResult {
   totalTokens: number;
 }
 
-/** 搜索策略选择规则 */
-function pickSearchStrategy(model: string): string | undefined {
-  const lower = model.toLowerCase();
-  // qwen3.5-omni 系列仅支持 agent 策略
-  if (lower.includes('omni')) return 'agent';
-  // Qwen3.8 系列不支持 agent，用默认（不传 searchStrategy = 走服务端默认 turbo）
-  if (lower.startsWith('qwen3.8') || lower.startsWith('qwen3-8')) return undefined;
-  // 其余模型默认用 turbo
-  return 'turbo';
-}
-
 /** 条目2：provider 是否支持联网搜索（与 WebSearchClient.search 的 provider 判断同口径，单一事实来源） */
 export function supportsWebSearch(provider: string): boolean {
-  return provider === 'qwen';
+  return provider === 'qwen' || provider === 'glm' || provider === 'kimi';
 }
 
 /**
- * Qwen 联网搜索客户端。
- *
- * 复用主 LLM 的 provider/baseUrl/apiKey/model 配置——搜索与主大脑共用一个 Key，
- * 不需要用户额外配置。仅在 provider 为 'qwen' 时有效；其他供应商返回错误。
+ * 联网搜索客户端（多 provider）。
+ * 复用主 LLM 的 provider/baseUrl/apiKey/model 配置——搜索与主大脑共用一个 Key。
  */
 export class WebSearchClient {
   constructor(private config: LLMConfig) {}
 
   async search(query: string): Promise<SearchResult> {
-    if (this.config.provider !== 'qwen') {
-      throw new LLMError(`联网搜索仅支持 Qwen 系列模型（当前供应商: ${this.config.provider}）`);
+    switch (this.config.provider) {
+      case 'qwen':
+        return this.searchQwen(query);
+      case 'glm':
+      case 'kimi':
+        return this.searchViaToolCall(query);
+      default:
+        throw new LLMError(`联网搜索不支持供应商「${this.config.provider}」（支持 qwen/glm/kimi）`);
     }
+  }
 
-    const baseUrl = this.config.baseUrl.replace(/\/+$/, '');
-    // 确保 URL 指向 /chat/completions
-    const url = baseUrl.endsWith('/chat/completions')
-      ? baseUrl
-      : `${baseUrl}/chat/completions`;
-
+  // ---------- Qwen：enable_search SSE 流式 ----------
+  private async searchQwen(query: string): Promise<SearchResult> {
+    const url = this.chatUrl();
     const searchStrategy = pickSearchStrategy(this.config.model);
-    const searchOptions: Record<string, unknown> = {
-      enable_source: true,
-    };
+    const searchOptions: Record<string, unknown> = { enable_source: true };
     if (searchStrategy) searchOptions.search_strategy = searchStrategy;
 
     const body: Record<string, unknown> = {
       model: this.config.model,
       messages: [
-        {
-          role: 'system',
-          content: '你是一个搜索助手。根据用户的问题进行联网搜索，用中文简洁回答。如果有来源链接，在回答末尾列出。不要编造信息。',
-        },
+        { role: 'system', content: '你是一个搜索助手。根据用户的问题进行联网搜索，用中文简洁回答。如果有来源链接，在回答末尾列出。不要编造信息。' },
         { role: 'user', content: query },
       ],
       temperature: 0.3,
-      stream: true, // Qwen 联网搜索强制流式
+      stream: true,
       enable_search: true,
       search_options: searchOptions,
-      // Qwen 视觉高分辨率：与主客户端保持一致
       vl_high_resolution_images: true,
     };
 
+    const res = await this.fetchSSE(url, body);
+    const { content: raw, totalTokens } = await parseSSEStream(res.body!);
+    const content = sanitizeSearchResult(raw);
+    return { content: content || '(搜索未返回结果)', totalTokens };
+  }
+
+  // ---------- GLM/Kimi：内置工具调用 $web_search ----------
+  private async searchViaToolCall(query: string): Promise<SearchResult> {
+    const url = this.chatUrl();
+    const body: Record<string, unknown> = {
+      model: this.config.model,
+      messages: [
+        { role: 'system', content: '你是一个搜索助手。根据用户的问题进行联网搜索，用中文简洁回答。如果有来源链接，在回答末尾列出。不要编造信息。' },
+        { role: 'user', content: query },
+      ],
+      temperature: 0.3,
+      // GLM/Kimi 内置搜索工具：模型自动调用 $web_search 执行联网搜索
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'builtin_function.$web_search',
+          description: '联网搜索工具，根据用户查询返回搜索结果',
+          parameters: { type: 'object', properties: { search_query: { type: 'string', description: '搜索关键词' } } },
+        },
+      }],
+      tool_choice: 'auto',
+    };
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (err) {
+      throw new LLMError(`搜索请求失败: ${(err as Error).message}`);
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new LLMError(`搜索请求 HTTP ${res.status}: ${text.slice(0, 300)}`, res.status);
+    }
+
+    const data = await res.json() as {
+      choices?: { message?: { content?: string } }[];
+      usage?: { total_tokens?: number };
+    };
+
+    const content = data.choices?.[0]?.message?.content ?? '';
+    const totalTokens = data.usage?.total_tokens ?? 0;
+    const sanitized = sanitizeSearchResult(content);
+    return { content: sanitized || '(搜索未返回结果)', totalTokens };
+  }
+
+  // ---------- 公共 HTTP ----------
+  private chatUrl(): string {
+    const baseUrl = this.config.baseUrl.replace(/\/+$/, '');
+    return baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+  }
+
+  private async fetchSSE(url: string, body: Record<string, unknown>): Promise<Response> {
     let res: Response;
     try {
       res = await fetch(url, {
@@ -97,61 +144,41 @@ export class WebSearchClient {
     } catch (err) {
       throw new LLMError(`搜索请求失败: ${(err as Error).message}`);
     }
-
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new LLMError(`搜索请求 HTTP ${res.status}: ${text.slice(0, 300)}`, res.status);
     }
-
-    if (!res.body) {
-      throw new LLMError('搜索响应无 body（流式响应需 body stream）');
-    }
-
-    // 解析 SSE 流拼接 content
-    const { content: raw, totalTokens } = await parseSSEStream(res.body);
-
-    // 净化：去套话 + 去来源链接块 + 压缩长度
-    const content = sanitizeSearchResult(raw);
-
-    return {
-      content: content || '(搜索未返回结果)',
-      totalTokens,
-    };
+    if (!res.body) throw new LLMError('搜索响应无 body（流式响应需 body stream）');
+    return res;
   }
 }
 
-/** 搜索结果净化：去套话、去来源链接块、压缩长度
- *
- * 噪声来源：
- * 1. 模型套话：「根据搜索结果」「以下是」「根据以上信息」等
- * 2. 来源链接块：模型末尾常列出 [1]url://... [2]url://... 占大量 token
- * 3. 过长回答：Qwen 搜索回答可能 2000+ 字，灌入 Agent 历史会占满窗口
- */
+/** Qwen 搜索策略选择规则 */
+function pickSearchStrategy(model: string): string | undefined {
+  const lower = model.toLowerCase();
+  if (lower.includes('omni')) return 'agent';
+  if (lower.startsWith('qwen3.8') || lower.startsWith('qwen3-8')) return undefined;
+  return 'turbo';
+}
+
+/** 搜索结果净化：去套话、去来源链接块、压缩长度 */
 function sanitizeSearchResult(raw: string): string {
   let text = raw.trim();
   if (!text) return '';
-
   // 1. 去除常见套话前缀
   text = text.replace(/^(根据搜索结果[，,]?|根据以上信息[，,]?|以下是为您找到的相关信息[：:]?|以下是相关搜索结果[：:]?|根据网络搜索结果[，,]?|综合搜索结果[，,]?)\s*/g, '');
-
-  // 2. 去除末尾来源链接块：[1] https://... [2] https://... 或 参考链接：\nurl://...
-  // 匹配末尾连续多行链接列表
+  // 2. 去除末尾来源链接块
   text = text.replace(/\n\s*(参考来源|参考链接|来源[：:])\s*[\s\S]*$/i, '');
   text = text.replace(/\n\s*\[\d+\]\s*https?:\/\/[\s\S]*$/i, '');
-  // 去除行内来源标记：[1] [2] 等
   text = text.replace(/\s*\[\d+\]\s*/g, ' ');
-
-  // 3. 去除多余空行（搜索回答有时有连续空行）
+  // 3. 去除多余空行
   text = text.replace(/\n{3,}/g, '\n\n');
-
-  // 4. 长度压缩：保留前 800 字符（足够 Agent 提取关键事实）
+  // 4. 长度压缩
   if (text.length > 800) {
-    // 在句子边界截断，避免半句话
     const cut = text.slice(0, 800);
     const lastPunct = Math.max(cut.lastIndexOf('。'), cut.lastIndexOf('！'), cut.lastIndexOf('？'), cut.lastIndexOf('.'));
     text = lastPunct > 400 ? cut.slice(0, lastPunct + 1) : cut + '…';
   }
-
   return text.trim();
 }
 
@@ -170,20 +197,15 @@ async function parseSSEStream(
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-
-      // SSE 事件以 \n\n 分隔
       let idx: number;
       while ((idx = buffer.indexOf('\n\n')) >= 0) {
         const block = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 2);
-
-        // 每行解析 data: 前缀
         for (const line of block.split('\n')) {
           const trimmed = line.trim();
           if (!trimmed.startsWith('data:')) continue;
           const data = trimmed.slice(5).trim();
           if (data === '[DONE]') continue;
-
           try {
             const obj = JSON.parse(data) as {
               choices?: { delta?: { content?: string } }[];
@@ -192,15 +214,12 @@ async function parseSSEStream(
             const delta = obj.choices?.[0]?.delta?.content;
             if (delta) content += delta;
             if (obj.usage?.total_tokens) totalTokens = obj.usage.total_tokens;
-          } catch {
-            // 跳过无法解析的行（可能是心跳/注释行）
-          }
+          } catch { /* 跳过无法解析的行 */ }
         }
       }
     }
   } finally {
     reader.releaseLock();
   }
-
   return { content: content.trim(), totalTokens };
 }
