@@ -41,6 +41,13 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     parameters: { type: 'object', properties: { ...geoProps }, required: ['x', 'y'] },
   },
   {
+    name: 'menu_select',
+    description: '菜单导航首选：一个动作走完多级菜单，内部自动"开父菜单→等子菜单渲染→定位子项→点"，避免你用鼠标分两回合点导致弹出菜单收起。path 用 > 分隔各级菜单名，如 "文件>另存为"、"编辑>查找替换>替换"；括号助记键会自动忽略。找不到时回退 keyboard_press(combos=["Alt","Down","Enter"]) 方向键导航。',
+    level: 1,
+    source: 'computer',
+    parameters: { type: 'object', properties: { path: { type: 'string', description: '菜单路径，多级用 > 分隔，如 "文件>另存为"' } }, required: ['path'] },
+  },
+  {
     name: 'mouse_drag',
     description: '从 from 平滑拖拽到 to。',
     level: 1,

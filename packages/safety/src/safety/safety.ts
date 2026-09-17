@@ -34,6 +34,7 @@ export const DEFAULT_TOOL_POLICY: Record<string, ToolPolicy> = {
   // L0 保留给纯观察（截图/OCR/读 UIA 树），任何输入注入事件都不是只读。
   mouse_hover: { level: 1 },
   mouse_move: { level: 1 }, // 纯移动：注入真实光标移动事件（设备写），同 hover 归 L1，勿落到未知默认
+  menu_select: { level: 1 }, // 逐级点击菜单（内部是 mouse_click），L1 输入注入
   keyboard_type: { level: 1 },
   keyboard_press: { level: 1 },
   wait: { level: 1 },

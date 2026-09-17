@@ -1,8 +1,19 @@
 // ui-locate 纯逻辑单测：展平/搜索/坐标换算/SoM 候选（场景复刻自 2026-09-05 Qoder CN 误点事故）
 import { beforeEach, describe, expect, it } from 'vitest';
-import { collectCandidates, filterForegroundCandidates, flattenTree, searchMatches, zoomedBoxToScreen, type UiMatch } from '../src/ui-locate';
+import { collectCandidates, filterForegroundCandidates, flattenTree, parseMenuPath, searchMatches, zoomedBoxToScreen, type UiMatch } from '../src/ui-locate';
 import { setScreenScale } from '../src/screen-scale';
 import type { UiNode } from '@ximo-visagent/shared-types';
+
+describe('parseMenuPath（menu_select 路径解析）', () => {
+  it('去助记键括号与省略号、按 > 分级', () => {
+    expect(parseMenuPath('文件(F)>另存为(A)...')).toEqual(['文件', '另存为']);
+    expect(parseMenuPath('编辑>查找替换>替换')).toEqual(['编辑', '查找替换', '替换']);
+  });
+  it('空/仅分隔符 → 空数组', () => {
+    expect(parseMenuPath('')).toEqual([]);
+    expect(parseMenuPath('  >  ')).toEqual([]);
+  });
+});
 
 /** 模拟桌面树：记事本窗口 + 桌面（Program Manager 下挂图标簇与真实 Qoder 图标，物理像素坐标） */
 const tree: UiNode = {

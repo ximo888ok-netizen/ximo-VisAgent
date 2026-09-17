@@ -33,6 +33,15 @@ export function shortType(type: string): string {
   return type.startsWith('ControlType.') ? type.slice('ControlType.'.length) : type;
 }
 
+/** 解析菜单路径为各级名称：按 > 分隔，去掉助记键括号 "(F)" 与省略号 "…"，trim、去空。
+ *  "文件(F)>另存为(A)..." → ["文件","另存为"]（menu_select 逐级按名定位用）。 */
+export function parseMenuPath(raw: string): string[] {
+  return (raw ?? '')
+    .split('>')
+    .map((s) => s.replace(/\([^)]*\)/g, '').replace(/[.…]+$/, '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
 /**
  * 深度优先展平「有名称 + 有矩形 + 不在屏外」的节点。
  *  window 归属：树根与其直接子节点（即顶层窗口）的名字，后续节点继承最近的窗口名。

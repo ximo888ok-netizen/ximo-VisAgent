@@ -36,3 +36,12 @@ describe('keyboard_press（combo/combos 二选一校验）', () => {
     expect(r.error).toContain('keyboard_press 需要');
   });
 });
+
+describe('menu_select（path 校验在触达设备前）', () => {
+  it('空 path → 报错且不触碰设备', async () => {
+    const ex = new ComputerToolExecutor();
+    const r = await ex.execute('menu_select', {});
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('menu_select 需要 path');
+  });
+});

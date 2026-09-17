@@ -4,7 +4,7 @@
 import type { SomCandidate, ToolExecutor, ToolResult } from '@ximo-visagent/agent-core';
 import { getHost } from './host';
 import { getUiaClient } from './uia-client';
-import { flattenTree, formatLocateDetail, searchMatches } from './ui-locate';
+import { flattenTree, formatLocateDetail, searchMatches, parseMenuPath } from './ui-locate';
 import { captureBaseline, postClickVerify } from './click-verify';
 import { inputVerifyData, unknownToolError, verifyResultData } from './executor-result';
 import { ClickGuard } from './click-guard';
@@ -23,6 +23,8 @@ import { getWindowIndex } from './window-index';
 /** 开应用/双击后等"见效"：稳定帧轮询取代固定等待——快路径 ~160-240ms（不劣于旧 400ms），
  *  上限 2.5s 有界（慢界面不误报未变化）；宿主无稳定观测能力时退回旧的固定 400ms。 */
 const OPEN_EFFECT_WAIT_MS = 400;
+/** menu_select 点开父级菜单后、定位下一级子项前的等待（子菜单渲染需时间） */
+const MENU_SELECT_SETTLE_MS = 350;
 
 /** 视觉定位钩子：UIA 找不到目标时由宿主注入（SoM 编号选择 / DeepSeek grounding，见 agent-core/grounding.ts） */
 export interface ExecutorDeps {
@@ -74,6 +76,7 @@ export class ComputerToolExecutor implements ToolExecutor {
         case 'mouse_scroll': return await this.mouseScroll(args);
         case 'mouse_move': return await this.mouseMove(args);
         case 'mouse_hover': return await mouseHoverTool(args);
+        case 'menu_select': return await this.menuSelect(args);
         case 'ui_scroll_to': return await uiScrollTo(args);
         case 'keyboard_type': return await this.keyboardType(args);
         case 'keyboard_press': return await this.keyboardPress(args);
@@ -217,6 +220,37 @@ export class ComputerToolExecutor implements ToolExecutor {
     }
     await mouseMoveTo(x, y);
     return { ok: true, summary: `光标移动到 (${Math.round(x)},${Math.round(y)})（未点击）` };
+  }
+
+  /** 单动作菜单导航：path="文件>另存为" → 逐级"定位→点→等子菜单渲染"，全程一个动作，
+   *  消除"这回合开菜单、下回合鼠标点菜单项"时弹出菜单已收起的竞态。 */
+  private async menuSelect(args: Record<string, unknown>): Promise<ToolResult> {
+    const segs = parseMenuPath(String(args.path ?? ''));
+    if (segs.length === 0) {
+      return { ok: false, summary: '', error: 'menu_select 需要 path，如 "文件>另存为"（多级用 > 分隔，括号助记键自动忽略）' };
+    }
+    const trail: string[] = [];
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i]!;
+      let tree;
+      try {
+        tree = await this.uiTree();
+      } catch (err) {
+        return { ok: false, summary: '', error: `menu_select：UIA 树不可用（${(err as Error).message}），无法定位「${seg}」；回退 keyboard_press combos=["Alt","Down","Enter"] 方向键导航` };
+      }
+      const matches = searchMatches(flattenTree(tree.tree), seg, 5);
+      if (matches.length === 0) {
+        return { ok: false, summary: '', error: `menu_select：没找到菜单项「${seg}」（已点到：${trail.join(' > ') || '无'}）。上级菜单可能未展开或名称不符——用更精确的名称，或回退 keyboard_press(combos=["Alt","Down","Enter"]) 方向键导航` };
+      }
+      const m = matches[0]!;
+      const cx = Math.round(m.center.x);
+      const cy = Math.round(m.center.y);
+      const clicked = await this.mouseClick({ x: cx, y: cy });
+      if (!clicked.ok) return { ok: false, summary: '', error: `menu_select：点击「${seg}」@(${cx},${cy}) 失败：${clicked.error ?? clicked.summary}` };
+      trail.push(`${seg}@(${cx},${cy})`);
+      if (i < segs.length - 1) await sleep(MENU_SELECT_SETTLE_MS);
+    }
+    return { ok: true, summary: `菜单导航 ${segs.join('>')}：逐级点击 ${trail.join(' → ')}（单动作内完成）` };
   }
 
   private async keyboardType(args: Record<string, unknown>): Promise<ToolResult> {
