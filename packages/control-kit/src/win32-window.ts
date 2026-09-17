@@ -1,5 +1,6 @@
 // koffi FFI 绑定：user32.dll 窗口枚举/激活/关闭 + 系统 DPI（从 win32.ts 拆出）
 import koffi from 'koffi';
+import { Worker } from 'node:worker_threads';
 import type { MonitorInfo, Rect, WindowInfo } from '@ximo-visagent/shared-types';
 
 const lib = koffi.load('user32.dll');
@@ -11,6 +12,8 @@ const EnumWindows = lib.func('bool EnumWindows(EnumProc *cb, int64 lParam)');
 const GetWindowTextW = lib.func('int32 GetWindowTextW(int64 hwnd, _Out_ char* lpString, int32 nMaxCount)');
 const GetClassNameW = lib.func('int32 GetClassNameW(int64 hwnd, _Out_ char* lpClassName, int32 nMaxCount)');
 const IsWindowVisible = lib.func('bool IsWindowVisible(int64 hwnd)');
+// 廉价标志查询（不发消息、不阻塞）：枚举时先跳过无响应窗口，避免 GetWindowText 的 WM_GETTEXT 卡住主线程
+const IsHungAppWindow = lib.func('bool IsHungAppWindow(int64 hwnd)');
 const GetWindowRect = lib.func('bool GetWindowRect(int64 hwnd, void* lpRect)');
 const GetWindowThreadProcessId = lib.func('uint32 GetWindowThreadProcessId(int64 hwnd, _Out_ uint32* pid)');
 const SetForegroundWindow = lib.func('bool SetForegroundWindow(int64 hwnd)');
@@ -63,29 +66,130 @@ function readWindowRect(hwnd: number): Rect | null {
   };
 }
 
-export async function listWindows(): Promise<WindowInfo[]> {
+/** 进程内同步枚举（worker 不可用/超时时的兜底；已含 IsHungAppWindow 跳过僵尸窗）。 */
+function listWindowsSync(): WindowInfo[] {
   const windows: WindowInfo[] = [];
-  const done = new Promise<void>((resolve) => {
-    EnumWindows((hwnd: number) => {
-      const pidBuf = Buffer.alloc(4);
-      const pid = GetWindowThreadProcessId(hwnd, pidBuf) ? pidBuf.readUInt32LE(0) : 0;
-      const title = readWindowTitle(hwnd);
-      const rect = readWindowRect(hwnd);
-      if (!title && !rect) return true;
-      windows.push({
-        hwnd,
-        title,
-        className: readClassName(hwnd),
-        rect: rect ?? { left: 0, top: 0, width: 0, height: 0 },
-        visible: IsWindowVisible(hwnd),
-        pid,
-      });
-      return true; // continue
-    }, 0n);
-    resolve();
-  });
-  await done;
+  EnumWindows((hwnd: number) => {
+    // 跳过无响应窗口：GetWindowTextW 会向它发 WM_GETTEXT 并阻塞到消息超时，拖死主线程
+    if (IsHungAppWindow(hwnd)) return true;
+    const pidBuf = Buffer.alloc(4);
+    const pid = GetWindowThreadProcessId(hwnd, pidBuf) ? pidBuf.readUInt32LE(0) : 0;
+    const title = readWindowTitle(hwnd);
+    const rect = readWindowRect(hwnd);
+    if (!title && !rect) return true;
+    windows.push({
+      hwnd,
+      title,
+      className: readClassName(hwnd),
+      rect: rect ?? { left: 0, top: 0, width: 0, height: 0 },
+      visible: IsWindowVisible(hwnd),
+      pid,
+    });
+    return true; // continue
+  }, 0n);
   return windows;
+}
+
+/** worker 线程枚举脚本（eval 模式，自带 koffi 绑定，与主线程各一份 FFI 句柄）。
+ *  把同步 EnumWindows 移出主线程：任一窗口无响应导致的原生调用阻塞只冻住 worker，不冻结主进程。 */
+const LIST_WORKER_CODE = String.raw`
+const { parentPort } = require('node:worker_threads');
+const koffi = require('koffi');
+const lib = koffi.load('user32.dll');
+koffi.proto('bool EnumProc(int64 hwnd, int64 lParam)');
+const EnumWindows = lib.func('bool EnumWindows(EnumProc *cb, int64 lParam)');
+const GetWindowTextW = lib.func('int32 GetWindowTextW(int64 hwnd, _Out_ char* lpString, int32 nMaxCount)');
+const GetClassNameW = lib.func('int32 GetClassNameW(int64 hwnd, _Out_ char* lpClassName, int32 nMaxCount)');
+const IsWindowVisible = lib.func('bool IsWindowVisible(int64 hwnd)');
+const IsHungAppWindow = lib.func('bool IsHungAppWindow(int64 hwnd)');
+const GetWindowRect = lib.func('bool GetWindowRect(int64 hwnd, void* lpRect)');
+const GetWindowThreadProcessId = lib.func('uint32 GetWindowThreadProcessId(int64 hwnd, _Out_ uint32* pid)');
+function readTitle(hwnd){ const b = Buffer.alloc(512); const n = GetWindowTextW(hwnd, b, 255); return n > 0 ? b.toString('utf16le', 0, n * 2).replace(/\0+$/, '') : ''; }
+function readCls(hwnd){ const b = Buffer.alloc(256); const n = GetClassNameW(hwnd, b, 255); return n > 0 ? b.toString('utf16le', 0, n * 2).replace(/\0+$/, '') : ''; }
+function readRect(hwnd){ const b = new ArrayBuffer(16); const v = new DataView(b); if (!GetWindowRect(hwnd, b)) return null; return { left: v.getInt32(0,true), top: v.getInt32(4,true), width: v.getInt32(8,true)-v.getInt32(0,true), height: v.getInt32(12,true)-v.getInt32(4,true) }; }
+parentPort.on('message', (msg) => {
+  if (!msg || msg.id === undefined) return;
+  const windows = [];
+  try {
+    EnumWindows((hwnd) => {
+      if (IsHungAppWindow(hwnd)) return true;
+      const pb = Buffer.alloc(4);
+      const pid = GetWindowThreadProcessId(hwnd, pb) ? pb.readUInt32LE(0) : 0;
+      const title = readTitle(hwnd);
+      const rect = readRect(hwnd);
+      if (!title && !rect) return true;
+      windows.push({ hwnd, title, className: readCls(hwnd), rect: rect || { left: 0, top: 0, width: 0, height: 0 }, visible: IsWindowVisible(hwnd), pid });
+      return true;
+    }, 0n);
+    parentPort.postMessage({ id: msg.id, windows });
+  } catch (e) {
+    parentPort.postMessage({ id: msg.id, error: String((e && e.message) || e) });
+  }
+});
+`;
+
+const LIST_TIMEOUT_MS = 3000;
+let listWorker: Worker | null = null;
+let listWorkerBroken = false;
+let lastGoodWindows: WindowInfo[] = []; // worker 不可用/超时时的兜底：给上次结果，绝不在主线程跑同步枚举
+const listPending = new Map<number, { resolve: (w: WindowInfo[]) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+let listReqId = 1;
+
+function killListWorker(reason: string): void {
+  listWorkerBroken = true; // 永久回退同步版（打包环境可能 require 不到 koffi，别每次重试）
+  for (const [, p] of listPending) { clearTimeout(p.timer); p.reject(new Error(`listWindows worker ${reason}`)); }
+  listPending.clear();
+  try { listWorker?.unref(); listWorker?.terminate(); } catch { /* ignore */ }
+  listWorker = null;
+}
+
+function ensureListWorker(): Worker | null {
+  if (listWorkerBroken) return null;
+  // 仅真实 Electron 主进程启用 worker 卸载（纯 Node 单测/非 electron 走同步版，行为与改造前一致、避免 vitest 下 worker 抖动）
+  if (typeof process.versions.electron !== 'string') return null;
+  if (listWorker) return listWorker;
+  try {
+    const w = new Worker(LIST_WORKER_CODE, { eval: true });
+    w.on('message', (msg: { id?: number; windows?: WindowInfo[]; error?: string }) => {
+      if (msg?.id === undefined) return;
+      const p = listPending.get(msg.id);
+      if (!p) return;
+      listPending.delete(msg.id);
+      clearTimeout(p.timer);
+      if (msg.error) p.reject(new Error(msg.error)); else p.resolve(msg.windows ?? []);
+    });
+    w.on('error', () => killListWorker('error'));
+    w.on('exit', (code) => { if (code !== 0) killListWorker(`exit ${code}`); else listWorker = null; });
+    listWorker = w;
+    return w;
+  } catch {
+    listWorkerBroken = true;
+    return null;
+  }
+}
+
+/** 主线程安全的窗口枚举：非 Electron（单测）直接同步；Electron 一律走 worker，
+ *  超时/不可用则返回上次缓存——绝不在主线程跑同步枚举（僵尸窗会让 GetWindowText 冻结主进程几十秒）。 */
+export async function listWindows(): Promise<WindowInfo[]> {
+  if (typeof process.versions.electron !== 'string') return listWindowsSync();
+  const w = ensureListWorker();
+  if (w) {
+    const id = listReqId++;
+    try {
+      const list = await new Promise<WindowInfo[]>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          if (listPending.has(id)) { listPending.delete(id); reject(new Error('listWindows timeout')); }
+        }, LIST_TIMEOUT_MS);
+        listPending.set(id, { resolve, reject, timer });
+        w.postMessage({ id });
+      });
+      lastGoodWindows = list;
+      return list;
+    } catch {
+      /* worker 超时/出错：返回上次缓存，不在主线程跑同步枚举 */
+    }
+  }
+  return lastGoodWindows;
 }
 
 export async function getForegroundWindow(): Promise<{ hwnd: number; title: string; className: string }> {
