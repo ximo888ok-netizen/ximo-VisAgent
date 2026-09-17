@@ -45,6 +45,26 @@ export function finalizeTaskExperience(t: ExperienceHooks, result: AgentRunResul
       .catch((err: Error) => console.error('[experience] SOP 蒸馏失败', err));
   }
 
+  // skill_runs 记账（C：把恒 0 的空表变真实使用统计）——凡用过 SOP 的任务都落一条 run（outcome=终态）。
+  // 只记真实发生的 active run；shadow A/B 对照需另跑对照组，不在此伪造。
+  if (t.sopId && t.experience) {
+    try {
+      t.experience.insertSkillRun({
+        id: crypto.randomUUID(),
+        sopId: t.sopId,
+        taskId: t.taskId,
+        mode: 'active',
+        adopted: true,
+        outcome: result.status,
+        stepsUsed: result.steps,
+        tokens: result.totalTokens,
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      console.error('[experience] skill_run 记账失败', err);
+    }
+  }
+
   if (result.status === 'COMPLETED' && t.memoryEnabled && t.memory) {
     void t.memory
       .extractFromTask(t.text, t.taskId, t.goal, result.finalAnswer, result.stepsDetail)
