@@ -1,6 +1,6 @@
 // 里程碑审计单测：门控条件 / 审计解析容错 / 注入文案（含已完成清单）
 import { describe, expect, it } from 'vitest';
-import { isMilestoneStep, milestoneMessage, runMilestoneAudit, type MilestoneAudit } from '../src/agent/milestone';
+import { applyMilestoneCheck, isMilestoneStep, milestoneMessage, runMilestoneAudit, type MilestoneAudit } from '../src/agent/milestone';
 import { defaultAgentConfig } from '@ximo-visagent/llm-providers';
 import type { ILLMClient, ChatMessage, ChatResult } from '@ximo-visagent/llm-providers';
 import type { StepDetail } from '../src/agent/types';
@@ -77,5 +77,29 @@ describe('milestoneMessage 注入文案', () => {
     expect(msg).toContain('1) 打开记事本');
     expect(msg).toContain('2) 输入文本');
     expect(msg).toContain('不重做');
+  });
+});
+
+describe('applyMilestoneCheck（A3：返回审计供 loop 更新进度账本）', () => {
+  const steps: StepDetail[] = [{ index: 1, thought: '', actionName: 'mouse_click', resultSummary: 'ok' }];
+  it('检查点命中 → 注入消息 + 发一条事件 + 返回审计（doneCount）', async () => {
+    const messages: ChatMessage[] = [];
+    const emitted: unknown[] = [];
+    const audit = await applyMilestoneCheck(
+      { textLLM: llmWith('{"done":["打开记事本","输入文本"],"current":"保存","drift":false}'), goal: '整理', stepsDetail: steps, step: 40, maxSteps: 120, subTaskCount: 1 },
+      { messages, emit: (e) => { emitted.push(e); } },
+    );
+    expect(audit?.doneCount).toBe(2);
+    expect(messages.some((m) => typeof m.content === 'string' && m.content.includes('里程碑审计'))).toBe(true);
+    expect(emitted.length).toBe(1);
+  });
+  it('非检查点 → 返回 null 且零副作用（不卡主流程）', async () => {
+    const messages: ChatMessage[] = [];
+    const audit = await applyMilestoneCheck(
+      { textLLM: llmWith('{"done":[],"current":"x","drift":false}'), goal: 'g', stepsDetail: steps, step: 10, maxSteps: 120, subTaskCount: 1 },
+      { messages, emit: () => {} },
+    );
+    expect(audit).toBeNull();
+    expect(messages.length).toBe(0);
   });
 });

@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultAgentConfig } from '@ximo-visagent/llm-providers';
 import type { ILLMClient, ChatMessage, ToolDef, ChatResult } from '@ximo-visagent/llm-providers';
-import { shouldPlan, plan } from '../src/agent/planner';
+import { shouldPlan, plan, planAlternative } from '../src/agent/planner';
 
 class OneShotLLM implements ILLMClient {
   readonly config = defaultAgentConfig().textLLM;
@@ -59,5 +59,33 @@ describe('plan（输出容错）', () => {
 
   it('空输出 → 回退到原始目标', async () => {
     expect((await plan(new OneShotLLM(''), '目标 Z')).tasks).toEqual(['目标 Z']);
+  });
+});
+
+describe('planAlternative（B4-b 卡点重规划）', () => {
+  class CapturingLLM implements ILLMClient {
+    readonly config = defaultAgentConfig().textLLM;
+    lastMessages: ChatMessage[] = [];
+    constructor(private readonly content: string) {}
+    async chat(messages: ChatMessage[], _tools?: ToolDef[]): Promise<ChatResult> {
+      this.lastMessages = messages;
+      return { content: this.content, toolCalls: [], usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, model: 'fake' };
+    }
+  }
+
+  it('合法数组 → 替代计划', async () => {
+    const res = await planAlternative(new OneShotLLM('["按Win搜应用名","回车启动","Ctrl+Shift+Esc 结束进程"]'), '卸载小答AI', '点击图标没反应x3');
+    expect(res.tasks).toEqual(['按Win搜应用名', '回车启动', 'Ctrl+Shift+Esc 结束进程']);
+  });
+  it('非法输出 → 单任务回退不抛错', async () => {
+    expect((await planAlternative(new OneShotLLM('换键盘试试'), '目标', 'x')).tasks).toEqual(['换键盘试试']);
+  });
+  it('请求里带上"已失败路径"摘要 + 重规划人设', async () => {
+    const llm = new CapturingLLM('["换方案A","换方案B"]');
+    await planAlternative(llm, '整理周报', '点击导出按钮 3 次无变化；菜单未展开');
+    const user = llm.lastMessages.find((m) => m.role === 'user')?.content ?? '';
+    const sys = llm.lastMessages.find((m) => m.role === 'system')?.content ?? '';
+    expect(user).toContain('点击导出按钮 3 次无变化');
+    expect(sys).toContain('重规划');
   });
 });

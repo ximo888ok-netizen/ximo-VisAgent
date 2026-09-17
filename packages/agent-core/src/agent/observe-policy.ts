@@ -121,3 +121,24 @@ export class ObservePolicy {
     };
   }
 }
+
+/**
+ * switch 档坐标作废判定（纯函数，可单测）：分层观察确认「目标区连续无变化」达 switch 档
+ * （升级观察后仍没反应 = 该目测坐标已被判无效）时，返回**最近一次真实点击/长按**的坐标给 loop，
+ * 由 loop 调 executor.invalidateCoord 在本任务内拉黑该点——逼模型离开「反复回到死点」
+ * （遥测实测：50% 抖动重瞄 + 25% 原地重复点击）。recentSteps 传 stepsDetail 尾部切片即可，
+ * 其中被注入的提示步（actionName 为 null）自动跳过。非点击类动作无目标区信号，返回 null。
+ */
+export function switchInvalidationTarget(
+  verdict: { regionUnchanged?: boolean; noEffectStreak: number },
+  recentSteps: ReadonlyArray<{ actionName?: string | null; args?: Record<string, unknown> | null }>,
+): { x: number; y: number } | null {
+  if (fastPathLevel(verdict.noEffectStreak, verdict.regionUnchanged === true) !== 'switch') return null;
+  const lastClick = [...recentSteps].reverse()
+    .find((s) => s.actionName === 'mouse_click' || s.actionName === 'mouse_hold');
+  if (!lastClick?.args) return null;
+  const x = Number(lastClick.args.x);
+  const y = Number(lastClick.args.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}

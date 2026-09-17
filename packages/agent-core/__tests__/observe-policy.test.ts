@@ -10,6 +10,7 @@ import {
   detectProgressSignal,
   fastPathLevel,
   ObservePolicy,
+  switchInvalidationTarget,
   targetRegionForAction,
 } from '../src/agent/observe-policy';
 import type { RegionFingerprint } from '../src/agent/ground-cache';
@@ -135,5 +136,29 @@ describe('P2 进度类界面与决策表（纯函数）', () => {
     expect(targetRegionForAction(clickAct)).toEqual({ x: 650, y: 450, w: 300, h: 300 });
     expect(targetRegionForAction({ name: 'keyboard_press', args: { combo: 'Enter' } })).toBeNull();
     expect(targetRegionForAction({ name: 'ui_click', args: { elementId: 3 } })).toBeNull();
+  });
+});
+
+describe('switchInvalidationTarget（A1 switch 档 → 上一步死点坐标作废）', () => {
+  const click = { actionName: 'mouse_click', args: { x: 400, y: 300 } };
+  const nudge = { actionName: null };
+  it('switch 档（连两次区域无变化）+ 最近是目测点击 → 返回其坐标', () => {
+    expect(switchInvalidationTarget({ regionUnchanged: true, noEffectStreak: 2 }, [nudge, click])).toEqual({ x: 400, y: 300 });
+  });
+  it('observe 档（仅 1 次）不作废（还要先升级观察，别过早拉黑）', () => {
+    expect(switchInvalidationTarget({ regionUnchanged: true, noEffectStreak: 1 }, [click])).toBeNull();
+  });
+  it('区域变了 / 无区域信号不作废', () => {
+    expect(switchInvalidationTarget({ regionUnchanged: false, noEffectStreak: 3 }, [click])).toBeNull();
+    expect(switchInvalidationTarget({ noEffectStreak: 3 }, [click])).toBeNull();
+  });
+  it('回跳过注入的 null 动作步，取最近一次真实 mouse_click', () => {
+    expect(switchInvalidationTarget({ regionUnchanged: true, noEffectStreak: 2 }, [click, nudge, nudge])).toEqual({ x: 400, y: 300 });
+  });
+  it('最近真实动作非目测点击/长按（ui_click/键盘）→ 无目标区信号，不作废', () => {
+    expect(switchInvalidationTarget({ regionUnchanged: true, noEffectStreak: 2 }, [{ actionName: 'ui_click', args: { ref: '7' } }])).toBeNull();
+  });
+  it('坐标非法（NaN/缺）不作废', () => {
+    expect(switchInvalidationTarget({ regionUnchanged: true, noEffectStreak: 2 }, [{ actionName: 'mouse_click', args: { x: 'a', y: 2 } }])).toBeNull();
   });
 });

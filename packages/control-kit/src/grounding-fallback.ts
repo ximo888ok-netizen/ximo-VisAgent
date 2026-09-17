@@ -2,12 +2,13 @@
 // 前台窗口查询 + 视觉定位降级链（SoM 编号选择 → 自由 grounding + zoom 精修 → OCR 兜底）
 // + 视觉结果直点。纯搬迁不改语义；执行链引用 RefToolCtx（点击侧共用）。
 import type { SomCandidate, ToolResult } from '@ximo-visagent/agent-core';
+import { readImageSize } from '@ximo-visagent/llm-providers';
 import type { UiTreeResult } from '@ximo-visagent/shared-types';
 import { getHost, type HostCapabilities } from './host';
 import type { ClickGuard } from './click-guard';
 import { STABLE_MAX_WAIT_MS, waitForStableFrame } from './stable-frame';
 import { collectCandidates, filterForegroundCandidates, somMismatchNote, zoomedBoxToScreen } from './ui-locate';
-import { ocrLookupTool } from './ocr-lookup';
+import { ocrLookupTool, ocrRecognizeAll, type OcrHit } from './ocr-lookup';
 import type { ExecutorDeps } from './executor';
 
 /** 开应用/双击后等"见效"的退回固定等待（无稳定观测能力时），与 executor 同值 */
@@ -137,19 +138,50 @@ async function ocrFallback(host: HostCapabilities, query: string): Promise<ToolR
   }
 }
 
-/** SoM 候选收集：UIA 控件，坐标在截图坐标系。限定前台窗口（后台候选在截图上不可见，选中即点飞）。 */
-async function somCandidates(ctx: RefToolCtx, _screenshot: Buffer): Promise<SomCandidate[]> {
-  const out: SomCandidate[] = [];
+/** SoM 候选收集：UIA 控件（坐标在截图坐标系）为主，自绘/无树界面用 OCR 文字框补盲（B1）。 */
+async function somCandidates(ctx: RefToolCtx, screenshot: Buffer): Promise<SomCandidate[]> {
+  const uia: SomCandidate[] = [];
   try {
     const tree = await ctx.uiTree();
     const fg = await foregroundTitle();
     const pool = filterForegroundCandidates(collectCandidates(tree.tree, SOM_CANDIDATE_LIMIT), fg);
     for (const m of pool) {
-      out.push({ index: out.length + 1, label: m.name.slice(0, SOM_LABEL_MAX), x: m.x, y: m.y, w: m.w, h: m.h });
-      if (out.length >= SOM_CANDIDATE_LIMIT) break;
+      uia.push({ index: uia.length + 1, label: m.name.slice(0, SOM_LABEL_MAX), x: m.x, y: m.y, w: m.w, h: m.h });
+      if (uia.length >= SOM_CANDIDATE_LIMIT) break;
     }
-  } catch { /* UIA 不可用，无候选 */ }
+  } catch { /* UIA 不可用 → 全靠 OCR 补盲候选 */ }
+  // B1：UIA 候选稀薄（微信/Electron/Chromium 内页无无障碍树）时补 OCR 文字框，
+  // 让 SoM「看图选编号」这类选择题在自绘界面也有可信候选，替代模型目测报坐标（50% 抖动的正解）。
+  if (uia.length < 8) {
+    try {
+      const dims = readImageSize(screenshot);
+      const hits = dims ? await ocrRecognizeAll(screenshot, dims) : null;
+      if (hits && hits.length > 0) return mergeSomCandidates(uia, ocrHitsToSom(hits));
+    } catch { /* OCR 不可用 → 退回 UIA-only 候选 */ }
+  }
+  return uia;
+}
+
+/** B1：OCR 文字框 → SoM 候选（纯映射，可单测；空文本丢弃、label 截断） */
+export function ocrHitsToSom(hits: OcrHit[]): SomCandidate[] {
+  const out: SomCandidate[] = [];
+  for (const h of hits) {
+    const label = (h.text ?? '').trim().slice(0, SOM_LABEL_MAX);
+    if (!label) continue;
+    out.push({ index: 0, label, x: h.x, y: h.y, w: h.w, h: h.h });
+  }
   return out;
+}
+
+/** B1：合并候选——UIA（更可信）在前，OCR 补盲在后；OCR 项中心距任一已保留项 <40px 视为重复丢弃；重排 index、封顶 cap（纯函数可单测） */
+export function mergeSomCandidates(uia: SomCandidate[], ocr: SomCandidate[], cap = SOM_CANDIDATE_LIMIT): SomCandidate[] {
+  const out = [...uia];
+  for (const c of ocr) {
+    const cx = c.x + c.w / 2;
+    const cy = c.y + c.h / 2;
+    if (!out.some((k) => Math.hypot(k.x + k.w / 2 - cx, k.y + k.h / 2 - cy) < 40)) out.push(c);
+  }
+  return out.slice(0, cap).map((c, i) => ({ ...c, index: i + 1 }));
 }
 
 /** B1：视觉定位结果（无 UIA id）的找到即点——按中心坐标直点，沿用 mouseClick 的守卫/穿透/验证链 */

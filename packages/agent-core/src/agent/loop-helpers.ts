@@ -63,14 +63,15 @@ export interface EnvContext {
   windows?: string[];
 }
 
-export function buildPerceptionText(snap: PerceptionSnap, tasks: string[], step: number, screenChanged: boolean, noChangeCount = 0, recentActions?: { thought: string; actionName: string | null; resultSummary: string }[], maxSteps?: number, stateLines?: string[]): string {
+export function buildPerceptionText(snap: PerceptionSnap, tasks: string[], step: number, screenChanged: boolean, noChangeCount = 0, recentActions?: { thought: string; actionName: string | null; resultSummary: string }[], maxSteps?: number, stateLines?: string[], planDone?: number): string {
   const lines: string[] = [];
   lines.push(`[步 #${step}${maxSteps ? `/${maxSteps}` : ''}]`);
-  // 条目4：多子任务时展示编号计划（模型知道自己在做第几项）；单任务保持原格式
+  // 条目4：多子任务时展示编号计划（模型知道自己在做第几项）；A3：标注里程碑审计确认的进度（每步复述，防遗忘/重做）
   if (tasks.length > 1) {
+    const done = Math.max(0, Math.min(tasks.length, planDone ?? 0));
     lines.push(`目标: ${tasks[0]}`);
-    lines.push(`计划: ${tasks.map((t, i) => `${i + 1}) ${t}`).join('  ')}`);
-    lines.push('（按计划顺序推进；已完成的不重做；全部完成才 task_done）');
+    lines.push(`计划: ${tasks.map((t, i) => `${i < done ? '✓' : i === done ? '→' : '·'}${i + 1}) ${t}`).join('  ')}`);
+    lines.push(`（进度：已完成 ${done}/${tasks.length}，→ 为当前；按序推进，已完成的不重做，全部完成才 task_done）`);
   } else {
     lines.push(`目标: ${tasks[0] ?? '(无)'}`);
   }
@@ -380,5 +381,21 @@ export function applyRequestTools(
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** 动作级超时看门狗：给 promise 套一个有界计时，超时以带标签的 Error 拒绝，成功/失败都清计时器。
+ *  防单个动作（如原生截图/UIA RPC 卡住）把整条循环永久挂起——转为"该步失败"喂给失败快路径换路。
+ *  注意：只能兜住异步可中断的调用；若底层是阻塞主线程的同步原生调用，JS 计时器无法触发（那需在原生侧加超时）。 */
+export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} 执行超时（>${Math.round(ms / 1000)}s），已中止该步以防任务卡死`)), ms);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 

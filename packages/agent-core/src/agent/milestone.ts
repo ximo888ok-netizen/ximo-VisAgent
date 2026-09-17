@@ -61,16 +61,18 @@ export function milestoneMessage(audit: MilestoneAudit, step: number, maxSteps: 
 }
 
 /**
- * 里程碑检查点处置（loop 侧一行调用）：非检查点或审计失败都静默返回——
- * 审计器故障绝不卡死任务；命中时注入纠偏/确认消息并发步骤事件。
+ * 里程碑检查点处置（loop 侧调用）：非检查点或审计失败都返回 null 且静默——
+ * 审计器故障绝不卡死任务；命中时注入纠偏/确认消息、发步骤事件，并**返回审计结果**
+ * 供 loop 更新常驻任务账本的「已完成数」（A3：把 checkpoint 级进度变成每步可见）。
  */
 export async function applyMilestoneCheck(
   opts: { textLLM: ILLMClient; goal: string; stepsDetail: StepDetail[]; step: number; maxSteps: number; subTaskCount: number },
   ctx: { messages: ChatMessage[]; emit: (event: AgentEvent) => void },
-): Promise<void> {
-  if (!isMilestoneStep(opts.step, opts.maxSteps, opts.subTaskCount)) return;
+): Promise<MilestoneAudit | null> {
+  if (!isMilestoneStep(opts.step, opts.maxSteps, opts.subTaskCount)) return null;
   const audit = await runMilestoneAudit(opts.textLLM, opts.goal, opts.stepsDetail);
-  if (!audit) return;
+  if (!audit) return null;
   ctx.messages.push({ role: 'system', content: milestoneMessage(audit, opts.step, opts.maxSteps, opts.goal) });
   ctx.emit({ type: 'step', step: { index: opts.step, thought: `[里程碑]${audit.drift ? '已纠偏' : '正常'}`, actionName: null, resultSummary: audit.current, ok: !audit.drift } });
+  return audit;
 }

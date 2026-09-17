@@ -47,6 +47,27 @@ describe('buildPerceptionText（步数预算提醒）', () => {
   });
 });
 
+describe('buildPerceptionText（A3 多子任务计划进度标记）', () => {
+  const plan = ['打开记事本', '输入文本', 'Ctrl+S 保存'];
+  it('planDone=1 → 首项✓、次项→当前、第三项·待办，并给已完成 1/3', () => {
+    const t = buildPerceptionText({}, plan, 20, true, 0, [], 60, undefined, 1);
+    expect(t).toContain('✓1) 打开记事本');
+    expect(t).toContain('→2) 输入文本');
+    expect(t).toContain('·3) Ctrl+S 保存');
+    expect(t).toContain('已完成 1/3');
+  });
+  it('planDone 缺省=0 → 首项即当前，无✓', () => {
+    const t = buildPerceptionText({}, plan, 5, true, 0, [], 60);
+    expect(t).toContain('→1) 打开记事本');
+    expect(t).toContain('已完成 0/3');
+  });
+  it('单任务不产出计划行（保护既有格式）', () => {
+    const t = buildPerceptionText({}, ['打开记事本'], 5, true, 0, [], 60, undefined, 0);
+    expect(t).not.toContain('计划:');
+    expect(t).toContain('目标: 打开记事本');
+  });
+});
+
 describe('buildPerceptionText（可交互元素清单）', () => {
   const tasks = ['打开设置卸载程序'];
   const baseSnap = {

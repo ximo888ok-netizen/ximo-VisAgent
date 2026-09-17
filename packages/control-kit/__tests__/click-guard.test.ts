@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ClickGuard } from '../src/click-guard';
 
 describe('ClickGuard 同位置熔断', () => {
-  it('同栅格前 3 次放行，第 4 次熔断（24px 栅格归并抖动）', () => {
+  it('同目标前 3 次放行，第 4 次熔断（±60px 近邻归并）', () => {
     const g = new ClickGuard();
     expect(g.check(470, 630)).toBeNull();
     expect(g.check(470, 631)).toBeNull();
@@ -54,6 +54,50 @@ describe('ClickGuard 同位置熔断', () => {
     for (let i = 0; i < 3; i++) g.check(50, 50);
     const blocked = g.check(50, 50);
     expect(blocked).toContain('ui_locate');
+  });
+});
+
+describe('ClickGuard ±60px 近邻归并（旧 24px 栅格的抖动漏洞回归）', () => {
+  it('跨不同 24px 栅格的 ±60px 重瞄计入同目标连击，第 4 次熔断', () => {
+    const g = new ClickGuard();
+    // (400,400)(421,412)(408,430)(430,448) 落在不同 24px 栅格、两两相距 <60px：
+    // 旧实现按栅格分桶 → 每桶各计数、永不熔断；近邻归并后第 4 次熔断
+    expect(g.check(400, 400)).toBeNull();
+    expect(g.check(421, 412)).toBeNull();
+    expect(g.check(408, 430)).toBeNull();
+    expect(g.check(430, 448)).toContain('已熔断');
+  });
+
+  it('漂移超过近邻半径视为新目标，不与旧点合并计数', () => {
+    const g = new ClickGuard();
+    for (let i = 0; i < 3; i++) expect(g.check(400, 400)).toBeNull();
+    // 远点（>60px）另起炉灶，不触发旧目标的熔断
+    expect(g.check(700, 700)).toBeNull();
+  });
+});
+
+describe('ClickGuard 坐标拉黑（observe-policy switch 档 → 执行器拒点）', () => {
+  it('invalidate 后落在失效半径内的点击直接拒绝', () => {
+    const g = new ClickGuard();
+    g.invalidate(500, 500);
+    expect(g.check(505, 502)).toContain('无效点');
+    // 远离失效点的正常点击不受影响
+    expect(g.check(900, 900)).toBeNull();
+  });
+
+  it('forget 清空失效坐标（不跨任务残留前科）', () => {
+    const g = new ClickGuard();
+    g.invalidate(300, 300);
+    expect(g.check(301, 301)).toContain('无效点');
+    g.forget();
+    expect(g.check(301, 301)).toBeNull();
+  });
+
+  it('noteEffective 不清失效拉黑：区域确认无变化的坐标需显式换路径才解', () => {
+    const g = new ClickGuard();
+    g.invalidate(200, 200);
+    g.noteEffective();
+    expect(g.check(201, 201)).toContain('无效点');
   });
 });
 

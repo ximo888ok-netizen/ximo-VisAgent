@@ -88,10 +88,10 @@ describe('planFirst:true 集成链路（planner → 主循环）', () => {
     // 链路 2：规划产物进 memory.setTasks（2 个子任务，不再是单 goal 回退）
     expect(spy.setTasks).toEqual([['启动记事本并等待窗口出现', '在编辑区输入文字并按Ctrl+S保存']]);
 
-    // 链路 3：首轮 ReAct 感知文本带编号计划（模型知道自己在做第几项）
+    // 链路 3：首轮 ReAct 感知文本带编号计划 + A3 进度标记（planDone=0：首项 →当前、次项 ·待办）
     const react1 = allText(llm.calls[1]!);
-    expect(react1).toContain('计划: 1) 启动记事本并等待窗口出现  2) 在编辑区输入文字并按Ctrl+S保存');
-    expect(react1).toContain('（按计划顺序推进；已完成的不重做；全部完成才 task_done）');
+    expect(react1).toContain('计划: →1) 启动记事本并等待窗口出现  ·2) 在编辑区输入文字并按Ctrl+S保存');
+    expect(react1).toContain('已完成 0/2');
 
     // 链路 4：里程碑门控在 subTaskCount>1 时生效——步1/步2 各触发一次审计调用
     expect(allText(llm.calls[2]!)).toContain('里程碑审计员');

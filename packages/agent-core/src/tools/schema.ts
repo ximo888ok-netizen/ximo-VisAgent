@@ -34,6 +34,13 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     parameters: { type: 'object', properties: { ...geoProps, hoverMs: { type: 'integer', description: '停留毫秒数，默认500；tooltip 约1秒出现，等不到可加大' } }, required: ['x', 'y'] },
   },
   {
+    name: 'mouse_move',
+    description: '纯移动光标到坐标，不点击、不停留（人类最高频的动作）。用于：把指针移到目标处准备下一步、在已展开的菜单/二级子菜单内移动（移动不会像点击那样把菜单收起，点击落空才会关菜单）、需要指针到位但不操作时。要停留触发 tooltip/悬停展开用 mouse_hover，要点击用 mouse_click。',
+    level: 1,
+    source: 'computer',
+    parameters: { type: 'object', properties: { ...geoProps }, required: ['x', 'y'] },
+  },
+  {
     name: 'mouse_drag',
     description: '从 from 平滑拖拽到 to。',
     level: 1,

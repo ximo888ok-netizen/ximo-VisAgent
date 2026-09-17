@@ -96,6 +96,58 @@ export async function verifyTypedInput(
   }
 }
 
+/** 组合键/导航是否见效的判定（纯函数，可单测）：比较动作前后焦点元素快照。
+ *  - no-effect  = 前后焦点完全一致（焦点没动、value 没变）→ 键大概率没被这个控件吃；
+ *  - focus-moved = 焦点元素的 rect 变了（Tab/方向键/Enter 移动到别的控件）；
+ *  - value-changed = 焦点没换但内容变了（退格/删除/选区）；
+ *  - unverifiable = 任一侧读空（UIA 掉线/自绘无 value+rect）→ 不据此判"没生效"，避免误伤。 */
+export type KeyEffect = 'focus-moved' | 'value-changed' | 'no-effect' | 'unverifiable';
+
+function sameBox(a: Box | null, b: Box | null): boolean {
+  if (!a || !b) return a === b;
+  return a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+}
+
+/** 前后快照 → 三态判定（纯逻辑，不碰 IO；UIA 侧车注入交给 verifyKeyEffect） */
+export function diffFocusVerdict(before: FocusedSnapshot, after: FocusedSnapshot): KeyEffect {
+  const focusReadable = before.rect !== null || before.value !== '';
+  const afterReadable = after.rect !== null || after.value !== '';
+  if (!focusReadable || !afterReadable) return 'unverifiable';
+  if (!sameBox(before.rect, after.rect)) return 'focus-moved';
+  if (before.value !== after.value) return 'value-changed';
+  return 'no-effect';
+}
+
+/** verifyKeyEffect 可注入依赖（单测传替身，不碰真实 sidecar/截图） */
+export interface KeyEffectDeps {
+  readFocused?: () => Promise<FocusedSnapshot>;
+  combo: string;
+  /** 执行"按下"这一步的动作（注入前抓基线、注入后复查） */
+  action: () => void | Promise<void>;
+}
+
+/** 组合键的轻量效果回读：动作前后各读一次焦点元素，等画面收敛后复查，产出附注（仅告警，不改 ok）。
+ *  no-effect 时文案引导换路（换键/用菜单/先聚焦）而非空转重按。全程不抛出。 */
+export async function verifyKeyEffect(deps: KeyEffectDeps): Promise<string> {
+  const readFocused = deps.readFocused ?? readFocusedSnapshot;
+  try {
+    const before = await readFocused();
+    await deps.action();
+    await settleAfterInput(before.rect, KEY_SETTLE_MS);
+    const after = await readFocused();
+    const verdict = diffFocusVerdict(before, after);
+    if (verdict === 'focus-moved') return '；焦点已移动（按键生效）';
+    if (verdict === 'value-changed') return '；焦点内容变化（按键生效）';
+    if (verdict === 'no-effect') return `；⚠ ${deps.combo} 后焦点与内容都没变化——该键可能没被当前控件接受：换 Enter/Esc/方向键、走菜单项，或先点击聚焦目标字段，勿重复空按同一组合键`;
+    return '；按键效果未验证（UIA 焦点不可读）';
+  } catch {
+    return '';
+  }
+}
+
+/** 键盘回读复查前的有界稳定等待：走 waitForStableFrame 快路径收敛即返，慢界面到上限不误报 */
+const KEY_SETTLE_MS = 120;
+
 /** 注入后的稳定等待：有字段 rect 就只轮询该区域收敛（本地截图+pHash，零 token，
  *  快路径 ~160ms）；无 rect / 宿主无能力时退回旧的固定 sleep(settleMs)，不缩短上限 */
 async function settleAfterInput(rectPhysical: Box | null, settleMs: number): Promise<void> {

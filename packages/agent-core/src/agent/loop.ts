@@ -4,7 +4,7 @@ import type { TaskStatus } from '@ximo-visagent/shared-types';
 import { ApprovalEngine, SafetyClassifier } from '@ximo-visagent/safety';
 import { ContextManager } from './memory';
 import { buildSystemPrompt, WINDOWS_KNOWLEDGE } from '../prompts/system';
-import { plan } from './planner';
+import { plan, planAlternative } from './planner';
 import type { ToolResult } from '../tools/registry';
 import {
   buildImagePart,
@@ -17,10 +17,11 @@ import {
   parseModelOutput,
   sleep,
   summarizeSteps,
+  withTimeout,
   type PerceptionSnap,
 } from './loop-helpers';
 import { EfficiencyGuard } from './loop-efficiency';
-import { ObservePolicy } from './observe-policy';
+import { ObservePolicy, switchInvalidationTarget } from './observe-policy';
 import { windowSignatureOf } from './ground-cache';
 import type { BudgetStop } from './loop-budget';
 import { StateTracker } from './state-tracker';
@@ -118,6 +119,7 @@ export class AgentLoop {
 
     const memory = new ContextManager(async (steps) => summarizeSteps(textLLM, steps));
     memory.setTasks(tasks);
+    let planDone = 0; // A3：多子任务计划的「已完成数」，由里程碑审计更新、每步在感知文本复述（防长任务遗忘/重做）
 
     // 按需加载：可选工具目录（内置可选 + 自定义；条目2 按 provider 禁用）与已激活集；request_tools 只改本集合
     const optionalCatalog = buildOptionalCatalog(this.opts.extraTools, this.opts.disabledOptionalTools);
@@ -203,9 +205,15 @@ export class AgentLoop {
         const noChangeCount = obs.noChangeCount;
         // 坐标表缓存：登记本步窗口签名/整帧指纹/步号；窗口变化由缓存在 beginStep 内整表失效
         groundCache?.beginStep({ windowSignature: windowSignatureOf(snap.foreground), frameHash: screenSig ?? undefined, step: index });
+        // A1 坐标作废：目标区连续两次确认「点了没反应」→ 拉黑上一步那个死点（本任务内拒点其近旁），逼模型换结构/键盘通道
+        const deadCoord = switchInvalidationTarget(obs, stepsDetail.slice(-3));
+        if (deadCoord) {
+          executor.invalidateCoord?.(deadCoord.x, deadCoord.y);
+          emit({ type: 'step', step: { index, thought: `[坐标作废] (${Math.round(deadCoord.x)},${Math.round(deadCoord.y)}) 连续无变化，已拉黑，请改 ui_click/键盘`, actionName: null, resultSummary: '', ok: true } });
+        }
 
         const model = snap.screenshot && visionLLM ? visionLLM : textLLM;
-        const parts: ContentPart[] = [{ type: 'text', text: buildPerceptionText(snap, tasks, index, screenChanged, noChangeCount, stepsDetail.slice(-3), maxSteps, stateTracker.snapshotLines()) }];
+        const parts: ContentPart[] = [{ type: 'text', text: buildPerceptionText(snap, tasks, index, screenChanged, noChangeCount, stepsDetail.slice(-3), maxSteps, stateTracker.snapshotLines(), planDone) }];
         // 每步都发截图：模型需要看图才能给坐标；base64 内联原图
         if (snap.screenshot) parts.push(await buildImagePart(model, snap.screenshot));
         // look_close 等工具的放大图随下一轮感知消息发给模型
@@ -268,6 +276,15 @@ export class AgentLoop {
           if (bailoutWarn) messages.push({ role: 'system', content: bailoutWarn });
           if (injectKnowledge) messages.push({ role: 'system', content: `${WINDOWS_KNOWLEDGE}\n\n以上为完整版常识（常驻注入时按任务裁剪过，可能省略应用路径段），困境时全量重发。对照卡点换用快捷键/系统路径，通常比反复点击快得多。` });
           emit({ type: 'step', step: { index, thought: bailoutWarn ? '[死局预警] 已注入强制收尾指令' : '[常识补发] 注入 Windows 操作常识完整版', actionName: null, resultSummary: '', ok: !bailoutWarn } });
+        }
+        // B4-b：多子任务卡死 → 请规划器换通道给一条替代计划（随死局预警同拍、天然一次性），重置进度账本
+        if (bailoutWarn && tasks.length > 1) {
+          const alt = await planAlternative(textLLM, goal, memory.abandonedPaths.slice(0, 6).join('\n') || '（无明确失败记录：卡在反复无变化）');
+          tasks = alt.tasks;
+          memory.setTasks(tasks);
+          planDone = 0;
+          messages.push({ role: 'system', content: `前一条路卡住了，换这个方案按序推进：${tasks.map((t, i) => `${i + 1}) ${t}`).join('  ')}。别再重复已放弃的动作。` });
+          emit({ type: 'step', step: { index, thought: '[重规划] 卡点→换通道替代计划已注入', actionName: null, resultSummary: tasks[0] ?? '', ok: true } });
         }
 
         // 4) 完成判断 + 自动验收门（机器断言优先；LLM 评审条件触发：有实质动作才评审，评审用 textLLM 无图）
@@ -358,7 +375,7 @@ export class AgentLoop {
           if (blockReason) efficiency.notePathological(blockReason); // C1：被拦截 = 无进展证据
           const execResult = blockReason
             ? { ok: false, summary: '', error: blockReason }
-            : await executor.execute(action.name, finalArgs).catch((err: Error) => {
+            : await withTimeout(executor.execute(action.name, finalArgs), 45_000, action.name).catch((err: Error) => {
                 return { ok: false, summary: '', error: err.message } as ToolResult;
               });
           if (!execResult.ok && !blockReason) await captureEvidence?.(index).catch(() => {});
@@ -431,8 +448,9 @@ export class AgentLoop {
           await memory.compressNow().catch(() => {});
         }
 
-        // 9) L2 里程碑校验：长任务在 1/3、2/3 步数处做一次子目标对账（失败静默跳过）
-        await applyMilestoneCheck({ textLLM, goal, stepsDetail, step: index, maxSteps, subTaskCount: tasks.length }, { messages, emit });
+        // 9) L2 里程碑校验：长任务在 1/3、2/3 步数处做一次子目标对账（失败静默跳过）；审计结果刷新常驻进度账本
+        const mAudit = await applyMilestoneCheck({ textLLM, goal, stepsDetail, step: index, maxSteps, subTaskCount: tasks.length }, { messages, emit });
+        if (mAudit) planDone = mAudit.doneCount;
       } catch (err) {
         lastError = (err as Error).message;
         emit({ type: 'error', message: (err as Error).message });

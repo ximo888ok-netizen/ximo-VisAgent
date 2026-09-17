@@ -34,6 +34,11 @@ export async function plan(
     { role: 'system', content: PLANNER_PROMPT },
     { role: 'user', content: goal },
   ];
+  return { tasks: await askPlan(llm, messages, goal) };
+}
+
+/** 从规划器输出稳健抽取字符串数组；解析失败整段当单任务回退（M19：过滤非字符串项、上限 5） */
+async function askPlan(llm: ILLMClient, messages: ChatMessage[], goal: string): Promise<string[]> {
   const res = await llm.chat(messages);
   const text = res.content?.trim() ?? '';
   try {
@@ -45,9 +50,31 @@ export async function plan(
     if (!Array.isArray(parsed)) throw new Error('planner output is not an array');
     const tasks = parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
     if (tasks.length === 0) throw new Error('no valid tasks in planner output');
-    return { tasks: tasks.slice(0, 5) };
+    return tasks.slice(0, 5);
   } catch {
     // 容错：整段当单任务
-    return { tasks: [text || goal] };
+    return [text || goal];
   }
+}
+
+/** B4-b 重规划提示：换通道优先（键盘/菜单/命令行/系统设置深链），不要重复失败过的点击 */
+const REPLANNER_PROMPT = `你是任务重规划器。前一个计划执行时卡住了（画面反复无变化 / 反复点同一处没反应 / 已放弃多条路径）。
+给你一个目标和"已尝试但没走通的路径"摘要，请给出**一条不同的、更可能成功**的分解——优先换通道：用键盘快捷键、菜单栏、右键菜单、系统设置深链或搜索框定位，代替"继续凭感觉点同一个坐标"。
+规则：每步是人眼可见的操作动作；最多 5 步；不要重复"已尝试"里失败过的同款动作。
+只输出 JSON 数组字符串，不要其他文字。格式: ["按 Win 打开开始菜单并键入应用名回车","在结果里回车启动","用 Ctrl+Shift+Esc 打开任务管理器定位进程"]`;
+
+/**
+ * B4-b：卡点处重规划。给定目标与"已失败路径"摘要，产出**替代计划**（供 loop 注入并继续推进）。
+ * 与 plan() 同解析口径、同单任务回退；只在多子任务长任务真卡住时由 loop 调，成本 = 一次 LLM 调用。
+ */
+export async function planAlternative(
+  llm: ILLMClient,
+  goal: string,
+  attemptedSummary: string,
+): Promise<PlannerResult> {
+  const messages: ChatMessage[] = [
+    { role: 'system', content: REPLANNER_PROMPT },
+    { role: 'user', content: `目标: ${goal}\n已尝试但没走通:\n${attemptedSummary}` },
+  ];
+  return { tasks: await askPlan(llm, messages, goal) };
 }

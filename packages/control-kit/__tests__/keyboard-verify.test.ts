@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { setHost } from '../src/host';
 import {
   compareTypedText,
+  diffFocusVerdict,
   needsInputVerify,
   normalizeForCompare,
   verifyTypedInput,
@@ -23,6 +24,25 @@ describe('needsInputVerify', () => {
     expect(needsInputVerify('ＡＢＣ')).toBe(true);
     expect(needsInputVerify('hello world 123')).toBe(false);
     expect(needsInputVerify('')).toBe(false);
+  });
+});
+
+describe('diffFocusVerdict（组合键前后焦点快照 → 三态判定）', () => {
+  const snap = (value: string, rect: FocusedSnapshot['rect']): FocusedSnapshot => ({ value, rect });
+  it('焦点元素 rect 变了 → focus-moved（Tab/方向键/Enter 移到别的控件）', () => {
+    expect(diffFocusVerdict(snap('', { x: 10, y: 10, w: 50, h: 20 }), snap('', { x: 10, y: 40, w: 50, h: 20 }))).toBe('focus-moved');
+  });
+  it('焦点没换但 value 变了 → value-changed（退格/删除/选区）', () => {
+    const box = { x: 10, y: 10, w: 50, h: 20 };
+    expect(diffFocusVerdict(snap('abc', box), snap('abcd', box))).toBe('value-changed');
+  });
+  it('前后完全一致 → no-effect（该键大概率没被当前控件接受）', () => {
+    const box = { x: 10, y: 10, w: 50, h: 20 };
+    expect(diffFocusVerdict(snap('abc', box), snap('abc', box))).toBe('no-effect');
+  });
+  it('任一侧读空（UIA 掉线/自绘无 value+rect）→ unverifiable，不误判没生效', () => {
+    expect(diffFocusVerdict(snap('', null), snap('', null))).toBe('unverifiable');
+    expect(diffFocusVerdict(snap('abc', { x: 1, y: 1, w: 2, h: 2 }), snap('', null))).toBe('unverifiable');
   });
 });
 

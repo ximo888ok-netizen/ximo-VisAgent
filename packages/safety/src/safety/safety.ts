@@ -33,6 +33,7 @@ export const DEFAULT_TOOL_POLICY: Record<string, ToolPolicy> = {
   // hover = L1 不是 L0：注入真实光标移动（设备写操作），且会展开 tooltip/悬停菜单改变界面状态；
   // L0 保留给纯观察（截图/OCR/读 UIA 树），任何输入注入事件都不是只读。
   mouse_hover: { level: 1 },
+  mouse_move: { level: 1 }, // 纯移动：注入真实光标移动事件（设备写），同 hover 归 L1，勿落到未知默认
   keyboard_type: { level: 1 },
   keyboard_press: { level: 1 },
   wait: { level: 1 },

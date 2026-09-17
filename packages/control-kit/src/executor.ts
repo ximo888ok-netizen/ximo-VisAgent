@@ -12,9 +12,9 @@ import { clickWithSelfPassthrough, ensureTargetForeground } from './click-focus'
 import { mouseHoverTool } from './mouse-hover';
 import { uiScrollTo } from './uia-scroll';
 import { screenOcr, waitFor, lookClose } from './screen-ocr';
-import { mouseDrag, mouseHold, mouseDragHold, mouseScroll } from './win32';
+import { mouseDrag, mouseHold, mouseDragHold, mouseScroll, mouseMoveTo } from './win32';
 import { keyboardPress, keyboardType } from './win32-keyboard';
-import { verifyTypedInput } from './keyboard-verify';
+import { verifyTypedInput, verifyKeyEffect } from './keyboard-verify';
 import { STABLE_MAX_WAIT_MS, waitForStableFrame } from './stable-frame';
 import { activateWindow, listWindows } from './win32-window';
 import { clickAfterLocate, foregroundDelta, foregroundTitle, groundingLookup, type RefToolCtx } from './grounding-fallback';
@@ -45,6 +45,12 @@ export class ComputerToolExecutor implements ToolExecutor {
     this.uiClickCounts.clear();
   }
 
+  /** A1：loop 判某目测坐标连续无变化（switch 档）时调用——委托点击守卫在本任务内拉黑该点附近，
+   *  此后落在其近旁的点击被 guard.check 拒执，逼模型换 ui_click/键盘（不清 noteEffective 可解，需显式换路径） */
+  invalidateCoord(x: number, y: number): void {
+    this.guard.invalidate(x, y);
+  }
+
   /** 传给拆分模块的上下文：状态仍归 executor 实例，模块不持有 executor 引用 */
   private refCtx(): RefToolCtx {
     return {
@@ -66,6 +72,7 @@ export class ComputerToolExecutor implements ToolExecutor {
         case 'mouse_hold': return await this.mouseHold(args);
         case 'mouse_drag_hold': return await this.mouseDragHold(args);
         case 'mouse_scroll': return await this.mouseScroll(args);
+        case 'mouse_move': return await this.mouseMove(args);
         case 'mouse_hover': return await mouseHoverTool(args);
         case 'ui_scroll_to': return await uiScrollTo(args);
         case 'keyboard_type': return await this.keyboardType(args);
@@ -142,9 +149,11 @@ export class ComputerToolExecutor implements ToolExecutor {
     if (![fx, fy, tx, ty].every(Number.isFinite)) {
       return { ok: false, summary: '', error: 'mouse_drag 需要 from/to 坐标（数字），如 {"from":{"x":100,"y":200},"to":{"x":300,"y":400}}' };
     }
+    const baseline = await captureBaseline(fx, fy);
     await mouseDrag({ x: fx, y: fy }, { x: tx, y: ty });
     this.overlay({ type: 'drag', x: fx, y: fy, toX: tx, toY: ty });
-    return { ok: true, summary: `拖动 (${fx},${fy})→(${tx},${ty})` };
+    const verify = baseline ? await postClickVerify(baseline) : null;
+    return { ok: true, summary: `拖动 (${fx},${fy})→(${tx},${ty})${verify?.note ?? ''}` };
   }
 
   private async mouseHold(args: Record<string, unknown>): Promise<ToolResult> {
@@ -194,6 +203,22 @@ export class ComputerToolExecutor implements ToolExecutor {
     return { ok: true, summary: `滚轮 ${delta > 0 ? '向上' : '向下'} ${Math.abs(delta)} 格${x !== undefined ? ` @(${Math.round(x)},${Math.round(y ?? 0)})` : ''}` };
   }
 
+  /** 纯移动光标到坐标（不点击、不停留）：悬停触发 tooltip/高亮、把指针移到位准备下一步、
+   *  在已展开的菜单内逐步移动（不点击可避免收起）等人类高频操作。要停留用 mouse_hover，要点用 mouse_click。 */
+  private async mouseMove(args: Record<string, unknown>): Promise<ToolResult> {
+    const x = Number(args.x);
+    const y = Number(args.y);
+    if (args.x == null || args.y == null || !Number.isFinite(x) || !Number.isFinite(y)) {
+      return {
+        ok: false,
+        summary: '',
+        error: `mouse_move 坐标非法（x=${String(args.x)}, y=${String(args.y)}）。x/y 必须是数字，如 {"x": 497, "y": 528}`,
+      };
+    }
+    await mouseMoveTo(x, y);
+    return { ok: true, summary: `光标移动到 (${Math.round(x)},${Math.round(y)})（未点击）` };
+  }
+
   private async keyboardType(args: Record<string, unknown>): Promise<ToolResult> {
     const text = String(args.text ?? '');
     const intervalMs = typeof args.intervalMs === 'number' && Number.isFinite(args.intervalMs) ? args.intervalMs : undefined;
@@ -205,8 +230,9 @@ export class ComputerToolExecutor implements ToolExecutor {
   }
 
   private async keyboardPress(args: Record<string, unknown>): Promise<ToolResult> {
-    keyboardPress(String(args.combo));
-    return { ok: true, summary: `已按键 ${args.combo}` };
+    const combo = String(args.combo);
+    const note = await verifyKeyEffect({ combo, action: () => keyboardPress(combo) });
+    return { ok: true, summary: `已按键 ${combo}${note}` };
   }
 
   private async openApp(args: Record<string, unknown>): Promise<ToolResult> {
