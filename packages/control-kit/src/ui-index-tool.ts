@@ -10,6 +10,7 @@ import { captureBaseline, postClickVerify } from './click-verify';
 import { verifyResultData } from './executor-result';
 import { getWindowIndex, DEFAULT_SUMMARY_LIMIT } from './window-index';
 import { foregroundDelta, foregroundTitle, type RefToolCtx } from './grounding-fallback';
+import { fmtCoord } from './coord-normalize';
 
 /** '#7' / 7 / '7' → 7；非法 → undefined（模型两种写法都收） */
 export function parseRefArg(raw: unknown): number | undefined {
@@ -105,7 +106,7 @@ export async function uiClickTool(ctx: RefToolCtx, args: Record<string, unknown>
     const baseline = await captureBaseline(cx, cy);
     await clickElementWithModifiers(cx, cy, button, times, args.modifiers);
     ctx.overlay({ type: 'click', x: cx, y: cy });
-    let summary = `真实点击 "${label}" 当前中心 @(${Math.round(cx)},${Math.round(cy)})${winNote}${ref !== undefined ? ` #ref${ref}` : ''}`;
+    let summary = `真实点击 "${label}" 当前中心 @${fmtCoord(cx, cy)}${winNote}${ref !== undefined ? ` #ref${ref}` : ''}`;
     if (times >= 2) summary += await foregroundDelta(fgBefore);
     if (focus.note) summary += focus.note;
     const verify = baseline ? await postClickVerify(baseline) : null;
@@ -135,7 +136,7 @@ export async function locateByRef(ctx: RefToolCtx, args: Record<string, unknown>
   const box = out.rect ?? { x: out.center.x, y: out.center.y, w: 1, h: 1 };
   return {
     ok: true,
-    summary: `#${ref} "${out.el?.name || out.el?.controlType}" 当前中心(${Math.round(out.center.x)},${Math.round(out.center.y)})（路径 ${out.el?.path ?? ''}，索引仍新鲜）。复用请 ui_click(ref:${ref})`,
+    summary: `#${ref} "${out.el?.name || out.el?.controlType}" 当前中心${fmtCoord(out.center.x, out.center.y)}（路径 ${out.el?.path ?? ''}，索引仍新鲜）。复用请 ui_click(ref:${ref})`,
     data: { matches: [{ name: out.el?.name ?? '', ...box }], ref },
   };
 }

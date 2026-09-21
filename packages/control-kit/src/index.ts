@@ -132,3 +132,4 @@ export { ComputerToolExecutor } from './executor';
 export { FileOfficeExecutor } from './file-office';
 export { evaluateTaskAssertion, registerAssertion } from './task-assertions';
 export { detectIconRegions, type GrayImage, type IconBox, ICON_DETECT_MAX } from './icon-detect';
+export { getCoordMode, isNormalized, setCoordMode, denormalizeActionArgs, normalizedToPixel, pixelToNormalized, updateLastImageSize, getLastImageSize, fmtCoord, NORMALIZED_MAX, type CoordMode } from './coord-normalize';

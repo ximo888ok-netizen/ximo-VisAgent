@@ -6,6 +6,7 @@ import { getUiaClient } from './uia-client';
 import { flattenTree } from './ui-locate';
 import { mouseMoveTo } from './win32';
 import { diffNewNodes, type HoverNodeSnapshot } from './hover-diff';
+import { fmtCoord } from './coord-normalize';
 
 /** 悬停原语 = 人类轨迹移动 + 驻留（不注入按键/点击）。放本文件而非 win32.ts（其行数预算已满） */
 async function mouseHover(x: number, y: number, hoverMs: number): Promise<void> {
@@ -56,7 +57,7 @@ export async function mouseHoverTool(args: Record<string, unknown>): Promise<Too
 
   const after = await hoverSnapshotNodes();
   const fgAfter = await foregroundTitle();
-  let summary = `悬停 @(${Math.round(x)},${Math.round(y)}) 停留 ${hoverMs}ms`;
+  let summary = `悬停 @${fmtCoord(x, y)} 停留 ${hoverMs}ms`;
   const diff = diffNewNodes(before, after);
   if (diff && diff.newCount > 0) {
     summary += `；停留期间出现 ${diff.newCount} 个新 UIA 节点: ${diff.names.join('、')}（tooltip/悬停菜单已展开，可再截图或直接操作）`;

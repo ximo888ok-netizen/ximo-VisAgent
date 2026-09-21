@@ -5,6 +5,7 @@
 import type { ToolResult } from '@ximo-visagent/agent-core';
 import { getUiaClient } from './uia-client';
 import { physicalToScreenshot } from './screen-scale';
+import { fmtCoord } from './coord-normalize';
 
 /** 侧车 scrollIntoView 回报（矩形为物理像素，sidecar 已 Per-Monitor V2 DPI 对齐） */
 export interface ScrollIntoViewResult {
@@ -31,7 +32,7 @@ export function scrollResultToTool(elementId: number, r: ScrollIntoViewResult): 
   const c = physicalToScreenshot(r.x + r.w / 2, r.y + r.h / 2);
   return {
     ok: true,
-    summary: `已滚动使元素 #${elementId} 进入视口，当前中心 @(${Math.round(c.x)},${Math.round(c.y)})（截图坐标，可直接 ui_click/mouse_click）`,
+    summary: `已滚动使元素 #${elementId} 进入视口，当前中心 @${fmtCoord(c.x, c.y)}（可直接 ui_click/mouse_click）`,
     data: { x: c.x, y: c.y, w: r.w, h: r.h, center: { x: c.x, y: c.y } },
   };
 }

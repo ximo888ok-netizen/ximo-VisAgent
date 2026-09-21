@@ -8,6 +8,8 @@
 import { Notification } from 'electron';
 import { ISLAND_CHANNELS } from '../shared/island-channels';
 import { getIslandWindow, showIsland, publishStep } from './windows/island';
+import { showPredictionMarker, closePredictionMarker, extractCoords } from './windows/screen-marker';
+import { showWaterFlow, hideWaterFlow } from './windows/water-flow';
 import { createStepEvent } from '../shared/island-contracts';
 import { pushApprovalRequest } from './island-bridge';
 import type { WeChatBot } from './wechat-bot';
@@ -114,6 +116,7 @@ export async function requestApprovalUI(
 ): Promise<{ action: 'reject'; reason: string } | null> {
   const island = getIslandWindow();
   if (!island || island.isDestroyed()) {
+    closePredictionMarker();
     return { action: 'reject', reason: '无 UI 窗口，自动拒绝' };
   }
   try {
@@ -121,6 +124,11 @@ export async function requestApprovalUI(
   } catch (err) {
     console.error('[island] push approval failed', err);
   }
+  // 预测标记覆盖层：在屏幕上可视化 Agent 要点的位置（L2 审批空间直观性）
+  const coords = extractCoords(op.tool, op.args);
+  showPredictionMarker(op.tool, op.args, coords);
+  // 水流光效：审批等待时屏幕边缘蓝色渐变动画，提示用户需要处理审批
+  showWaterFlow();
   // A14：岛隐藏时用系统通知唤回
   if (!island.isVisible()) {
     notify('ximo-VisAgent 需要审批', `Agent 请求执行「${op.tool}」，点击此处打开灵动岛处理`);

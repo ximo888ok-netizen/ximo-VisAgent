@@ -12,6 +12,8 @@ export interface ToolExecutor {
   execute(name: string, args: Record<string, unknown>): Promise<ToolResult>;
   /** 可选：把某目测坐标在本任务内作废（连点两次目标区无变化后由 loop 驱动），此后落在该点附近的点击被拒执，逼模型换结构/键盘通道。非设备执行器可不实现。 */
   invalidateCoord?(x: number, y: number): void;
+  /** 可选：设置当前截图尺寸（归一化坐标模式 0-1000 下，执行器入口换算回像素用）。loop 每帧截图后调用。 */
+  setFrameSize?(w: number, h: number): void;
 }
 
 /** 感知提供方：每轮循环前调用，构 build 感知帧 */

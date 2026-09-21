@@ -3,6 +3,7 @@ import type { ToolResult } from '@ximo-visagent/agent-core';
 import { readImageSize } from '@ximo-visagent/llm-providers';
 import { getHost } from './host';
 import { ocrRecognizeAll } from './ocr-lookup';
+import { fmtCoord } from './coord-normalize';
 
 /** screen_ocr：读取屏幕指定区域的全部文字（不做关键词过滤） */
 export async function screenOcr(args: Record<string, unknown>): Promise<ToolResult> {
@@ -110,7 +111,7 @@ export async function lookClose(args: Record<string, unknown>): Promise<ToolResu
     const { jpeg, zoom } = await host.captureZoom(x, y, cw, ch);
     return {
       ok: true,
-      summary: `区域 (${Math.round(x)},${Math.round(y)}) ${Math.round(cw)}x${Math.round(ch)} 已放大 ${zoom.toFixed(1)}x（见附图）。看图估计坐标后 mouse_click`,
+      summary: `区域 ${fmtCoord(x, y)} ${Math.round(cw)}x${Math.round(ch)} 已放大 ${zoom.toFixed(1)}x（见附图）。看图估计坐标后 mouse_click`,
       image: jpeg.toString('base64'),
     };
   } catch (err) {

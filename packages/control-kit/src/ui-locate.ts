@@ -2,6 +2,7 @@
 // 无 IO（sidecar 拉取与点击在 executor），保证纯 Node 单测可加载（A3）
 import type { UiNode } from '@ximo-visagent/shared-types';
 import { getScreenScale } from './screen-scale';
+import { fmtCoord } from './coord-normalize';
 
 export interface UiMatch {
   id: number;
@@ -138,7 +139,7 @@ const COORD_TOP_N = 4;
 /** 单条候选摘要：#id "名称"(类型) @(中心x,中心y 宽x高) [窗口]；withCoords=false 时省略坐标段 */
 export function formatLocateLine(m: UiMatch, withCoords: boolean): string {
   const coords = withCoords
-    ? ` @(${Math.round(m.center.x)},${Math.round(m.center.y)} ${Math.round(m.w)}x${Math.round(m.h)})`
+    ? ` @${fmtCoord(m.center.x, m.center.y)} ${Math.round(m.w)}x${Math.round(m.h)}`
     : '';
   return `#${m.id} "${m.name}"(${m.type})${coords} [${m.window}]`;
 }

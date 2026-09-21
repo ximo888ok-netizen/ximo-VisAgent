@@ -2,9 +2,10 @@
 // 加载策略：TOOL_SCHEMAS 常驻每步下发；OPTIONAL_TOOL_SCHEMAS 由 Agent 经 request_tools 按需加载
 import type { ToolSchema } from '@ximo-visagent/shared-types';
 
+const _norm = process.env.AGENT_COORD_MODE === 'normalized';
 const geoProps = {
-  x: { type: 'number', description: 'X 坐标（截图中看到的像素位置）' },
-  y: { type: 'number', description: 'Y 坐标（截图中看到的像素位置）' },
+  x: { type: 'number', description: _norm ? 'X 坐标（0-1000 归一化，截图中看到的位置按比例换算）' : 'X 坐标（截图中看到的像素位置）' },
+  y: { type: 'number', description: _norm ? 'Y 坐标（0-1000 归一化，截图中看到的位置按比例换算）' : 'Y 坐标（截图中看到的像素位置）' },
 };
 
 /** 点击类工具共用的修饰键参数：按下鼠标前按住，松开后逆序释放（异常路径也保证释放） */
@@ -21,7 +22,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   // ---------- 鼠标 ----------
   {
     name: 'mouse_click',
-    description: '点击屏幕坐标：从截图网格读目标位置直接点，坐标精确到±5px。**省略 x/y = 在当前光标处原地点击**（配合 mouse_move 先把指针移到位——移动与点击拆开，菜单里尤其有用）。straight=true 用直线一步到位、不绕贝塞尔弧线（在已展开的菜单内点击防弧线滑出收起）。times=2 双击；modifiers 按住 Ctrl/Shift/Alt 再点。',
+    description: '点击屏幕坐标：从截图网格读目标位置直接点，坐标精确到±5' + (_norm ? '（0-1000 范围）' : 'px') + '。**省略 x/y = 在当前光标处原地点击**（配合 mouse_move 先把指针移到位——移动与点击拆开，菜单里尤其有用）。straight=true 用直线一步到位、不绕贝塞尔弧线（在已展开的菜单内点击防弧线滑出收起）。times=2 双击；modifiers 按住 Ctrl/Shift/Alt 再点。',
     level: 1,
     source: 'computer',
     parameters: { type: 'object', properties: { ...geoProps, button: { type: 'string', enum: ['left', 'right', 'middle'] }, times: { type: 'integer', description: '点击次数，默认1；2=双击' }, straight: { type: 'boolean', description: 'true=直线移动到位再点（不绕弧线），菜单内点击防收起用' }, ...modifiersProp }, required: [] },

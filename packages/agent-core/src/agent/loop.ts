@@ -20,6 +20,8 @@ import {
   withTimeout,
   type PerceptionSnap,
 } from './loop-helpers';
+import { fmtCoordAgent, updateAgentImageSize } from './coord-format';
+import { readImageSize } from '@ximo-visagent/llm-providers';
 import { EfficiencyGuard } from './loop-efficiency';
 import { ObservePolicy, switchInvalidationTarget } from './observe-policy';
 import { windowSignatureOf } from './ground-cache';
@@ -31,6 +33,7 @@ import { runRequestToolsRound } from './loop-request-tools';
 import { runApprovalGate } from './loop-approval';
 import { onTaskDone } from './acceptance';
 import { createThinkingBudget } from './thinking-policy';
+import { VisualMemory } from './visual-memory';
 
 // 契约类型集中在 types.ts / recovery.ts；此处转出以保持既有导入路径可用
 export type { RecoveryContext, RecoveryHit } from './recovery';
@@ -148,6 +151,8 @@ export class AgentLoop {
     let runAcceptance: AgentRunResult['acceptance'] | undefined, pendingToolImage: ContentPart | null = null;
     // 条目6：历史经验恢复（提示去重与规则成败记账都收在 advisor 内）
     const recovery = createRecoveryAdvisor({ matcher: this.opts.recoveryMatcher, onResult: this.opts.onRecoveryResult });
+    // 滑窗视觉记忆：最近 3 步截图保留为 image content，让模型能回顾之前界面状态
+    const visualMemory = new VisualMemory();
 
     while (index < maxSteps) {
       if (this.cancelled) {
@@ -198,6 +203,16 @@ export class AgentLoop {
       try {
         // 2) 感知帧：每步都截图发模型（384 token 代价极低，省掉变化检测逻辑）
         const snap: PerceptionSnap = await perception.snapshot().catch(() => ({} as PerceptionSnap));
+        // 滑窗视觉记忆：本步截图存入滑窗（注入到历史消息供模型回顾之前界面）
+        if (snap.screenshot) visualMemory.add({ jpeg: snap.screenshot });
+        // 归一化坐标模式：记录截图尺寸供执行器入口 0-1000→像素 换算
+        if (snap.screenshot) {
+          const dims = readImageSize(snap.screenshot);
+          if (dims) {
+            executor.setFrameSize?.(dims.width, dims.height);
+            updateAgentImageSize(dims.width, dims.height);
+          }
+        }
         // 指纹优先用宿主分块哈希（抗光标闪烁），缺省回退整图字节哈希；分层判定与计数在 observe-policy
         const screenSig = snap.signature ?? (snap.screenshot ? quickHash(snap.screenshot) : null);
         const obs = await observe.assess(snap, screenSig, stepsDetail.slice(-2).map((s) => `${s.actionName ?? ''} ${s.resultSummary}`).join(' '));
@@ -209,7 +224,7 @@ export class AgentLoop {
         const deadCoord = switchInvalidationTarget(obs, stepsDetail.slice(-3));
         if (deadCoord) {
           executor.invalidateCoord?.(deadCoord.x, deadCoord.y);
-          emit({ type: 'step', step: { index, thought: `[坐标作废] (${Math.round(deadCoord.x)},${Math.round(deadCoord.y)}) 连续无变化，已拉黑，请改 ui_click/键盘`, actionName: null, resultSummary: '', ok: true } });
+          emit({ type: 'step', step: { index, thought: `[坐标作废] ${fmtCoordAgent(deadCoord.x, deadCoord.y)} 连续无变化，已拉黑，请改 ui_click/键盘`, actionName: null, resultSummary: '', ok: true } });
         }
 
         const model = snap.screenshot && visionLLM ? visionLLM : textLLM;
@@ -223,8 +238,10 @@ export class AgentLoop {
         // 按步思考预算（auto 档：地板信号 + 上一步模型自请）；其余档不表态 → 沿用既有四档语义
         const thinkDecision = thinking.decide({ mode: model.config.thinkingMode, step: index, recentFailures, noChangeCount, trail: stepsDetail, planned: tasks.length > 1 });
         const thinkingHint = { step: index, recentFailures, noChangeCount, seed: hashString(taskId), think: thinkDecision?.think };
+        // 滑窗视觉记忆：最近 N 步历史消息注入截图（模型能回顾之前的界面状态）
+        const historyMsgs = await visualMemory.injectImages(memory.buildHistoryMessages(), model);
         // P1-13：LLM 指数退避重试
-        const res = await chatWithRetry(model, [...messages, ...memory.buildHistoryMessages(), { role: 'user', content: parts }], buildToolDefs(activeTools, this.opts.extraTools), llmMaxRetries, emit, { thinkingHint });
+        const res = await chatWithRetry(model, [...messages, ...historyMsgs, { role: 'user', content: parts }], buildToolDefs(activeTools, this.opts.extraTools), llmMaxRetries, emit, { thinkingHint });
         if (!res) {
           llmFailStreak += 1;
           if (llmFailStreak >= MAX_LLM_FAIL_STREAK) {
@@ -247,7 +264,7 @@ export class AgentLoop {
         if (parsed.actions[0]?.name === 'request_tools') {
           parsed = await runRequestToolsRound(parsed, {
             catalog: optionalCatalog, active: activeTools, extraTools: this.opts.extraTools,
-            reask: (tools) => chatWithRetry(model, [...messages, ...memory.buildHistoryMessages(), { role: 'user', content: parts }], tools, llmMaxRetries, emit, { thinkingHint }),
+            reask: (tools) => chatWithRetry(model, [...messages, ...(await visualMemory.injectImages(memory.buildHistoryMessages(), model)), { role: 'user', content: parts }], tools, llmMaxRetries, emit, { thinkingHint }),
             onUsage: (u) => { totalTokens += u.totalTokens; emit({ type: 'llm_usage', promptTokens: u.promptTokens, completionTokens: u.completionTokens }); },
           }, { index, stepStart, memory, stepsDetail, messages, emit });
         }
@@ -446,6 +463,7 @@ export class AgentLoop {
         // 8) 触发压缩（token 驱动：宿主回传上下文占用超阈值；步数为兜底上限）
         if (memory.needsCompression(lastPromptTokens)) {
           await memory.compressNow().catch(() => {});
+          visualMemory.clear(); // 压缩后旧截图与文本摘要同步丢弃
         }
 
         // 9) L2 里程碑校验：长任务在 1/3、2/3 步数处做一次子目标对账（失败静默跳过）；审计结果刷新常驻进度账本

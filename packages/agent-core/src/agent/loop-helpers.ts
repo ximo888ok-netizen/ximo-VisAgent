@@ -5,6 +5,8 @@ import type { ToolSchema } from '@ximo-visagent/shared-types';
 import { OPTIONAL_TOOL_SCHEMAS, TOOL_SCHEMA_MAP, TOOL_SCHEMAS } from '../tools/schema';
 import { hashDistance } from './ground-cache';
 import { extractThinkRequest } from './thinking-policy';
+export { fmtCoordAgent, updateAgentImageSize, isCoordNormalized } from './coord-format';
+import { isCoordNormalized } from './coord-format';
 
 export interface PerceptionSnap {
   screenshot?: Buffer;
@@ -116,13 +118,20 @@ export function buildPerceptionText(snap: PerceptionSnap, tasks: string[], step:
   if (snap.screenshot) {
     // 坐标系锚定：明确告知截图尺寸，弱模型目测坐标时不再按内部缩放空间报数
     const dims = readImageSize(snap.screenshot);
-    const anchor = dims ? `（截图 ${dims.width}x${dims.height}，坐标在此坐标系内）` : '';
+    // 归一化模式下告知 0-1000 坐标系；像素模式告知截图尺寸
+    const anchor = dims
+      ? isCoordNormalized()
+        ? `（坐标 0-1000，${dims.width}x${dims.height} 截图按比例映射）`
+        : `（截图 ${dims.width}x${dims.height}，坐标在此坐标系内）`
+      : '';
     if (noChangeCount >= 3) {
       lines.push(`注意：画面已连续 ${noChangeCount} 步没变。${anchor}`);
     } else if (noChangeCount > 1) {
       lines.push(`画面没变（${noChangeCount}步）。${anchor}`);
     } else {
-      lines.push(`看截图给坐标，精确到±5px 以内${anchor}。`);
+      lines.push(isCoordNormalized()
+        ? `看截图给坐标（0-1000 范围），精确到±5 以内${anchor}。`
+        : `看截图给坐标，精确到±5px 以内${anchor}。`);
     }
   } else {
     lines.push('(无截图)');

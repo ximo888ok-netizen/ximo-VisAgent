@@ -24,7 +24,7 @@ const DEFAULT_GUIDANCE = `你就是坐在电脑前的人。看图，动手，看
 
 ## 核心原则
 - 优先用鼠标键盘直接操作：看截图 → 找到目标 → mouse_click/keyboard_type → 看结果
-- 坐标从截图网格刻度线读，精确到±5px——你给的坐标就是最终坐标，系统不纠正
+- 坐标从截图网格刻度线读，精确到±5${process.env.AGENT_COORD_MODE === 'normalized' ? '（0-1000 范围）' : 'px'}——你给的坐标就是最终坐标，系统不纠正
 - 观察文本带「窗口索引」清单时必用清单：行首 #编号即寻址凭据，优先 ui_click(ref:#编号)（执行前自动重解析坐标）；编号报「已失效」先 ui_index{refresh:true} 重建再点，绝不拿旧坐标乱点；清单没有目标（或被截断）用 ui_index{filter:"关键词"} 检索，再不行才 ui_locate 精查 / look_close 放大；@(x,y) 目测坐标只是 UIA 不可用时的兜底
 - 能一步做完的别拆两步：确定性的连续动作合并成一批（点输入框→输入→Ctrl+S 一个数组）；ui_locate(click:true) 找到即点
 - 不解释在做什么：动作本身就是回答

@@ -1,8 +1,11 @@
-// 感知帧坐标网格：发给模型的截图叠加 100px 网格 + 顶/左标尺（Set-of-Mark 式 grounding）
+// 感知帧坐标网格：发给模型的截图叠加网格 + 顶/左标尺（Set-of-Mark 式 grounding）
 // 纯像素绘制（内嵌 5x7 点阵数字字体），零图像库依赖。只作用于感知帧；
 // captureNative（放大/审批证据）保持干净，否则网格线会污染定位精度。
 // AGENT_NO_GRID=1 关闭（A/B 诊断用）。
+// AGENT_COORD_MODE=normalized 时画 0-1000 归一化网格（等分 10 份，标 100-900 刻度），
+// 否则画 100px 像素网格。
 import { nativeImage, type NativeImage } from 'electron';
+import { isNormalized } from '@ximo-visagent/control-kit';
 
 /** 5x7 点阵数字字体（每行 5bit，MSB=左） */
 const DIGIT_FONT: Record<string, number[]> = {
@@ -82,7 +85,7 @@ export function drawLabel(bgra: Uint8Array, w: number, h: number, text: string, 
 }
 
 /**
- * 在 BGRA 位图上绘制坐标网格：100px 细网格线 + 500px 主线，
+ * 在 BGRA 位图上绘制像素坐标网格：100px 细网格线 + 500px 主线，
  * 顶边标注 x 刻度、左边标注 y 刻度（截图坐标系，与模型输出坐标一致）。
  */
 export function drawGridPixels(bgra: Uint8Array, w: number, h: number, pitch = 100, scale = 2): void {
@@ -99,13 +102,49 @@ export function drawGridPixels(bgra: Uint8Array, w: number, h: number, pitch = 1
   for (let y = pitch; y <= h - 24; y += pitch) drawLabel(bgra, w, h, String(y), 4, y + 4, scale);
 }
 
-/** 感知帧包装：叠加坐标网格后重编码 JPEG（AGENT_NO_GRID=1 时直通） */
+/**
+ * 在 BGRA 位图上绘制 0-1000 归一化坐标网格：10 等分细线 + 5 等分主线，
+ * 顶边标注 0-1000 刻度、左边标注 0-1000 刻度。模型输出 0-1000 范围坐标。
+ */
+function drawNormalizedGrid(bgra: Uint8Array, w: number, h: number, scale = 2): void {
+  const stepX = w / 10; // 每 100 归一化单位一条线
+  const stepY = h / 10;
+  // 垂直线：0, 100, 200, ..., 1000 对应像素 0, w/10, 2w/10, ..., w
+  for (let i = 1; i < 10; i++) {
+    const x = Math.round(stepX * i);
+    const major = i % 5 === 0; // 500 为主线
+    drawVLine(bgra, w, h, x, major ? 0.55 : 0.3, major ? 2 : 1);
+  }
+  for (let i = 1; i < 10; i++) {
+    const y = Math.round(stepY * i);
+    const major = i % 5 === 0;
+    drawHLine(bgra, w, y, major ? 0.55 : 0.3, major ? 2 : 1);
+  }
+  // 标尺标签：顶边 x=100..900，左边 y=100..900（跳过边界避免溢出）
+  for (let i = 1; i <= 9; i++) {
+    const x = Math.round(stepX * i);
+    const label = String(i * 100);
+    if (x <= w - 60) drawLabel(bgra, w, h, label, x + 4, 4, scale);
+  }
+  for (let i = 1; i <= 9; i++) {
+    const y = Math.round(stepY * i);
+    const label = String(i * 100);
+    if (y <= h - 24) drawLabel(bgra, w, h, label, 4, y + 4, scale);
+  }
+}
+
+/** 感知帧包装：叠加坐标网格后重编码 JPEG（AGENT_NO_GRID=1 时直通）
+ *  坐标模式由 AGENT_COORD_MODE 控制：normalized=0-1000 归一化网格，其他=100px 像素网格 */
 export function withCoordinateGrid(img: NativeImage, quality = 95): Buffer {
   if (process.env.AGENT_NO_GRID === '1') return img.toJPEG(quality);
   const size = img.getSize();
   if (size.width <= 0 || size.height <= 0) return img.toJPEG(quality);
   const bgra = img.toBitmap();
   if (!bgra || bgra.length < size.width * size.height * 4) return img.toJPEG(quality);
-  drawGridPixels(bgra, size.width, size.height);
+  if (isNormalized()) {
+    drawNormalizedGrid(bgra, size.width, size.height);
+  } else {
+    drawGridPixels(bgra, size.width, size.height);
+  }
   return nativeImage.createFromBitmap(bgra, { width: size.width, height: size.height }).toJPEG(quality);
 }

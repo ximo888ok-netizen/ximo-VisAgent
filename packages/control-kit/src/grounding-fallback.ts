@@ -10,6 +10,7 @@ import { STABLE_MAX_WAIT_MS, waitForStableFrame } from './stable-frame';
 import { collectCandidates, filterForegroundCandidates, somMismatchNote, zoomedBoxToScreen } from './ui-locate';
 import { ocrLookupTool, ocrRecognizeAll, type OcrHit } from './ocr-lookup';
 import { detectIconRegions, ICON_DETECT_MAX, type IconBox } from './icon-detect';
+import { fmtCoord } from './coord-normalize';
 import type { ExecutorDeps } from './executor';
 
 /** 开应用/双击后等"见效"的退回固定等待（无稳定观测能力时），与 executor 同值 */
@@ -71,7 +72,7 @@ export async function groundingLookup(ctx: RefToolCtx, query: string): Promise<T
         const cy = hit.y + Math.round(hit.h / 2);
         return {
           ok: true,
-          summary: `SoM 视觉选择: "${hit.name}" 中心(${cx},${cy})（${candidates.length} 个候选中选中）。目标无 UIA 元素 id，请直接 mouse_click 中心坐标（双击 times=2）${somMismatchNote(query, hit.name)}`,
+          summary: `SoM 视觉选择: "${hit.name}" 中心${fmtCoord(cx, cy)}（${candidates.length} 个候选中选中）。目标无 UIA 元素 id，请直接 mouse_click 中心坐标（双击 times=2）${somMismatchNote(query, hit.name)}`,
           data: { matches: [hit] },
         };
       }
@@ -83,7 +84,7 @@ export async function groundingLookup(ctx: RefToolCtx, query: string): Promise<T
         const coarse = matches[0]!;
         const refined = await zoomRefine(ctx, coarse, query);
         const m = refined ?? coarse;
-        const detail = `"${m.name}" 中心(${Math.round(m.x + m.w / 2)},${Math.round(m.y + m.h / 2)}) 尺寸 ${Math.round(m.w)}x${Math.round(m.h)}${refined ? '（zoom 精修）' : ''}`;
+        const detail = `"${m.name}" 中心${fmtCoord(m.x + m.w / 2, m.y + m.h / 2)} 尺寸 ${Math.round(m.w)}x${Math.round(m.h)}${refined ? '（zoom 精修）' : ''}`;
         return {
           ok: true,
           summary: `grounding 视觉定位: ${detail}。目标无 UIA 元素 id，请直接 mouse_click 中心坐标（双击 times=2）`,
@@ -235,7 +236,7 @@ export async function clickAfterLocate(ctx: RefToolCtx, g: ToolResult, args: Rec
   const clicked = await ctx.mouseClick({ x: cx, y: cy, button: args.button ?? 'left', times: Number(args.times ?? 1), modifiers: args.modifiers });
   const located = (g.summary ?? '').slice(0, 120);
   return clicked.ok
-    ? { ok: true, summary: `${located}；已点击中心 (${cx},${cy}) → ${clicked.summary}` }
+    ? { ok: true, summary: `${located}；已点击中心 ${fmtCoord(cx, cy)} → ${clicked.summary}` }
     : { ...clicked, error: `${located}；点击失败: ${clicked.error}` };
 }
 

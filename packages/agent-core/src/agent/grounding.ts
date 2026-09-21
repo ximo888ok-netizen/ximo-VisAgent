@@ -6,6 +6,7 @@
 //   解析容错 Qwen 原生 bbox_2d 字段；任何分量 >1000 判为绝对像素；原始框始终进日志可观测。
 import type { ContentPart, ILLMClient } from '@ximo-visagent/llm-providers';
 import { imageDetailFor, readImageSize } from '@ximo-visagent/llm-providers';
+import { fmtCoordAgent } from './coord-format';
 
 export interface GroundingMatch {
   name: string;
@@ -240,7 +241,7 @@ export function createSomLookup(client: ILLMClient): SomLookup {
     if (!q || candidates.length === 0) return null;
     try {
       const list = candidates
-        .map((c) => `${c.index}. ${c.label} (${Math.round(c.x + c.w / 2)},${Math.round(c.y + c.h / 2)})`)
+        .map((c) => `${c.index}. ${c.label} ${fmtCoordAgent(c.x + c.w / 2, c.y + c.h / 2)}`)
         .join('\n');
       const parts: ContentPart[] = [
         { type: 'text', text: `目标: ${q}\n候选列表（编号. 名称 (中心坐标)）:\n${list}` },

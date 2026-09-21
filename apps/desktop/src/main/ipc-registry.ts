@@ -36,6 +36,8 @@ import path from 'node:path';
 import { exportAuditToFile } from './audit-export';
 import { applyConfigUpdate, sanitizeConfig } from './config-sync';
 import { coerceArgs } from './island-bridge';
+import { closePredictionMarker } from './windows/screen-marker';
+import { hideWaterFlow } from './windows/water-flow';
 import type { LongTaskRunner } from './longtask-runner';
 
 export interface IpcRegistryDeps {
@@ -92,6 +94,8 @@ export function registerIsland(deps: IpcRegistryDeps): void {
       },
     },
     onApprovalResult: (result) => {
+      closePredictionMarker();
+      hideWaterFlow();
       switch (result.decision) {
         case 'approved':
           orchestrator.approve(result.approvalKey);

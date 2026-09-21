@@ -6,6 +6,8 @@
 //   3) 熔断/拉黑时给出该点附近的 UIA 元素候选（而不是替模型点别的元素）
 //   4) 直点坐标命中近期 ui_locate 元素时提示改用 ui_click（UIA 中心无目测误差）
 
+import { fmtCoord } from './coord-normalize';
+
 /** ui_locate 返回的元素（截图坐标系） */
 export interface LocatedElement {
   id: number;
@@ -80,7 +82,7 @@ export class ClickGuard {
   check(x: number, y: number): string | null {
     const blockedBy = this.invalid.find((p) => this.dist(p.x, p.y, x, y) < PROX_RADIUS);
     if (blockedBy) {
-      return `坐标 (${Math.round(x)},${Math.round(y)}) 已被判定为无效点（此前动作后目标区无变化，与 (${Math.round(blockedBy.x)},${Math.round(blockedBy.y)}) 同属一点），已拒绝点击。${this.nearestAdvice(x, y)}`;
+      return `坐标 ${fmtCoord(x, y)} 已被判定为无效点（此前动作后目标区无变化，与 ${fmtCoord(blockedBy.x, blockedBy.y)} 同属一点），已拒绝点击。${this.nearestAdvice(x, y)}`;
     }
     const region = this.regions.find((r) => this.dist(r.x, r.y, x, y) < PROX_RADIUS)
       ?? (this.regions.push({ x, y, count: 0 }), this.regions[this.regions.length - 1]!);
@@ -88,7 +90,7 @@ export class ClickGuard {
     if (region.count <= MAX_INEFFECTIVE_CLICKS) return null;
     // 熔断后移除该轨迹（软熔断：下一次重新给预算，不永久锁死坐标）
     this.regions = this.regions.filter((r) => r !== region);
-    return `坐标 (${Math.round(x)},${Math.round(y)}) 附近已连续点击 ${region.count - 1} 次未生效，已熔断。${this.nearestAdvice(x, y)}。若目标已达成或无法继续，调 task_done。`;
+    return `坐标 ${fmtCoord(x, y)} 附近已连续点击 ${region.count - 1} 次未生效，已熔断。${this.nearestAdvice(x, y)}。若目标已达成或无法继续，调 task_done。`;
   }
 
   /** 点击被视觉验证为生效 → 清零连击计数（正常重复交互不该被误熔断）。不清失效拉黑：拉黑来自"区域确认无变化"，需显式换路径才解 */

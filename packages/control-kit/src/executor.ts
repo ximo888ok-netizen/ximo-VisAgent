@@ -20,6 +20,7 @@ import { activateWindow, listWindows } from './win32-window';
 import { clickAfterLocate, foregroundDelta, foregroundTitle, groundingLookup, type RefToolCtx } from './grounding-fallback';
 import { locateByRef, uiClickTool, uiIndexTool } from './ui-index-tool';
 import { getWindowIndex } from './window-index';
+import { isNormalized, denormalizeActionArgs, updateLastImageSize, getLastImageSize, fmtCoord } from './coord-normalize';
 /** 开应用/双击后等"见效"：稳定帧轮询取代固定等待——快路径 ~160-240ms（不劣于旧 400ms），
  *  上限 2.5s 有界（慢界面不误报未变化）；宿主无稳定观测能力时退回旧的固定 400ms。 */
 const OPEN_EFFECT_WAIT_MS = 400;
@@ -66,7 +67,11 @@ export class ComputerToolExecutor implements ToolExecutor {
     };
   }
 
+  /** loop 每帧截图后调用：记录截图尺寸，归一化模式下执行器入口换算 0-1000→像素 */
+  setFrameSize(w: number, h: number): void { updateLastImageSize(w, h); }
+
   async execute(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+    if (isNormalized()) { const { w, h } = getLastImageSize(); denormalizeActionArgs(name, args, w, h); }
     try {
       switch (name) {
         case 'mouse_click': return await this.mouseClick(args);
@@ -136,7 +141,7 @@ export class ComputerToolExecutor implements ToolExecutor {
     await clickWithSelfPassthrough(x, y, button, times, focus.selfOccluded, args.modifiers, straight);
     this.overlay({ type: 'click', x, y });
     const actionName = times === 2 ? '双击' : times > 2 ? `${times}击` : '点击';
-    let summary = `真实光标${actionName} @(${Math.round(x)},${Math.round(y)}) (${button})`;
+    let summary = `真实光标${actionName} @${fmtCoord(x, y)} (${button})`;
     if (times >= 2) summary += await foregroundDelta(fgBefore);
     if (focus.note) summary += focus.note;
     const verify = baseline ? await postClickVerify(baseline) : null;
@@ -162,7 +167,7 @@ export class ComputerToolExecutor implements ToolExecutor {
     await mouseDrag({ x: fx, y: fy }, { x: tx, y: ty });
     this.overlay({ type: 'drag', x: fx, y: fy, toX: tx, toY: ty });
     const verify = baseline ? await postClickVerify(baseline) : null;
-    return { ok: true, summary: `拖动 (${fx},${fy})→(${tx},${ty})${verify?.note ?? ''}` };
+    return { ok: true, summary: `拖动 ${fmtCoord(fx, fy)}→${fmtCoord(tx, ty)}${verify?.note ?? ''}` };
   }
 
   private async mouseHold(args: Record<string, unknown>): Promise<ToolResult> {
@@ -179,7 +184,7 @@ export class ComputerToolExecutor implements ToolExecutor {
     const holdMs = Number(args.holdMs ?? 500);
     await mouseHold(x, y, button, holdMs);
     this.overlay({ type: 'click', x, y });
-    return { ok: true, summary: `长按 @(${Math.round(x)},${Math.round(y)}) (${button}) ${holdMs}ms` };
+    return { ok: true, summary: `长按 @${fmtCoord(x, y)} (${button}) ${holdMs}ms` };
   }
 
   private async mouseDragHold(args: Record<string, unknown>): Promise<ToolResult> {
@@ -193,7 +198,7 @@ export class ComputerToolExecutor implements ToolExecutor {
     const holdMs = Number(args.holdMs ?? 300);
     await mouseDragHold({ x: fx, y: fy }, { x: tx, y: ty }, button, holdMs);
     this.overlay({ type: 'drag', x: fx, y: fy, toX: tx, toY: ty });
-    return { ok: true, summary: `长按拖拽 (${fx},${fy})→(${tx},${ty}) (${button}) 保持${holdMs}ms` };
+    return { ok: true, summary: `长按拖拽 ${fmtCoord(fx, fy)}→${fmtCoord(tx, ty)} (${button}) 保持${holdMs}ms` };
   }
 
   private async mouseScroll(args: Record<string, unknown>): Promise<ToolResult> {
@@ -225,7 +230,7 @@ export class ComputerToolExecutor implements ToolExecutor {
       };
     }
     await mouseMoveTo(x, y, args.straight === true);
-    return { ok: true, summary: `光标移动到 (${Math.round(x)},${Math.round(y)})（未点击${args.straight === true ? '，直线' : ''}）` };
+    return { ok: true, summary: `光标移动到 ${fmtCoord(x, y)}（未点击${args.straight === true ? '，直线' : ''}）` };
   }
 
   /** 单动作菜单导航：path="文件>另存为" → 逐级"定位→点→等子菜单渲染"，全程一个动作，

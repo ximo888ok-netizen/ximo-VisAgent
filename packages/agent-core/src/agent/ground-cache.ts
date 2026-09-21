@@ -16,6 +16,7 @@
 // 安全语义：缓存只替代「定位」这一步；点击后校验、点击守卫、审批分级 L0-L3 一律照旧，
 // 缓存结果与普通定位结果走完全相同的执行链（wrapper 只短路 ui_locate 内部的降级链）。
 import type { ToolExecutor, ToolResult } from '../tools/registry';
+import { fmtCoordAgent } from './coord-format';
 
 export type GroundSource = 'uia' | 'grounding';
 
@@ -345,7 +346,7 @@ function clickVerifyChanged(res: ToolResult): boolean | null {
 function cachedHitResult(query: string, hit: GroundCacheHit, cache: GroundCache): ToolResult {
   return {
     ok: true,
-    summary: `[坐标缓存] 复用定位 "${query}" 中心(${hit.center.x},${hit.center.y}) 尺寸 ${hit.box.w}x${hit.box.h}（源 ${hit.source}，${hit.stepsAgo} 步前帧稳定）。请直接 mouse_click 中心坐标（双击 times=2）｜${cache.statsLine()}`,
+    summary: `[坐标缓存] 复用定位 "${query}" 中心${fmtCoordAgent(hit.center.x, hit.center.y)} 尺寸 ${hit.box.w}x${hit.box.h}（源 ${hit.source}，${hit.stepsAgo} 步前帧稳定）。请直接 mouse_click 中心坐标（双击 times=2）｜${cache.statsLine()}`,
     data: { matches: [{ name: query, ...hit.box }] },
   };
 }

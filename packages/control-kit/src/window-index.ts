@@ -7,6 +7,7 @@
 // 缓存 keyed by hwnd + 响应级 signature 判等；单一活跃索引集：一次 indexWindow 响应
 // （一个 pid/hwnd 目标及其全部窗口）即当前集合，切换目标即整集替换——保证 #ref 全局唯一。
 import { windowMatches } from './ui-locate';
+import { fmtCoord } from './coord-normalize';
 import {
   indexWindow,
   resolveRefs,
@@ -330,7 +331,7 @@ export class WindowIndexStore {
   /** 单行元素摘要（每步清单与 ui_index 输出共用）：`#7 名称 (类型) @(x,y) [态] [窗口:xxx]` */
   formatLine(el: IndexedElement, winTitle?: string): string {
     const name = (el.name || `(${el.controlType})`).slice(0, NAME_MAX);
-    const pos = el.center ? ` @(${Math.round(el.center.x)},${Math.round(el.center.y)})` : '';
+    const pos = el.center ? ` @${fmtCoord(el.center.x, el.center.y)}` : '';
     const tags: string[] = [];
     if (!el.enabled) tags.push('禁用');
     if (el.offscreen) tags.push('离屏');
