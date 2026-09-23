@@ -67,8 +67,20 @@ export class EfficiencyGuard {
   private menuBlockedCoords: { x: number; y: number; r: number }[] = [];
   /** 近 10 步 mouse_click 的真实坐标（用于菜单交替检测的近邻比较，比签名更抗抖动） */
   private recentClickCoords: { x: number; y: number }[] = [];
+  /** P1 修复：UIA 可用性检查回调——UIA 不可用时不拦截鼠标分步（menu_select 无替代方案） */
+  private uiaCheck: (() => boolean) | null = null;
 
   constructor(private maxSteps: number) {}
+
+  /** P1 修复：设置 UIA 可用性检查回调。loop 层注入 executor 的 UIA 状态。 */
+  setUiaCheck(check: () => boolean): void {
+    this.uiaCheck = check;
+  }
+
+  /** UIA 当前是否可用（无回调时默认 true，保持原行为） */
+  private get uiaAvailable(): boolean {
+    return this.uiaCheck ? this.uiaCheck() : true;
+  }
 
   /** 每步解析后调用一次；返回 0..N 条要注入的指令 */
   onStep(index: number, thought: string | null, action: { name: string; args: Record<string, unknown> } | null, ctx: StepContext = {}): EfficiencyNudge[] {
@@ -139,7 +151,8 @@ export class EfficiencyGuard {
     // 用坐标近邻而非签名：模型每次坐标偏移十几像素（24px 栅格签名不同），但实质点的是同一菜单项。
     // 病理：点文件菜单→点另存为→菜单收起点空→再点文件→再点另存为…模型不肯用 menu_select。
     // 阈值低（2 轮 = 4 步）——菜单收起是确定性竞态，2 轮已确证死循环。
-    if (action.name === 'mouse_click') {
+    // P1 修复：UIA 不可用时不拦截——menu_select 依赖 UIA，UIA 不可用时鼠标分步是唯一方案。
+    if (action.name === 'mouse_click' && this.uiaAvailable) {
       const cx = Number(action.args.x), cy = Number(action.args.y);
       if (Number.isFinite(cx) && Number.isFinite(cy)) {
         // 先检查是否在已拦截的坐标区域内

@@ -7,7 +7,7 @@ export {
   type GroundCacheCtx, type GroundCacheEntry, type GroundCacheHit, type GroundCacheStats,
   type GroundCacheOptions, type GroundBox, type GroundSource, type RegionFingerprint,
 } from './agent/ground-cache';
-export type { TaskAssertion, AssertionResult, TaskEndGate } from './agent/types';
+export type { TaskAssertion, AssertionResult, TaskEndGate, ResumeContext } from './agent/types';
 export {
   createThinkingBudget, ThinkingBudget, decideThinkingStep, floorReason, extractThinkRequest,
   type ThinkingDecision, type ThinkingStats, type ThinkSignals, type ThinkStepContext,

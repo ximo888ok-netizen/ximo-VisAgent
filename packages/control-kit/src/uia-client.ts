@@ -145,6 +145,11 @@ export class UiaClient extends EventEmitter {
     return this.degradedFired;
   }
 
+  /** UIA 当前是否可用（健康且未降级）。供拦截器等调用方在拦截前判断是否有替代方案。 */
+  get available(): boolean {
+    return this.healthy && !this.degradedFired;
+  }
+
   private onData(chunk: string): void {
     this.buf += chunk;
     let idx: number;
@@ -186,11 +191,18 @@ export class UiaClient extends EventEmitter {
     }
     return new Promise<string>((resolve, reject) => {
       // M08 修复：超时后清理 setTimeout，防止成功 resolve 后定时器仍挂起
+      // P0 修复：超时后触发健康检查——sidecar 可能假死（进程在但 RPC 不响应），
+      // 主动 kill 让 exit handler 重建，避免后续所有 RPC 都死等 30s。
       const timer = setTimeout(() => {
         const p = this.pending.get(id);
         if (p) {
           this.pending.delete(id);
           reject(new Error(`sidecar timeout: ${method}`));
+        }
+        // 假死检测：超时意味着进程可能 hung，kill 触发 exit→重启链
+        if (this.proc && this.proc.exitCode === null) {
+          console.warn(`[uia] RPC 超时 (${method})，主动 kill sidecar 触发重建`);
+          this.proc.kill('SIGKILL');
         }
       }, 30_000);
       this.pending.set(id, {

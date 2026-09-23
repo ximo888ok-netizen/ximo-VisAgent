@@ -2,7 +2,8 @@
 // 设计参考：UI-TARS-desktop MessageHistory.maxImagesCount 的滑动图片窗口。
 // ximo 的差异：agent-core 不 import electron，截图由 loop 层注入 Buffer，
 // buildImagePart 由 loop 层调用（不同供应商 detail 档位不同）。
-// 压缩触发时（memory.needsCompression）旧截图自动丢弃——与文本摘要同步。
+// 压缩触发时（memory.needsCompression）保留最近 1 帧截图——完全清空会让模型
+// 丢失视觉连续性（压缩后文本摘要只有操作历史，没有"上一步界面长什么样"）。
 import type { ChatMessage, ContentPart, ILLMClient } from '@ximo-visagent/llm-providers';
 
 /** 图片滑窗大小：最近 3 步截图保留为 image，更早的丢弃（每帧 ~384 token，3 帧 ≈ 1152 token） */
@@ -26,9 +27,13 @@ export class VisualMemory {
     if (this.steps.length > IMAGE_WINDOW) this.steps.shift();
   }
 
-  /** 压缩触发时清空旧截图（与 memory.compressNow 同步调用） */
+  /** 压缩触发时保留最近 1 帧截图（与 memory.compressNow 同步调用）。
+   *  完全清空会导致模型丢失视觉上下文：压缩后的文本摘要只记录了操作历史，
+   *  但模型需要看到"上一步界面长什么样"才能判断当前界面是新状态还是回退。
+   *  保留最近 1 帧 = 最低成本的视觉连续性保障（1 帧 ≈ 384 token）。 */
   clear(): void {
-    this.steps = [];
+    if (this.steps.length <= 1) return;
+    this.steps = this.steps.slice(-1);
   }
 
   get length(): number {
@@ -36,37 +41,37 @@ export class VisualMemory {
   }
 
   /**
-   * 把纯文本历史消息的最近 N 条升级为带图片的多模态消息。
-   * 策略：从后往前找 assistant 消息（buildHistoryMessages 的滑窗步），
-   *        每条注入对应步骤的截图作为 ContentPart[]。
+   * 在纯文本历史消息的最近 N 条 assistant 步前面插入 user 角色的截图消息。
+   *
+   * 为什么用 user 角色而非升级 assistant 消息：
+   * Qwen / 通义千问 OpenAI 兼容 API 不允许 assistant 消息中出现 image_url，
+   * 只允许 user 消息包含图片。因此截图作为独立的 user 消息插入到
+   * assistant 动作消息之前，模拟「用户给模型看上一步截图」的效果。
    *
    * @param messages buildHistoryMessages 返回的纯文本消息
    * @param model 当前使用的 LLM 客户端（用于 image detail 档位适配）
-   * @returns 升级后的消息数组（原消息不被修改，新数组替换）
+   * @returns 插入截图后的消息数组（原消息不被修改，新数组替换）
    */
   async injectImages(messages: ChatMessage[], model: ILLMClient): Promise<ChatMessage[]> {
     if (this.steps.length === 0) return messages;
 
-    const result = [...messages];
-    // 从后往前匹配 assistant 消息（buildHistoryMessages 的滑窗步格式：`${actionName}(...) → result`）
-    // 同时从后往前消费截图队列
+    const result: ChatMessage[] = [];
     const screenshots = [...this.steps]; // 复制，从后往前消费
     let imgIdx = screenshots.length - 1;
 
-    for (let i = result.length - 1; i >= 0 && imgIdx >= 0; i--) {
-      const msg = result[i];
-      if (msg.role !== 'assistant' || typeof msg.content !== 'string') continue;
-      // 摘要块/放弃清单是 assistant 角色但不是滑窗步，跳过（它们以 [ 开头）
-      if (msg.content.startsWith('[')) continue;
-
-      // 升级为多模态：图片在前，文本在后（模型先看图再读文字）
-      const jpeg = screenshots[imgIdx]!.jpeg;
-      const imagePart = await buildImagePartInline(model, jpeg);
-      result[i] = {
-        ...msg,
-        content: [imagePart, { type: 'text', text: msg.content }],
-      };
-      imgIdx--;
+    // 从后往前遍历，在匹配的 assistant 步前面插入 user 角色截图消息
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i]!;
+      // 在 assistant 动作步前面插入截图
+      if (imgIdx >= 0 && msg.role === 'assistant' && typeof msg.content === 'string'
+          && !msg.content.startsWith('[')) {
+        const jpeg = screenshots[imgIdx]!.jpeg;
+        const imagePart = await buildImagePartInline(model, jpeg);
+        // 插入 user 角色截图消息（在 assistant 消息前面）
+        result.unshift({ role: 'user', content: [imagePart] });
+        imgIdx--;
+      }
+      result.unshift(msg);
     }
 
     return result;

@@ -212,6 +212,7 @@ export function launchQueuedTask(host: LaunchHost, t: QueuedTask): void {
     guidance: t.guidance ?? injections.guidance,
     conversationContext: injections.conversationContext,
     roleContext: injections.roleContext,
+    resumeContext: t.resumeContext,
     captureEvidence: async (stepIndex) => {
       try {
         const jpeg = await captureEvidenceJpeg();

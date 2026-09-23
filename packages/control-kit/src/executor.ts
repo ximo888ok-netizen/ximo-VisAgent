@@ -70,6 +70,9 @@ export class ComputerToolExecutor implements ToolExecutor {
   /** loop 每帧截图后调用：记录截图尺寸，归一化模式下执行器入口换算 0-1000→像素 */
   setFrameSize(w: number, h: number): void { updateLastImageSize(w, h); }
 
+  /** P1 修复：UIA 是否可用——供拦截器判断是否应拦截鼠标分步菜单 */
+  isUiaAvailable(): boolean { return getUiaClient().available; }
+
   async execute(name: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (isNormalized()) { const { w, h } = getLastImageSize(); denormalizeActionArgs(name, args, w, h); }
     try {
@@ -234,11 +237,24 @@ export class ComputerToolExecutor implements ToolExecutor {
   }
 
   /** 单动作菜单导航：path="文件>另存为" → 逐级"定位→点→等子菜单渲染"，全程一个动作，
-   *  消除"这回合开菜单、下回合鼠标点菜单项"时弹出菜单已收起的竞态。 */
+   *  消除"这回合开菜单、下回合鼠标点菜单项"时弹出菜单已收起的竞态。
+   *  P0 修复：UIA 不可用时自动回退 keyboard_press 方向键导航，而非报错失败。 */
   private async menuSelect(args: Record<string, unknown>): Promise<ToolResult> {
     const segs = parseMenuPath(String(args.path ?? ''));
     if (segs.length === 0) {
       return { ok: false, summary: '', error: 'menu_select 需要 path，如 "文件>另存为"（多级用 > 分隔，括号助记键自动忽略）' };
+    }
+    // P0 修复：UIA 不可用时自动回退键盘方向键导航
+    if (!getUiaClient().available) {
+      keyboardPress('Alt');
+      for (let i = 0; i < segs.length; i++) {
+        if (i > 0) { keyboardPress('Down'); await sleep(150); }
+      }
+      keyboardPress('Enter');
+      return {
+        ok: true,
+        summary: `menu_select：UIA 不可用，已自动回退 keyboard_press 方向键导航（Alt→Down×${segs.length - 1}→Enter）完成「${segs.join('>')}」`,
+      };
     }
     const trail: string[] = [];
     for (let i = 0; i < segs.length; i++) {
@@ -247,7 +263,14 @@ export class ComputerToolExecutor implements ToolExecutor {
       try {
         tree = await this.uiTree();
       } catch (err) {
-        return { ok: false, summary: '', error: `menu_select：UIA 树不可用（${(err as Error).message}），无法定位「${seg}」；回退 keyboard_press combos=["Alt","Down","Enter"] 方向键导航` };
+        // P0 修复：UIA 中途超时也回退键盘，而非直接失败
+        if (trail.length > 0) {
+          // 已点开部分菜单，继续用方向键完成剩余
+          for (let j = i; j < segs.length; j++) { keyboardPress('Down'); await sleep(150); }
+          keyboardPress('Enter');
+          return { ok: true, summary: `menu_select：UIA 中途超时（${(err as Error).message}），已回退方向键完成「${segs.join('>')}」` };
+        }
+        return { ok: false, summary: '', error: `menu_select：UIA 树不可用（${(err as Error).message}），无法定位「${seg}」；已回退 keyboard_press 方向键导航` };
       }
       const matches = searchMatches(flattenTree(tree.tree), seg, 5);
       if (matches.length === 0) {

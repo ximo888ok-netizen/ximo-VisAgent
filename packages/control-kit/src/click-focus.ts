@@ -14,6 +14,9 @@ import { activateWindow, getForegroundWindow, windowAtPoint } from './win32-wind
 const PASSTHROUGH_SETTLE_MS = 40;
 /** 桌面/任务栏类窗口：不作为"可激活目标"（抢前台会把桌面提到最上层） */
 const SHELL_WINDOW_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd']);
+/** P1 修复：弹出菜单类窗口（Win32 标准 Menu 类）。这类窗口不需要激活——它本身就在最前层，
+ *  且 SetForegroundWindow 对它无效（返回失败），导致 ensureTargetForeground 误报"激活失败"。 */
+const POPUP_MENU_CLASSES = new Set(['#32768']);
 
 export interface ClickFocus {
   /** 追加到工具 summary 的说明（空字符串 = 无需处理） */
@@ -29,6 +32,8 @@ export async function ensureTargetForeground(x: number, y: number): Promise<Clic
     const at = windowAtPoint(phys.x, phys.y);
     if (!at) return { note: '', selfOccluded: false };
     if (SHELL_WINDOW_CLASSES.has(at.className)) return { note: '', selfOccluded: false };
+    // P1 修复：弹出菜单（#32768）本身在最前层，不需要激活——直接点击
+    if (POPUP_MENU_CLASSES.has(at.className)) return { note: '', selfOccluded: false };
     if (at.pid === process.pid) {
       return {
         note: `；该坐标落在本应用自己的窗口「${at.title || at.className}」上（该窗口不进截图）——已临时穿透点击下层目标`,
@@ -39,7 +44,7 @@ export async function ensureTargetForeground(x: number, y: number): Promise<Clic
     if (fg.hwnd === at.hwnd) return { note: '', selfOccluded: false };
     if (activateWindow(at.hwnd)) return { note: `；已先激活目标窗口「${at.title}」`, selfOccluded: false };
     return {
-      note: `；目标点属于窗口「${at.title}」，但激活失败（当前前台「${fg.title}」）——点击可能被其他窗口接收`,
+      note: `；目标点属于窗口「${at.title || at.className}」，但激活失败（当前前台「${fg.title}」）——点击可能被其他窗口接收`,
       selfOccluded: false,
     };
   } catch {

@@ -9,7 +9,7 @@ import { Notification } from 'electron';
 import { ISLAND_CHANNELS } from '../shared/island-channels';
 import { getIslandWindow, showIsland, publishStep } from './windows/island';
 import { showPredictionMarker, closePredictionMarker, extractCoords } from './windows/screen-marker';
-import { showWaterFlow, hideWaterFlow } from './windows/water-flow';
+import { showWaterFlow } from './windows/water-flow';
 import { createStepEvent } from '../shared/island-contracts';
 import { pushApprovalRequest } from './island-bridge';
 import type { WeChatBot } from './wechat-bot';

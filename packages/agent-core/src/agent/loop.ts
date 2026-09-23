@@ -34,6 +34,7 @@ import { runApprovalGate } from './loop-approval';
 import { onTaskDone } from './acceptance';
 import { createThinkingBudget } from './thinking-policy';
 import { VisualMemory } from './visual-memory';
+import { tryProactiveSplit, buildResumeMessage } from './loop-resume';
 
 // 契约类型集中在 types.ts / recovery.ts；此处转出以保持既有导入路径可用
 export type { RecoveryContext, RecoveryHit } from './recovery';
@@ -123,6 +124,7 @@ export class AgentLoop {
     const memory = new ContextManager(async (steps) => summarizeSteps(textLLM, steps));
     memory.setTasks(tasks);
     let planDone = 0; // A3：多子任务计划的「已完成数」，由里程碑审计更新、每步在感知文本复述（防长任务遗忘/重做）
+    let proactiveSplitDone = false; // 主动拆分：60% 步预算处完成度不足时拆为子任务（仅一次）
 
     // 按需加载：可选工具目录（内置可选 + 自定义；条目2 按 provider 禁用）与已激活集；request_tools 只改本集合
     const optionalCatalog = buildOptionalCatalog(this.opts.extraTools, this.opts.disabledOptionalTools);
@@ -137,21 +139,18 @@ export class AgentLoop {
 
     let finalAnswer = '';
     let index = 0;
+    if (this.opts.resumeContext) messages.push({ role: 'system', content: buildResumeMessage(this.opts.resumeContext) });
     emit({ type: 'status', status: 'RUNNING' });
 
-    // 画面变化检测（P2 分层）：判定公式在 loop-helpers.layeredScreenChanged，
-    // 跨步状态（整帧指纹/计数/目标区基线/失败快路径）收在 observe-policy.ts
     const observe = new ObservePolicy(this.opts.regionFingerprint);
-    // 效率与收尾守卫：重复 thought / 相似动作 / 半程收尾三类注入（逻辑在 loop-efficiency.ts）
     const efficiency = new EfficiencyGuard(maxSteps);
-    // 关键状态追踪：窗口切换/文件打开/复制操作等结构化状态，注入感知文本防丢线索
+    if (typeof executor.isUiaAvailable === 'function') {
+      efficiency.setUiaCheck(() => executor.isUiaAvailable!());
+    }
     const stateTracker = new StateTracker();
-    // 自动验收计数：task_done 后独立评审判定，连续不通过达到上限则带保留完成
     let acceptanceFails = 0, acceptanceAttempts = 0;
     let runAcceptance: AgentRunResult['acceptance'] | undefined, pendingToolImage: ContentPart | null = null;
-    // 条目6：历史经验恢复（提示去重与规则成败记账都收在 advisor 内）
     const recovery = createRecoveryAdvisor({ matcher: this.opts.recoveryMatcher, onResult: this.opts.onRecoveryResult });
-    // 滑窗视觉记忆：最近 3 步截图保留为 image content，让模型能回顾之前界面状态
     const visualMemory = new VisualMemory();
 
     while (index < maxSteps) {
@@ -159,7 +158,6 @@ export class AgentLoop {
         status = this.stopped ? 'EMERGENCY_STOPPED' : 'CANCELLED';
         break;
       }
-      // R1 暂停：挂起等待恢复/取消/超时
       if (this.paused) {
         status = 'PAUSED';
         emit({ type: 'status', status: 'PAUSED' });
@@ -188,7 +186,6 @@ export class AgentLoop {
         break;
       }
 
-      // C1 死局逃生门：病理步累计超限（多次无视拦截/熔断仍在重复无效操作）→ 强制止损，不再烧剩余步数
       const forcedBailout = efficiency.shouldForceBailout();
       if (forcedBailout) {
         status = 'FAILED';
@@ -201,12 +198,9 @@ export class AgentLoop {
       index++;
       const stepStart = Date.now();
       try {
-        // 2) 感知帧：每步都截图发模型（384 token 代价极低，省掉变化检测逻辑）
         const snap: PerceptionSnap = await perception.snapshot().catch(() => ({} as PerceptionSnap));
-        // 滑窗视觉记忆：本步截图存入滑窗（注入到历史消息供模型回顾之前界面）
-        if (snap.screenshot) visualMemory.add({ jpeg: snap.screenshot });
-        // 归一化坐标模式：记录截图尺寸供执行器入口 0-1000→像素 换算
         if (snap.screenshot) {
+          visualMemory.add({ jpeg: snap.screenshot });
           const dims = readImageSize(snap.screenshot);
           if (dims) {
             executor.setFrameSize?.(dims.width, dims.height);
@@ -264,7 +258,7 @@ export class AgentLoop {
         if (parsed.actions[0]?.name === 'request_tools') {
           parsed = await runRequestToolsRound(parsed, {
             catalog: optionalCatalog, active: activeTools, extraTools: this.opts.extraTools,
-            reask: (tools) => chatWithRetry(model, [...messages, ...(await visualMemory.injectImages(memory.buildHistoryMessages(), model)), { role: 'user', content: parts }], tools, llmMaxRetries, emit, { thinkingHint }),
+            reask: async (tools) => chatWithRetry(model, [...messages, ...(await visualMemory.injectImages(memory.buildHistoryMessages(), model)), { role: 'user', content: parts }], tools, llmMaxRetries, emit, { thinkingHint }),
             onUsage: (u) => { totalTokens += u.totalTokens; emit({ type: 'llm_usage', promptTokens: u.promptTokens, completionTokens: u.completionTokens }); },
           }, { index, stepStart, memory, stepsDetail, messages, emit });
         }
@@ -302,6 +296,11 @@ export class AgentLoop {
           planDone = 0;
           messages.push({ role: 'system', content: `前一条路卡住了，换这个方案按序推进：${tasks.map((t, i) => `${i + 1}) ${t}`).join('  ')}。别再重复已放弃的动作。` });
           emit({ type: 'step', step: { index, thought: '[重规划] 卡点→换通道替代计划已注入', actionName: null, resultSummary: tasks[0] ?? '', ok: true } });
+        }
+        if (!bailoutWarn && !proactiveSplitDone) {
+          proactiveSplitDone = true;
+          const split = await tryProactiveSplit(textLLM, goal, index, maxSteps, planDone, tasks.length).catch(() => null);
+          if (split) { tasks = split.tasks; memory.setTasks(tasks); planDone = 0; messages.push({ role: 'system', content: split.message }); emit({ type: 'step', step: { index, thought: '[主动拆分] 长任务已拆分为子任务', actionName: null, resultSummary: tasks[0] ?? '', ok: true } }); }
         }
 
         // 4) 完成判断 + 自动验收门（机器断言优先；LLM 评审条件触发：有实质动作才评审，评审用 textLLM 无图）
@@ -459,14 +458,12 @@ export class AgentLoop {
           }
         }
         if (batchBroken && status !== 'RUNNING') break;
-
-        // 8) 触发压缩（token 驱动：宿主回传上下文占用超阈值；步数为兜底上限）
+        // 8) token 驱动压缩（步数为兜底）
         if (memory.needsCompression(lastPromptTokens)) {
           await memory.compressNow().catch(() => {});
-          visualMemory.clear(); // 压缩后旧截图与文本摘要同步丢弃
+          visualMemory.clear();
         }
-
-        // 9) L2 里程碑校验：长任务在 1/3、2/3 步数处做一次子目标对账（失败静默跳过）；审计结果刷新常驻进度账本
+        // 9) L2 里程碑校验：1/3、2/3 处子目标对账（失败静默跳过）
         const mAudit = await applyMilestoneCheck({ textLLM, goal, stepsDetail, step: index, maxSteps, subTaskCount: tasks.length }, { messages, emit });
         if (mAudit) planDone = mAudit.doneCount;
       } catch (err) {
@@ -478,18 +475,12 @@ export class AgentLoop {
 
     if (status === 'CANCELLED') finalAnswer = finalAnswer || '用户取消任务';
     else if (status === 'EMERGENCY_STOPPED') finalAnswer = finalAnswer || '已紧急停止';
-
     if (status === 'RUNNING' && index >= maxSteps) {
-      status = 'FAILED';
-      gate = 'budget-steps';
-      finalAnswer = finalAnswer || `任务失败：达到最大步数上限（${maxSteps} 步）`;
+      status = 'FAILED'; gate = 'budget-steps'; finalAnswer = finalAnswer || `任务失败：达到最大步数上限（${maxSteps} 步）`;
       emit({ type: 'error', message: '超过最大步数' });
     }
-    if (status === 'FAILED' && !finalAnswer) {
-      finalAnswer = lastError ? `任务失败：${lastError}` : '任务失败：未知原因';
-    }
-    groundCache?.invalidateAll('task-end'); // 任务终态：坐标表不跨任务复用
-    emit({ type: 'status', status });
+    if (status === 'FAILED' && !finalAnswer) { finalAnswer = lastError ? `任务失败：${lastError}` : '任务失败：未知原因'; }
+    groundCache?.invalidateAll('task-end'); emit({ type: 'status', status });
     return { status, finalAnswer, steps: index, totalTokens, stepsDetail, acceptance: runAcceptance, gate, thinking: thinking.summary() };
   }
 }

@@ -1,5 +1,5 @@
 // 任务编排器：单并发 + 排队 / 暂停恢复 / 安全规则注入 / 审批 / 证据截图 / SOP 模板
-import { AgentLoop, type StepDetail, type TaskAssertion } from '@ximo-visagent/agent-core';
+import { AgentLoop, type StepDetail, type TaskAssertion, type ResumeContext } from '@ximo-visagent/agent-core';
 import { ApprovalEngine } from '@ximo-visagent/safety';
 import type { ToolResult } from '@ximo-visagent/agent-core';
 import { ComputerToolExecutor, type FileOfficeExecutor } from '@ximo-visagent/control-kit';
@@ -19,6 +19,8 @@ import { decideApproval } from './orchestrator-approval';
 import { auraApprovalResolved, auraHalted } from './aura-state';
 import { launchQueuedTask, type LaunchHost } from './orchestrator-launch';
 import type { LongTaskOptions, TargetApp } from '../shared/schemas/longtask';
+import { createCheckpointStore } from './checkpoint-store';
+import { probeArtifact, reconcileCheckpoint } from './longtask-reconcile';
 import path from 'node:path';
 
 export interface QueuedTask {
@@ -41,6 +43,8 @@ export interface QueuedTask {
   longTask?: LongTaskOptions;
   /** B-M1 job 触发链：来源 job id（审批门按 job_id 命中 job 级作用域包，规划 §2.2） */
   jobId?: string;
+  /** 断点续传：宿主从审计 + checkpoint 对账后注入，loop 首步注入为 system 消息 */
+  resumeContext?: ResumeContext;
 }
 
 export interface OrchestratorDeps {
@@ -70,6 +74,8 @@ export class Orchestrator {
   private activeFiles: FileOfficeExecutor | null = null;
   /** A-M7：当前任务沙箱目录（invokeAtom 的写工件钩子用它解析绝对路径） */
   private activeWorkspaceDir = '';
+  /** 断点续传：taskId → 任务元数据快照（targetApp/longTask/jobId），resumeInterrupted 从此恢复锚位 */
+  private taskMeta = new Map<string, { targetApp?: TargetApp; longTask?: LongTaskOptions; jobId?: string }>();
   readonly customTools: CustomToolRuntime;
   readonly toolsDir: string;
 
@@ -105,7 +111,7 @@ export class Orchestrator {
   async startTask(
     goal: string,
     sopSteps?: string[],
-    meta?: { sopId?: string; interactive?: boolean; assertions?: TaskAssertion[]; targetApp?: TargetApp; longTask?: LongTaskOptions; jobId?: string },
+    meta?: { sopId?: string; interactive?: boolean; assertions?: TaskAssertion[]; targetApp?: TargetApp; longTask?: LongTaskOptions; jobId?: string; resumeContext?: ResumeContext },
   ): Promise<{ taskId: string; queued: boolean; queuedIndex: number }> {
     if (!goal.trim()) throw new Error('任务目标为空');
     const taskId = crypto.randomUUID();
@@ -114,10 +120,16 @@ export class Orchestrator {
       ...(meta?.targetApp ? { targetApp: meta.targetApp } : {}),
       ...(meta?.longTask ? { longTask: meta.longTask } : {}),
       ...(meta?.jobId ? { jobId: meta.jobId } : {}),
+      ...(meta?.resumeContext ? { resumeContext: meta.resumeContext } : {}),
     };
 
     if (meta?.sopId) {
       task.sopId = meta.sopId;
+    }
+
+    // 断点续传支持：记录锚位/预算/Job 元数据，resumeInterrupted 从此恢复
+    if (task.targetApp || task.longTask || task.jobId) {
+      this.taskMeta.set(taskId, { targetApp: task.targetApp, longTask: task.longTask, jobId: task.jobId });
     }
 
     if (this.loops.size > 0) {
@@ -129,19 +141,31 @@ export class Orchestrator {
     return { taskId, queued: false, queuedIndex: 0 };
   }
 
-  /** 断点续跑：从中断任务的原步骤骨架重启（旧任务标记取消，新任务复用目标） */
+  /** 断点续跑：从中断任务的原步骤骨架 + checkpoint 对账后重启
+   *  恢复语义：以新 taskId 重跑，注入 resumeContext（已完成步骤 + 需重做工件 + 进度游标），
+   *  并依赖模型看到的第一帧实时截图自行核对现场。不是从第 N 步精确续跑，也不回滚已产生的副作用。
+   *  对锚定任务：保留 targetApp/longTask/jobId，看门狗和预算档位不丢。 */
   async resumeInterrupted(taskId: string): Promise<{ taskId: string; goal: string; queued: boolean; queuedIndex: number }> {
     const task = this.audit.getTask(taskId);
     if (!task) throw new Error('任务不存在');
     if (this.runningTaskIds.includes(taskId)) throw new Error('任务仍在运行中，无需续跑');
     const steps = this.audit.getTaskSteps(taskId);
-    const sopSteps = steps
+    const completedSteps = steps
       .filter((st) => st.actionName)
-      .map((st) => `${st.actionName} → ${st.resultSummary}`)
-      .slice(0, 40);
+      .map((st) => ({ actionName: st.actionName!, resultSummary: st.resultSummary }));
     this.audit.finishTask(taskId, 'CANCELLED', `断点续跑：由新任务重启（已完成 ${steps.length} 步作为骨架）`);
     publishStep(createStepEvent('thinking', `断点续跑: ${task.goal.slice(0, 60)}`));
-    const res = await this.startTask(task.goal, sopSteps.length > 0 ? sopSteps : undefined, { interactive: true });
+    // checkpoint 对账：取最新检查点 → 工件探针 → 需重做清单 + 进度游标
+    const resumeContext = buildResumeContext(this.audit, taskId, completedSteps);
+    // 从内存元数据恢复锚位/预算/Job（TaskRow 不存这些字段）
+    const meta = this.taskMeta.get(taskId);
+    const res = await this.startTask(task.goal, undefined, {
+      interactive: true,
+      resumeContext,
+      ...(meta?.targetApp ? { targetApp: meta.targetApp } : {}),
+      ...(meta?.longTask ? { longTask: meta.longTask } : {}),
+      ...(meta?.jobId ? { jobId: meta.jobId } : {}),
+    });
     return { taskId: res.taskId, goal: task.goal, queued: res.queued, queuedIndex: res.queuedIndex };
   }
 
@@ -312,5 +336,30 @@ export class Orchestrator {
   editAndApprove(id: string, newArgs: Record<string, unknown>): void {
     auraApprovalResolved(id);
     decideApproval(this.approvals, this.audit, id, { action: 'edit', newArgs });
+  }
+}
+
+/** 断点续传：从审计步骤 + checkpoint 对账构建 ResumeContext（纯函数，异常静默降级） */
+function buildResumeContext(
+  audit: ZODB,
+  taskId: string,
+  completedSteps: { actionName: string; resultSummary: string }[],
+): ResumeContext | undefined {
+  if (completedSteps.length === 0) return undefined;
+  try {
+    // checkpoint 对账：取最新检查点 → 工件探针 → 需重做清单 + 进度游标
+    const store = createCheckpointStore(audit.exposeDb());
+    const cp = store.latest(taskId);
+    const reconciled = cp ? reconcileCheckpoint(cp, probeArtifact) : null;
+    return {
+      completedSteps: completedSteps.slice(-20),
+      redoItems: reconciled?.redoItems.map((r) => ({ path: r.path, reason: r.reason })) ?? [],
+      checkpointCursor: reconciled
+        ? { done: reconciled.resumeCursor.done, ...(reconciled.resumeCursor.total ? { total: reconciled.resumeCursor.total } : {}), unit: reconciled.resumeCursor.unit, ...(reconciled.resumeCursor.lastItem ? { lastItem: reconciled.resumeCursor.lastItem } : {}) }
+        : undefined,
+    };
+  } catch {
+    // checkpoint 表未建/无检查点/对账异常 → 仅注入已完成步骤骨架（与原行为一致）
+    return { completedSteps: completedSteps.slice(-20), redoItems: [] };
   }
 }

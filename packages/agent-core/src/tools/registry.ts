@@ -14,6 +14,8 @@ export interface ToolExecutor {
   invalidateCoord?(x: number, y: number): void;
   /** 可选：设置当前截图尺寸（归一化坐标模式 0-1000 下，执行器入口换算回像素用）。loop 每帧截图后调用。 */
   setFrameSize?(w: number, h: number): void;
+  /** 可选：UIA 是否可用。拦截器在 UIA 不可用时不拦截鼠标分步菜单（menu_select 无替代方案时鼠标是唯一路径）。 */
+  isUiaAvailable?(): boolean;
 }
 
 /** 感知提供方：每轮循环前调用，构 build 感知帧 */

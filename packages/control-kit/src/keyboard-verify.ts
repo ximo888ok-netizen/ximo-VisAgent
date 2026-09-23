@@ -64,6 +64,23 @@ export async function readFocusedSnapshot(): Promise<FocusedSnapshot> {
   }
 }
 
+/** P0 修复：带独立 3s 超时的焦点元素读取——sidecar 假死时降级返回空，不卡死 keyboardType。 */
+const FOCUSED_READ_TIMEOUT_MS = 3000;
+async function readFocusedSnapshotWithTimeout(): Promise<FocusedSnapshot> {
+  try {
+    const focused = await Promise.race([
+      getUiaClient().focusedElement(),
+      new Promise<never>((_, reject) => {
+        const t = setTimeout(() => reject(new Error('focusedElement read timeout')), FOCUSED_READ_TIMEOUT_MS);
+        t.unref?.();
+      }),
+    ]);
+    return { value: textOf(focused.value) ?? textOf(focused.cValue) ?? '', rect: rectOf(focused) };
+  } catch {
+    return { value: '', rect: null };
+  }
+}
+
 /** verifyTypedInput 的可注入依赖（单测传替身，不碰真实 sidecar/截图/OCR 二进制） */
 export interface TypeVerifyDeps {
   readFocused?: () => Promise<FocusedSnapshot>;
@@ -72,7 +89,8 @@ export interface TypeVerifyDeps {
 }
 
 /** 注入后的完整回读判定：等焦点字段区域画面稳定（P1，取代固定 settle）后再回读；
- *  UIA value 优先，不可得走字段 bbox 区域 OCR；无需验证（纯 ASCII）返回 null；全程不抛出。 */
+ *  UIA value 优先，不可得走字段 bbox 区域 OCR；无需验证（纯 ASCII）返回 null；全程不抛出。
+ *  P0 修复：UIA focusedElement 调用加独立 3s 超时——sidecar 假死时不再卡住整个 keyboardType 45s。 */
 export async function verifyTypedInput(
   text: string,
   settleMs = 150,
@@ -80,7 +98,7 @@ export async function verifyTypedInput(
 ): Promise<InputVerifyOutcome | null> {
   if (!needsInputVerify(text)) return null;
   try {
-    const readFocused = deps.readFocused ?? readFocusedSnapshot;
+    const readFocused = deps.readFocused ?? readFocusedSnapshotWithTimeout;
     let snap = await readFocused();
     if (settleMs > 0) {
       await settleAfterInput(snap.rect, settleMs);

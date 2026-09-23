@@ -84,6 +84,8 @@ export interface AgentLoopOptions {
   regionFingerprint?: RegionFingerprint;
   /** 常识与能力卡常驻：宿主按目标 FTS 召回的 top-k 相似任务能力卡，随 system prompt 注入；空/缺省不注入 */
   capabilityCards?: import('../prompts/capability-inject').CapabilityBrief[];
+  /** 断点续传上下文：宿主从审计/checkpoint 对账后注入，让模型从正确位置续跑而非盲跑 */
+  resumeContext?: ResumeContext;
 }
 
 export type AgentEvent =
@@ -122,4 +124,18 @@ export interface AgentRunResult {
   gate?: TaskEndGate;
   /** 思考预算汇总（auto 档）：思考步数/判定步数/原因分布，供终态量收益 */
   thinking?: ThinkingStats;
+}
+
+/** 断点续传上下文：宿主从审计步骤 + checkpoint 对账后注入。
+ *  loop 在首步注入为 system 消息，让模型知道"已完成什么、卡在哪、需重做什么"。
+ *  与 guidance 的区别：guidance 是通用教训文本，resumeContext 是结构化的精确续跑信息。 */
+export interface ResumeContext {
+  /** 上次任务已完成步骤的骨架（actionName → resultSummary），注入给模型防重做 */
+  completedSteps: { actionName: string; resultSummary: string }[];
+  /** checkpoint 对账后需重做的工件清单（path + reason），模型据此定位续跑起点 */
+  redoItems: { path: string; reason: string }[];
+  /** checkpoint 业务进度游标（"已录入 17/30 张发票"）；无 checkpoint = undefined */
+  checkpointCursor?: { done: number; total?: number; unit: string; lastItem?: string };
+  /** 上次任务的失败摘要（注入教训防重蹈覆辙） */
+  failureSummary?: string;
 }

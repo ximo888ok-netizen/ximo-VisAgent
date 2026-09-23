@@ -4,8 +4,8 @@
  * 三件事一起钉住：
  * 1) detectGuessSignals 能识别"在猜"的表达；
  * 2) 注入器同一关键词组合只提示一次，且 web_search 不可用时绝不引导去调它
- *    （GLM/Kimi/DeepSeek 调它必报错——提示语必须与 provider 能力一致）；
- * 3) 可选工具目录按 provider 能力过滤（web_search 仅 qwen）。
+ *    （DeepSeek 调它必报错——提示语必须与 provider 能力一致）；
+ * 3) 可选工具目录按 provider 能力过滤（web_search 支持 qwen/glm/kimi）。
  */
 import { describe, expect, it } from 'vitest';
 import type { ToolSchema } from '@ximo-visagent/shared-types';
@@ -76,10 +76,10 @@ describe('buildOptionalCatalog（按 provider 能力过滤）', () => {
     expect(names).toContain('custom_hello');
   });
 
-  it('supportedWebSearch 口径与目录过滤一致（仅 qwen 为 true）', () => {
+  it('supportedWebSearch 口径与目录过滤一致（qwen/glm/kimi 为 true）', () => {
     expect(supportsWebSearch('qwen')).toBe(true);
-    expect(supportsWebSearch('glm')).toBe(false);
-    expect(supportsWebSearch('kimi')).toBe(false);
+    expect(supportsWebSearch('glm')).toBe(true);
+    expect(supportsWebSearch('kimi')).toBe(true);
     expect(supportsWebSearch('deepseek')).toBe(false);
   });
 });
